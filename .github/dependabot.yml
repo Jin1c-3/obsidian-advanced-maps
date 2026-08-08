@@ -6,8 +6,15 @@ updates:
       interval: monthly
     open-pull-requests-limit: 5
     groups:
+      # Minor and patch bumps travel together — one PR a month, and CI either
+      # passes on the lot or does not. Majors come one at a time: a TypeScript
+      # or ESLint major usually waits on typescript-eslint catching up, and
+      # burying that in a group of nine makes the whole batch un-mergeable.
       dev-dependencies:
         patterns: ['*']
+        update-types:
+          - minor
+          - patch
   - package-ecosystem: github-actions
     directory: /
     schedule:
