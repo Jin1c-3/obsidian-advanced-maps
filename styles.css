@@ -1,0 +1,35 @@
+/* ---- advanced-maps ---- */
+
+/* An inline ![[track.gpx]] map. The height comes from settings, set inline;
+ * the built-in view only sizes itself when it thinks it is inside a base embed,
+ * which this is not, so the container has to be told to fill. */
+.advanced-maps-embed {
+	position: relative;
+	width: 100%;
+	margin: var(--size-4-2) 0;
+	overflow: hidden;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.advanced-maps-embed .bases-map-container,
+.advanced-maps-embed .bases-map {
+	height: 100%;
+}
+
+.advanced-maps-error {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: var(--size-4-4);
+	color: var(--text-error);
+	font-size: var(--font-ui-small);
+	height: auto !important;
+	min-height: 0;
+}
+
+/* The "open in map" pop-up wants far more room than a default modal. */
+.advanced-maps-modal {
+	width: min(1100px, 94vw);
+	max-width: none;
+}

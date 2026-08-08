@@ -1,0 +1,8 @@
+{
+	"id": "advanced-maps",
+	"name": "Advanced Maps",
+	"version": "1.0.0",
+	"minAppVersion": "1.13.1",
+	"description": "Supercharge the built-in Maps view: GPX/GeoJSON tracks drawn from note embeds, zoom-to-fit, and inline rendering for ![[track.gpx]].",
+	"isDesktopOnly": false
+}
