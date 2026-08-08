@@ -97,13 +97,15 @@ const context = await esbuild.context({
 });
 
 copyAssets(outDir);
+// Any write into a vault is a development install, so leave the marker there
+// whichever route got us here.
+if (path.resolve(outDir) !== root) markHotReload(outDir);
 
 if (prod) {
 	await context.rebuild();
 	await context.dispose();
 	console.log(`built → ${path.join(outDir, 'main.js')}`);
 } else {
-	markHotReload(outDir);
 	// Assets change far less often than the bundle, but a manifest version bump
 	// mid-session should still land in the vault.
 	for (const name of ASSETS) {

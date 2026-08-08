@@ -45,6 +45,9 @@ jobs:
       - name: Bundle
         run: node esbuild.config.mjs production
 
+      - name: Bundle loads the way Obsidian loads it
+        run: node .github/scripts/smoke-bundle.mjs
+
       # What a reviewer would otherwise have to build themselves to try a PR.
       - uses: actions/upload-artifact@v4
         with:

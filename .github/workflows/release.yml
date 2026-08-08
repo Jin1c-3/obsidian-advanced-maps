@@ -37,6 +37,9 @@ jobs:
       - name: Bundle
         run: node esbuild.config.mjs production
 
+      - name: Bundle loads the way Obsidian loads it
+        run: node .github/scripts/smoke-bundle.mjs
+
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
