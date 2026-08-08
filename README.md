@@ -1,13 +1,31 @@
 # Advanced Maps
 
+[![CI](https://github.com/Jin1c-3/obsidian-advanced-maps/actions/workflows/ci.yml/badge.svg)](https://github.com/Jin1c-3/obsidian-advanced-maps/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Adds to Obsidian's built-in **Maps** view instead of replacing it: GPX/GeoJSON
 tracks, zoom-to-fit, Chinese coordinate systems, inline `![[track.gpx]]` maps,
 and an "open in map" pop-up.
 
-Replaces the old `geo-map` plugin, which shipped its own Leaflet map (178 KB) to
-get the same features. Everything the built-in view already does — markers,
-icons, colours, tiles, popups, the right-click menu — is now the built-in view
-doing it.
+Everything the built-in view already does — markers, icons, colours, tiles,
+popups, the right-click menu — stays the built-in view doing it. No Leaflet, no
+vendored map library, no runtime dependencies at all.
+
+## Requirements
+
+- Obsidian 1.13.1 or newer, with **Bases** enabled (core plugin).
+- The first-party **Maps** plugin, which supplies the view this one extends.
+  Without it Advanced Maps says so and does nothing.
+
+## Install
+
+**From a release.** Download `main.js`, `manifest.json` and `styles.css` from
+[Releases](https://github.com/Jin1c-3/obsidian-advanced-maps/releases) into
+`<vault>/.obsidian/plugins/advanced-maps/`, then enable it under Settings →
+Community plugins.
+
+**With BRAT.** Add `Jin1c-3/obsidian-advanced-maps` in
+[BRAT](https://github.com/TfTHacker/obsidian42-brat).
 
 ## How the patch works
 
@@ -22,9 +40,10 @@ app.internalPlugins.getPluginById('bases').instance.registrations.map
 `TrackLayer` to the instance; `options` is replaced with one that splices an
 extra group into the list. The native class is never subclassed or edited.
 
-`TrackLayer` wraps three methods **on the instance** — `initializeMap`,
-`destroyMap`, `onunload` — plus `markerManager.updateMarkers`. Instance
-wrappers die with the view, and `delete` restores the untouched prototype.
+`TrackLayer` wraps methods **on the instance** — `initializeMap`, `destroyMap`,
+`onunload`, `loadConfig`, `switchToTileSet` — plus `markerManager.updateMarkers`
+and `markerManager.createGeoJSONFeatures`. Instance wrappers die with the view,
+and `delete` restores the untouched prototype.
 
 `updateMarkers` is the seam worth knowing about. The native view calls it once
 the map exists, again on every data change, and again on `styledata` after a new
@@ -73,12 +92,12 @@ mode is `auto`: it reads the answer off the tile URL. That is what makes the
 mixed case work — one note can hold an OpenStreetMap embed and a 高德 base view
 at once, each correct, and the ⧉ background switcher flips the system live.
 
-| Mode | When |
-| --- | --- |
-| 自动识别 (default) | Match the tile URL against known 高德/腾讯/百度/Google-CN hosts |
-| WGS-84 | OpenStreetMap, ArcGIS, 天地图 (CGCS2000; the difference is centimetres) |
-| GCJ-02 | Force it — a proxied or self-hosted 高德 mirror the URL cannot reveal |
-| BD-09 | Same, for 百度 |
+| Mode           | When                                                                    |
+| -------------- | ----------------------------------------------------------------------- |
+| Auto (default) | Match the tile URL against known 高德/腾讯/百度/Google-CN hosts         |
+| WGS-84         | OpenStreetMap, ArcGIS, 天地图 (CGCS2000; the difference is centimetres) |
+| GCJ-02         | Force it — a proxied or self-hosted 高德 mirror the URL cannot reveal   |
+| BD-09          | Same, for 百度                                                          |
 
 Set the default in plugin settings; override per view under **Coordinate
 system**. Conversion happens at four places, all of which have to agree:
@@ -94,8 +113,8 @@ system**. Conversion happens at four places, all of which have to agree:
 - **Auto-fit bounds** — native `getBounds()` still answers in WGS-84, so
   `bounds()` reads the moved features instead.
 
-Accuracy: GCJ round-trips to 0 m, BD to under 0.1 m; outside China both are the
-identity, verified at Tokyo and New York.
+Accuracy: GCJ round-trips to under a nanometre, BD to under 0.2 m; outside China
+both are the identity. `tests/coords.test.ts` holds those figures to account.
 
 ## View options
 
@@ -103,27 +122,29 @@ The built-in options are untouched. This plugin appends two groups —
 **Tracks** behind Markers, and **Coordinate system** behind Background, next to
 the tile URLs that decide it:
 
-| Option | Meaning |
-| --- | --- |
-| Line width | Track stroke width |
-| Line opacity | Track stroke opacity |
-| Max zoom when fitting | Upper bound for auto-fit |
+| Option                 | Meaning                          |
+| ---------------------- | -------------------------------- |
+| Line width             | Track stroke width               |
+| Line opacity           | Track stroke opacity             |
+| Max zoom when fitting  | Upper bound for auto-fit         |
 | Tile coordinate system | Blank follows the plugin setting |
 
-Auto-fit covers markers *and* tracks, and stands down when the view pins a
+Auto-fit covers markers _and_ tracks, and stands down when the view pins a
 `center` or a `defaultZoom`, or once you pan or zoom. The ⛶ button re-frames on
 demand and ignores all of that.
 
 ## Open in map
 
-Adds 「在地图中打开」 to a note's ⋮ menu (and the command palette), popping up
-the configured base view centred on that note. The item only appears on markdown
-notes that actually have the coordinate property, so it stays out of the way
-everywhere else.
+Adds an entry to a note's ⋮ menu (and the command palette) that pops up a base's
+map view centred on that note. The item only appears on markdown notes that
+actually have the coordinate property, so it stays out of the way everywhere
+else.
 
 Settings: menu label, base path, view name, coordinate property, pop-up zoom.
-Changing the label updates the ⋮ menu immediately; the command palette entry
-picks up the new name after a plugin reload.
+The base path starts blank and has to be pointed at a `.base` file; leaving the
+view name blank takes that base's first map view. Changing the label updates the
+⋮ menu immediately; the command palette entry picks up the new name after a
+plugin reload.
 
 It renders the base as a ` ```base ` block rather than constructing a view
 directly — that is what carries the base's filters, formulas and properties
@@ -143,18 +164,21 @@ have no rows behind it. The track is then drawn on top.
 Each map holds a WebGL context and browsers cap how many can be alive at once,
 so an embed only builds once it scrolls into view.
 
+The extensions are claimed only if nothing else has them, so a plugin that
+already renders `.gpx` keeps working alongside this one.
+
 ## Six non-obvious things this had to work around
 
 All of them cost real debugging time; don't undo them.
 
-1. **`isStyleLoaded()` is the wrong gate.** It stays false until every *tile*
+1. **`isStyleLoaded()` is the wrong gate.** It stays false until every _tile_
    has arrived, so waiting on it before `addSource` costs seconds on a busy map
    — long enough that a background switch looks like it dropped the tracks.
    `styleUsable()` reads `map.style._loaded` instead, which is the flag
    `addSource` itself checks.
 
 2. **Tracks are re-added on `style.load`, not on the native `styledata` hook.**
-   The built-in view arms a *one-shot* `styledata` listener to restore its
+   The built-in view arms a _one-shot_ `styledata` listener to restore its
    markers. Riding that would work exactly once per style change and is not
    ours to depend on.
 
@@ -180,7 +204,76 @@ All of them cost real debugging time; don't undo them.
 KML and TCX. Adding them means another branch in `parseTrack` plus their
 extensions in `TRACK_EXTS`; the shapes they produce are the same.
 
-## Building
+## Development
 
-Nothing to build — `main.js` is the source. No bundler, no `node_modules`, no
-vendored library. Edit it and reload the plugin.
+```bash
+git clone https://github.com/Jin1c-3/obsidian-advanced-maps
+cd obsidian-advanced-maps
+npm install
+cp .env.example .env      # point OBSIDIAN_PLUGIN_DIR at a vault
+npm run dev               # watch, rebuild into that vault, hot-reload
+```
+
+`npm run dev` writes `main.js`, `manifest.json` and `styles.css` straight into
+the vault folder and drops a `.hotreload` marker beside them, which is what
+[pjeby/hot-reload](https://github.com/pjeby/hot-reload) watches for — install
+that plugin once and every save reloads Advanced Maps without touching Obsidian.
+Without it, ⌘/Ctrl+P → "Reload app without saving" does the same thing by hand.
+
+| Script                                      | What it does                                                          |
+| ------------------------------------------- | --------------------------------------------------------------------- |
+| `npm run dev`                               | esbuild watch → the vault in `OBSIDIAN_PLUGIN_DIR`, plus `.hotreload` |
+| `npm run build`                             | Typecheck, then a minified bundle at the repo root                    |
+| `npm run deploy`                            | One-off production build into the vault                               |
+| `npm test` / `test:watch` / `test:coverage` | Vitest                                                                |
+| `npm run typecheck`                         | `tsc --noEmit`                                                        |
+| `npm run lint` / `lint:fix`                 | ESLint                                                                |
+| `npm run format` / `format:check`           | Prettier                                                              |
+| `npm run check`                             | All of the above, the way CI runs them                                |
+
+### Layout
+
+```
+src/
+  main.ts            plugin class, registry patch, commands, "open in map"
+  track-layer.ts     everything added to one native map view
+  embed.ts           inline ![[track.gpx]]
+  modal.ts           the "open in map" pop-up
+  settings.ts        settings tab and defaults
+  coords.ts          GCJ-02 / BD-09 conversion            ← pure, tested
+  parse.ts           GPX / GeoJSON readers                ← pure, tested
+  geometry.ts        bounds, clamping, the style gate     ← pure, tested
+  view-options.ts    the two option groups and where they go
+  track-cache.ts     parsed tracks, keyed by path, invalidated by mtime
+  layers.ts          MapLibre layer specs, zoom-to-fit control
+  i18n.ts            en / zh tables
+  constants.ts       source and layer ids, track extensions
+  types/obsidian-internals.d.ts   the undocumented surface this leans on
+tests/               vitest, happy-dom, no vault required
+```
+
+Everything that can run outside Obsidian is tested and kept above 90 % coverage
+in CI. The view wrappers are not: they need a live Bases map, so they are held
+honest by the type shim and by comments explaining why each wrapper exists.
+
+### Releasing
+
+```bash
+npm version minor      # bumps package.json, manifest.json and versions.json
+git push --follow-tags
+```
+
+The tag triggers `.github/workflows/release.yml`, which re-runs every check,
+refuses to continue if the tag and `manifest.json` disagree, and publishes a
+release with `main.js`, `manifest.json` and `styles.css` attached.
+
+## Translations
+
+`src/i18n.ts` holds one flat table per language; English is the source of truth
+and its keys are the type, so a missing entry is a compile error. A new language
+is one object plus one line in `LOCALES`, and the test suite checks the tables
+stay in step.
+
+## Licence
+
+[MIT](LICENSE).

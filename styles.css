@@ -1,11 +1,13 @@
 /* ---- advanced-maps ---- */
 
-/* An inline ![[track.gpx]] map. The height comes from settings, set inline;
- * the built-in view only sizes itself when it thinks it is inside a base embed,
- * which this is not, so the container has to be told to fill. */
+/* An inline ![[track.gpx]] map. The height comes from settings, handed over as
+ * --advanced-maps-embed-height; the built-in view only sizes itself when it
+ * thinks it is inside a base embed, which this is not, so the container has to
+ * be told to fill. */
 .advanced-maps-embed {
 	position: relative;
 	width: 100%;
+	height: var(--advanced-maps-embed-height, 320px);
 	margin: var(--size-4-2) 0;
 	overflow: hidden;
 	border: 1px solid var(--background-modifier-border);

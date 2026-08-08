@@ -1,0 +1,47 @@
+name: Release
+
+# Obsidian installs a plugin from a release whose tag is the bare version —
+# 1.2.3, not v1.2.3 — holding main.js, manifest.json and styles.css as assets.
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Tag must match manifest.json
+        run: node .github/scripts/check-manifest.mjs "${GITHUB_REF_NAME}"
+
+      - name: Full check
+        run: |
+          npm run format:check
+          npm run lint
+          npm run typecheck
+          npm test
+
+      - name: Bundle
+        run: node esbuild.config.mjs production
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            main.js manifest.json styles.css

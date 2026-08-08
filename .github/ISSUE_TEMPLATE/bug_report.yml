@@ -1,0 +1,42 @@
+name: Bug report
+description: Something the plugin does that it should not
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This plugin patches Obsidian's built-in Maps view, which is not a public
+        API. Version numbers matter more here than usual — please fill them in.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Obsidian, the Maps plugin (Settings → Community plugins), and Advanced Maps.
+      placeholder: 'Obsidian 1.13.1 · Maps 0.2.2 · Advanced Maps 1.0.0'
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: 'Windows 11 desktop / iOS 18 / Linux'
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: Ctrl/Cmd+Shift+I → Console. Anything starting with "Advanced Maps:" is especially useful.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: A sample .gpx, the base file's YAML, the tile URL in use.

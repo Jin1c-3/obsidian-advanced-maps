@@ -1,0 +1,20 @@
+node_modules/
+coverage/
+dist/
+
+# esbuild writes the bundle next to manifest.json; it is a release artifact,
+# not source. Releases attach it from CI.
+main.js
+main.js.map
+
+# Per-machine vault path for `npm run dev` / `npm run deploy`.
+.env
+
+# Obsidian writes user settings beside the built plugin, never in the repo,
+# but keep it out in case someone develops with the repo symlinked into a vault.
+data.json
+
+.DS_Store
+*.log
+.vscode/
+.idea/
