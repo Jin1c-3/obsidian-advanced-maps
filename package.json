@@ -48,7 +48,7 @@
     "@types/node": "^22.10.5",
     "@vitest/coverage-v8": "^3.0.5",
     "builtin-modules": "^4.0.0",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.1",
     "eslint": "^9.18.0",
     "globals": "^15.14.0",
     "happy-dom": "^20.11.2",
