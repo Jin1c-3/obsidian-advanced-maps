@@ -133,7 +133,7 @@ export class LinkModal extends Modal {
 
 	private setState(cls: string, message: string, ready: boolean): void {
 		this.resultEl.className = `advanced-maps-link-result ${cls}`;
-		this.resultEl.createEl('div', { text: message });
+		this.resultEl.createDiv({ text: message });
 		this.confirm.disabled = !ready;
 	}
 

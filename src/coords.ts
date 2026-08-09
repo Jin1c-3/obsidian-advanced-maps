@@ -176,7 +176,21 @@ export function projectGeometry(geometry: Geometry | undefined, system: CoordSys
 		}
 		return (coords as Coordinates[]).map(walk) as Coordinates;
 	};
-	return { ...geometry, coordinates: walk(geometry.coordinates as Coordinates) } as Geometry;
+	// One cast, on the way out rather than on the way in: `walk` gives back the
+	// same nesting depth it was handed, but says so only as the whole
+	// `Coordinates` union, which no single geometry's own type accepts.
+	return { ...geometry, coordinates: walk(geometry.coordinates) } as Geometry;
+}
+
+/**
+ * A base file's `center` is whatever YAML put there, so read the number out
+ * rather than stringifying first: `String({})` is `"[object Object]"`, which
+ * `parseFloat` turns into `NaN` only by luck rather than by having checked.
+ */
+function numberish(value: unknown): number {
+	if (typeof value === 'number') return value;
+	if (typeof value === 'string') return parseFloat(value);
+	return NaN;
 }
 
 /**
@@ -190,9 +204,11 @@ export function projectCenter(value: unknown, system: CoordSystem): unknown {
 	let lng: number;
 	const wasArray = Array.isArray(value);
 	if (wasArray) {
-		lat = parseFloat(String((value as unknown[])[0]));
-		lng = parseFloat(String((value as unknown[])[1]));
+		const pair = value as unknown[];
+		lat = numberish(pair[0]);
+		lng = numberish(pair[1]);
 	} else {
+		if (typeof value !== 'string' && typeof value !== 'number') return value;
 		const parts = String(value).replace(/[[\]]/g, '').split(',');
 		if (parts.length < 2) return value;
 		lat = parseFloat(parts[0]);

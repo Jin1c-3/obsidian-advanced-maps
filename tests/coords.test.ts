@@ -101,7 +101,7 @@ describe('toTileSpace / toWgs84', () => {
 				const back = toWgs84(system, ...toTileSpace(system, ...point));
 				// BD-09 stacks its own residual on top of GCJ's; both stay far
 				// below GPS noise, which is what actually matters on a map.
-				expect(metres(point, back), `${system} at ${point}`).toBeLessThan(0.2);
+				expect(metres(point, back), `${system} at ${point.join(',')}`).toBeLessThan(0.2);
 			}
 		}
 	});

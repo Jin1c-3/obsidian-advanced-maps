@@ -212,6 +212,10 @@ written, because a coordinate in the wrong system looks perfectly fine in the
 note and lands the pin in the next province. The dropdown overrides the guess
 when bare numbers came from a source the link cannot reveal.
 
+The box opens with whatever is on your clipboard already in it, since that is
+almost always the link you came to paste — read once, when you open the box, and
+never sent anywhere.
+
 Shortened links hold no coordinate until they are resolved, and this plugin will
 not quietly call a third party with your link to do it. Open one once and paste
 where it lands.

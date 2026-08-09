@@ -1,4 +1,4 @@
-import { PluginSettingTab, Setting, type App } from 'obsidian';
+import { PluginSettingTab, type App, type Setting, type SettingDefinition, type SettingDefinitionItem } from 'obsidian';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
 import { GEOCODE_PROVIDERS, type GeocodeProvider } from './geocode';
 import { t, type TranslationKey } from './i18n';
@@ -79,6 +79,24 @@ export function isExcluded(path: string, setting: string): boolean {
 
 const BASE_PATH_PLACEHOLDER = 'places.base';
 
+/** Every settings key, so a definition cannot name one that does not exist. */
+type Key = keyof AdvancedMapsSettings;
+
+/**
+ * Settings are **declared**, not drawn.
+ *
+ * Obsidian 1.13 renders a tab from `getSettingDefinitions()` and — the reason
+ * this is worth the change — indexes what it renders, so every setting below is
+ * reachable from the search box at the top of the settings window. A tab that
+ * paints itself in `display()` is invisible to that search, and this plugin
+ * already requires 1.13.1, so there is no older Obsidian to keep the old path
+ * for.
+ *
+ * It also removes the one piece of manual bookkeeping the old tab had: showing
+ * the Amap key only under the Amap provider used to mean re-running `display()`
+ * from inside a dropdown's own handler. Now the row states when it is `visible`
+ * and `update()` re-asks.
+ */
 export class AdvancedMapsSettingTab extends PluginSettingTab {
 	constructor(
 		app: App,
@@ -87,182 +105,201 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		super(app, plugin);
 	}
 
-	/** Heading, then the one line under it that says what the group is for. */
-	private group(key: 'coord' | 'open' | 'search' | 'locate' | 'tracks'): void {
-		new Setting(this.containerEl).setName(t(`settings.${key}.heading`)).setHeading();
-		this.containerEl.createEl('p', { cls: 'setting-item-description', text: t(`settings.${key}.intro`) });
-	}
-
-	private row(name: TranslationKey, desc?: TranslationKey, vars?: Record<string, string>): Setting {
-		const setting = new Setting(this.containerEl).setName(t(name));
-		return desc ? setting.setDesc(t(desc, vars)) : setting;
-	}
-
 	/**
-	 * A text setting. `fallback` is what a cleared field means: blank where the
-	 * empty string is itself an answer, the default where it is not.
+	 * A heading, and under it the one line saying what the group is for.
+	 *
+	 * The line is a nameless `render` item — the shape Obsidian's own settings
+	 * use for prose, and the only one that works: a definition with neither a
+	 * control nor a `render` is dropped before it reaches the DOM, so the same
+	 * row written as `{ name: '', desc }` renders nothing at all. Measured, not
+	 * assumed. `searchable: false` because it is context, not a setting to find.
 	 */
+	private group(key: 'coord' | 'open' | 'search' | 'locate' | 'tracks', items: SettingDefinition<Key>[]) {
+		const intro = t(`settings.${key}.intro`);
+		return {
+			type: 'group' as const,
+			heading: t(`settings.${key}.heading`),
+			items: [
+				{
+					name: '',
+					searchable: false,
+					render: (setting: Setting) => {
+						setting.settingEl.empty();
+						setting.settingEl.addClass('advanced-maps-intro');
+						setting.settingEl.createEl('p', { cls: 'setting-item-description', text: intro });
+					},
+				},
+				...items,
+			],
+		};
+	}
+
 	private text(
-		setting: Setting,
-		key:
-			| 'menuLabel'
-			| 'basePath'
-			| 'viewName'
-			| 'aroundViewName'
-			| 'coordsProperty'
-			| 'autoFillExclude'
-			| 'trackColor'
-			| 'amapKey',
-		opts: { placeholder?: string; fallback?: string } = {}
-	): void {
-		setting.addText((text) =>
-			text
-				.setPlaceholder(opts.placeholder ?? '')
-				.setValue(this.plugin.settings[key])
-				.onChange(async (value) => {
-					this.plugin.settings[key] = value.trim() || opts.fallback || '';
-					await this.plugin.saveSettings();
-				})
-		);
+		name: TranslationKey,
+		desc: TranslationKey | undefined,
+		key: Key,
+		opts: { placeholder?: string; vars?: Record<string, string> } = {}
+	): SettingDefinition<Key> {
+		return {
+			name: t(name),
+			desc: desc ? t(desc, opts.vars) : undefined,
+			control: { type: 'text', key, placeholder: opts.placeholder },
+		};
 	}
 
 	private slider(
-		setting: Setting,
-		key: 'openZoom' | 'trackWeight' | 'trackOpacity' | 'fitMaxZoom' | 'embedHeight',
+		name: TranslationKey,
+		desc: TranslationKey | undefined,
+		key: Key,
 		min: number,
 		max: number,
 		step: number
-	): void {
-		setting.addSlider((slider) =>
-			slider
-				.setLimits(min, max, step)
-				.setValue(this.plugin.settings[key])
-				.setDynamicTooltip()
-				.onChange(async (value) => {
-					this.plugin.settings[key] = value;
-					await this.plugin.saveSettings();
-				})
-		);
+	): SettingDefinition<Key> {
+		return {
+			name: t(name),
+			desc: desc ? t(desc) : undefined,
+			control: { type: 'slider', key, min, max, step },
+		};
 	}
 
 	private toggle(
-		setting: Setting,
-		key: 'locate' | 'autoFillCoords' | 'trackStats' | 'elevationProfile',
-		after?: () => void
-	): void {
-		setting.addToggle((toggle) =>
-			toggle.setValue(this.plugin.settings[key]).onChange(async (value) => {
-				this.plugin.settings[key] = value;
-				await this.plugin.saveSettings();
-				after?.();
-			})
-		);
+		name: TranslationKey,
+		desc: TranslationKey,
+		key: Key,
+		vars?: Record<string, string>
+	): SettingDefinition<Key> {
+		return { name: t(name), desc: t(desc, vars), control: { type: 'toggle', key } };
 	}
 
-	override display(): void {
-		this.containerEl.empty();
+	override getSettingDefinitions(): SettingDefinitionItem<Key>[] {
+		const coordModes: Record<string, string> = {};
+		for (const mode of COORD_MODES) coordModes[mode] = t(`coord.${mode}`);
+		const providers: Record<string, string> = {};
+		for (const provider of GEOCODE_PROVIDERS) providers[provider] = t(`search.provider.${provider}`);
 
-		/* ---- coordinate system ---- */
+		return [
+			this.group('coord', [
+				{
+					name: t('settings.coord.default.name'),
+					desc: t('settings.coord.default.desc'),
+					control: { type: 'dropdown', key: 'coordSystem', options: coordModes },
+				},
+			]),
 
-		this.group('coord');
-		this.row('settings.coord.default.name', 'settings.coord.default.desc').addDropdown((d) => {
-			for (const mode of COORD_MODES) d.addOption(mode, t(`coord.${mode}`));
-			d.setValue(knownMode(this.plugin.settings.coordSystem) ?? 'auto').onChange(async (value) => {
-				this.plugin.settings.coordSystem = knownMode(value) ?? 'auto';
-				await this.plugin.saveSettings();
-				this.plugin.reprojectAll();
-			});
-		});
+			this.group('open', [
+				this.text('settings.open.basePath.name', 'settings.open.basePath.desc', 'basePath', {
+					placeholder: BASE_PATH_PLACEHOLDER,
+				}),
+				this.text('settings.open.viewName.name', 'settings.open.viewName.desc', 'viewName'),
+				this.text('settings.open.coordsProperty.name', 'settings.open.coordsProperty.desc', 'coordsProperty', {
+					placeholder: DEFAULT_SETTINGS.coordsProperty,
+				}),
+				this.slider('settings.open.zoom.name', undefined, 'openZoom', 1, 18, 1),
+				this.text('settings.open.aroundView.name', 'settings.open.aroundView.desc', 'aroundViewName', {
+					placeholder: t('view.around'),
+				}),
+				// The only cosmetic field in the group, so it comes last.
+				this.text('settings.open.label.name', 'settings.open.label.desc', 'menuLabel', {
+					placeholder: t('command.openInMap'),
+				}),
+			]),
 
-		/* ---- open in map ---- */
+			this.group('search', [
+				{
+					name: t('settings.search.provider.name'),
+					desc: t('settings.search.provider.desc'),
+					control: { type: 'dropdown', key: 'geocodeProvider', options: providers },
+				},
+				{
+					name: t('settings.search.amapKey.name'),
+					desc: t('settings.search.amapKey.desc'),
+					// Only shown for the provider that needs it: an empty box under a
+					// provider that ignores it reads as something left unconfigured.
+					visible: () => this.plugin.settings.geocodeProvider === 'amap',
+					control: { type: 'text', key: 'amapKey' },
+				},
+			]),
 
-		this.group('open');
-		this.text(this.row('settings.open.basePath.name', 'settings.open.basePath.desc'), 'basePath', {
-			placeholder: BASE_PATH_PLACEHOLDER,
-		});
-		this.text(this.row('settings.open.viewName.name', 'settings.open.viewName.desc'), 'viewName');
-		this.text(
-			this.row('settings.open.coordsProperty.name', 'settings.open.coordsProperty.desc'),
-			'coordsProperty',
-			{ placeholder: DEFAULT_SETTINGS.coordsProperty, fallback: DEFAULT_SETTINGS.coordsProperty }
-		);
-		this.slider(this.row('settings.open.zoom.name'), 'openZoom', 1, 18, 1);
-		this.text(this.row('settings.open.aroundView.name', 'settings.open.aroundView.desc'), 'aroundViewName', {
-			placeholder: t('view.around'),
-		});
-		// The only cosmetic field in the group, so it comes last.
-		this.text(this.row('settings.open.label.name', 'settings.open.label.desc'), 'menuLabel', {
-			placeholder: t('command.openInMap'),
-		});
+			this.group('locate', [
+				this.toggle('settings.locate.enable.name', 'settings.locate.enable.desc', 'locate'),
+				this.toggle('settings.locate.auto.name', 'settings.locate.auto.desc', 'autoFillCoords', {
+					property: this.plugin.settings.coordsProperty,
+				}),
+				this.text('settings.locate.exclude.name', 'settings.locate.exclude.desc', 'autoFillExclude', {
+					placeholder: DEFAULT_SETTINGS.autoFillExclude,
+				}),
+			]),
 
-		/* ---- place search ---- */
+			this.group('tracks', [
+				this.text('settings.tracks.color.name', 'settings.tracks.color.desc', 'trackColor', {
+					placeholder: DEFAULT_SETTINGS.trackColor,
+				}),
+				this.slider('settings.tracks.weight.name', undefined, 'trackWeight', 1, 12, 1),
+				this.slider('settings.tracks.opacity.name', undefined, 'trackOpacity', 10, 100, 5),
+				this.slider(
+					'settings.tracks.fitMaxZoom.name',
+					'settings.tracks.fitMaxZoom.desc',
+					'fitMaxZoom',
+					1,
+					20,
+					1
+				),
+				this.slider(
+					'settings.tracks.embedHeight.name',
+					'settings.tracks.embedHeight.desc',
+					'embedHeight',
+					160,
+					800,
+					20
+				),
+				this.toggle('settings.tracks.stats.name', 'settings.tracks.stats.desc', 'trackStats'),
+				this.toggle('settings.tracks.profile.name', 'settings.tracks.profile.desc', 'elevationProfile'),
+			]),
+		];
+	}
 
-		this.group('search');
-		this.row('settings.search.provider.name', 'settings.search.provider.desc').addDropdown((d) => {
-			for (const provider of GEOCODE_PROVIDERS) d.addOption(provider, t(`search.provider.${provider}`));
-			d.setValue(this.plugin.settings.geocodeProvider).onChange(async (value) => {
-				this.plugin.settings.geocodeProvider = (GEOCODE_PROVIDERS as readonly string[]).includes(value)
-					? (value as GeocodeProvider)
-					: 'nominatim';
-				await this.plugin.saveSettings();
-				this.display();
-			});
-		});
-		// Only shown for the provider that needs it: an empty box under a provider
-		// that ignores it reads as something left unconfigured.
-		if (this.plugin.settings.geocodeProvider === 'amap') {
-			this.text(this.row('settings.search.amapKey.name', 'settings.search.amapKey.desc'), 'amapKey');
+	/**
+	 * Where a cleared field lands, and what has to happen elsewhere once a value
+	 * changes.
+	 *
+	 * Blank is meaningful for four keys and only two of them mean "the default":
+	 * `menuLabel`, `aroundViewName` and `viewName` all use their own emptiness as
+	 * an answer, so they are stored empty and resolved at the point of use.
+	 */
+	override async setControlValue(key: string, value: unknown): Promise<void> {
+		let next = value;
+		if (typeof next === 'string') {
+			next = next.trim();
+			if (next === '' && (key === 'coordsProperty' || key === 'trackColor')) {
+				next = DEFAULT_SETTINGS[key];
+			}
 		}
+		// The two dropdowns only ever offer valid options, but the value still
+		// gets checked on its way in: what reaches here is a string, and a stored
+		// setting outlives the version of the plugin that wrote it.
+		if (key === 'coordSystem') next = knownMode(next) ?? DEFAULT_SETTINGS.coordSystem;
+		if (key === 'geocodeProvider' && !(GEOCODE_PROVIDERS as readonly unknown[]).includes(next)) {
+			next = DEFAULT_SETTINGS.geocodeProvider;
+		}
+		await super.setControlValue(key, next);
 
-		/* ---- location ---- */
-
-		this.group('locate');
-		// The command is registered for good at load; turning this on mid-session
-		// should not need a reload to take effect, and the checkCallback reads the
-		// flag every time the palette opens.
-		this.toggle(this.row('settings.locate.enable.name', 'settings.locate.enable.desc'), 'locate', () =>
-			this.plugin.resetLocator()
-		);
-		this.toggle(
-			this.row('settings.locate.auto.name', 'settings.locate.auto.desc', {
-				property: this.plugin.settings.coordsProperty,
-			}),
-			'autoFillCoords'
-		);
-		this.text(this.row('settings.locate.exclude.name', 'settings.locate.exclude.desc'), 'autoFillExclude', {
-			placeholder: DEFAULT_SETTINGS.autoFillExclude,
-		});
-
-		/* ---- tracks ---- */
-
-		this.group('tracks');
-		this.text(this.row('settings.tracks.color.name', 'settings.tracks.color.desc'), 'trackColor', {
-			placeholder: DEFAULT_SETTINGS.trackColor,
-			fallback: DEFAULT_SETTINGS.trackColor,
-		});
-		this.slider(this.row('settings.tracks.weight.name'), 'trackWeight', 1, 12, 1);
-		this.slider(this.row('settings.tracks.opacity.name'), 'trackOpacity', 10, 100, 5);
-		this.slider(
-			this.row('settings.tracks.fitMaxZoom.name', 'settings.tracks.fitMaxZoom.desc'),
-			'fitMaxZoom',
-			1,
-			20,
-			1
-		);
-		this.slider(
-			this.row('settings.tracks.embedHeight.name', 'settings.tracks.embedHeight.desc'),
-			'embedHeight',
-			160,
-			800,
-			20
-		);
-		// Both re-render the open embeds rather than waiting for a reload: the
-		// point of a toggle you can see the result of is seeing the result.
-		this.toggle(this.row('settings.tracks.stats.name', 'settings.tracks.stats.desc'), 'trackStats', () =>
-			this.plugin.refreshTracks()
-		);
-		this.toggle(this.row('settings.tracks.profile.name', 'settings.tracks.profile.desc'), 'elevationProfile', () =>
-			this.plugin.refreshTracks()
-		);
+		switch (key) {
+			case 'coordSystem':
+				this.plugin.reprojectAll();
+				break;
+			case 'geocodeProvider':
+				// The Amap key row states when it is visible; this is what re-asks.
+				this.update();
+				break;
+			case 'locate':
+				// Turning it on is a fresh statement of intent; forget any refusal.
+				this.plugin.resetLocator();
+				break;
+			case 'trackStats':
+			case 'elevationProfile':
+				// The point of a toggle you can see the result of is seeing the result.
+				this.plugin.refreshTracks();
+				break;
+		}
 	}
 }

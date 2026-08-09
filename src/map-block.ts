@@ -96,7 +96,7 @@ export function findView(base: BaseSpec, name: string): BaseView | undefined {
 function narrow(existing: unknown, filter: unknown): { and: unknown[] } {
 	if (existing === undefined || existing === null || existing === '') return { and: [filter] };
 	const and = (existing as { and?: unknown }).and;
-	if (Array.isArray(and)) return { and: [...and, filter] };
+	if (Array.isArray(and)) return { and: [...(and as unknown[]), filter] };
 	return { and: [existing, filter] };
 }
 

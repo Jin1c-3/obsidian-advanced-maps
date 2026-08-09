@@ -10,6 +10,10 @@ on:
 
 permissions:
   contents: write
+  # Both are for the build provenance below: `id-token` to get the OIDC token
+  # that proves which workflow ran, `attestations` to record the result.
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -39,6 +43,18 @@ jobs:
 
       - name: Bundle loads the way Obsidian loads it
         run: node .github/scripts/smoke-bundle.mjs
+
+      # Signs a statement that these exact bytes came out of this workflow, from
+      # this commit. `gh attestation verify main.js --repo …` checks it, which is
+      # what turns "the source is on GitHub" into something a reader can confirm
+      # about the file they actually downloaded.
+      - name: Attest the release assets
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - name: Publish
         env:

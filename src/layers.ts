@@ -55,12 +55,15 @@ export function guardLocateControl(map: MapLibreMap, system: () => CoordSystem):
 	);
 	if (!control) return null;
 
-	const native = control.updatePosition;
+	// Bound now rather than `.call`-ed later: the native control reads its own
+	// state out of `this`, and a bare reference to the method is a `this`-less
+	// function the moment it leaves the object.
+	const native = control.updatePosition.bind(control);
 	let lastFix: [number, number] | null = null;
 	control.updatePosition = (lat: number, lng: number) => {
 		lastFix = [lat, lng];
 		const [tileLng, tileLat] = toTileSpace(system(), lng, lat);
-		native.call(control, tileLat, tileLng);
+		native(tileLat, tileLng);
 	};
 
 	return {
@@ -117,7 +120,7 @@ export function removeTrackLayers(map: MapLibreMap): void {
 	try {
 		for (const id of [LINE_LAYER, POINT_LAYER]) if (map.getLayer(id)) map.removeLayer(id);
 		if (map.getSource(SRC)) map.removeSource(SRC);
-	} catch (e) {
+	} catch {
 		/* style already torn down */
 	}
 }

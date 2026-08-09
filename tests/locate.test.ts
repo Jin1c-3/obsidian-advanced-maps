@@ -75,7 +75,7 @@ describe('errorKey', () => {
 		expect(errorKey(DENIED as GeolocationPositionError)).toBe('notice.locate.denied');
 		expect(errorKey(UNAVAILABLE as GeolocationPositionError)).toBe('notice.locate.unavailable');
 		expect(errorKey(TIMEOUT as GeolocationPositionError)).toBe('notice.locate.timeout');
-		expect(errorKey({ code: 99 } as GeolocationPositionError)).toBe('notice.locate.failed');
+		expect(errorKey({ code: 99 })).toBe('notice.locate.failed');
 	});
 });
 

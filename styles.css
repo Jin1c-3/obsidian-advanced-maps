@@ -161,3 +161,17 @@
 	color: var(--text-normal);
 	user-select: text;
 }
+
+/* The one line under each settings heading. A `render` definition arrives as an
+ * ordinary setting row, so the row's own padding and flex layout are cleared and
+ * the paragraph left to sit on its own — the same shape the tab had when it drew
+ * itself. */
+.advanced-maps-intro {
+	display: block;
+	padding-top: 0;
+	border-top: none;
+}
+
+.advanced-maps-intro p {
+	margin: 0;
+}

@@ -64,7 +64,7 @@ function canNestMenus(): boolean {
 			new Menu().addItem((item) => {
 				nestedMenus = typeof item.setSubmenu === 'function';
 			});
-		} catch (e) {
+		} catch {
 			/* flat items work everywhere; that is the fallback */
 		}
 	}
@@ -279,7 +279,7 @@ export class TrackLayer {
 		try {
 			// The same pixel showMapContextMenu itself reads the click from.
 			lngLat = map.unproject([ev.offsetX, ev.offsetY]);
-		} catch (e) {
+		} catch {
 			return;
 		}
 		// By the time this runs, map.unproject is back to its native, tile-space
@@ -332,7 +332,7 @@ export class TrackLayer {
 		if (this.fitControl && view.map) {
 			try {
 				view.map.removeControl(this.fitControl);
-			} catch (e) {
+			} catch {
 				/* map already gone */
 			}
 		}
@@ -430,7 +430,7 @@ export class TrackLayer {
 		let raw: unknown;
 		try {
 			raw = view.config ? view.config.get('coordSystem') : undefined;
-		} catch (e) {
+		} catch {
 			/* stub config */
 		}
 		const mode = knownMode(raw) ?? knownMode(this.plugin.settings.coordSystem) ?? 'auto';
@@ -440,7 +440,7 @@ export class TrackLayer {
 	private resolve(color: string): string {
 		try {
 			return this.view.markerManager.resolveColor(color);
-		} catch (e) {
+		} catch {
 			return color;
 		}
 	}
@@ -481,7 +481,7 @@ export class TrackLayer {
 		let raw: string | null | undefined = null;
 		try {
 			raw = this.view.markerManager.getCustomColor(entry, this.view.mapConfig);
-		} catch (e) {
+		} catch {
 			/* no colour property configured */
 		}
 		// MapLibre paint properties want a real colour, not `var(--x)`.
@@ -591,7 +591,7 @@ export class TrackLayer {
 		const item = this.itemFrom(ev);
 		if (!item) return;
 		const mod = ev.originalEvent ? Keymap.isModEvent(ev.originalEvent) : false;
-		this.view.app.workspace.openLinkText(item.file.path, '', mod);
+		void this.view.app.workspace.openLinkText(item.file.path, '', mod);
 	}
 
 	/** Reuse the built-in popup, so a track hover reads like its marker hover. */
@@ -603,9 +603,8 @@ export class TrackLayer {
 		// Under the cursor is where this one belongs, and the cursor is already in
 		// tile space — so go straight to the native method, past the wrapper that
 		// exists to move the pins' own WGS-84 anchors.
-		const show = this.origShowPopup ?? view.popupManager.showPopup;
-		show.call(
-			view.popupManager,
+		const show = (this.origShowPopup ?? view.popupManager.showPopup).bind(view.popupManager);
+		show(
 			item.entry,
 			[ev.lngLat.lat, ev.lngLat.lng],
 			view.data.properties,

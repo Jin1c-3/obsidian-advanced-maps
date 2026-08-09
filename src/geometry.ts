@@ -65,7 +65,7 @@ export function styleReady(map: MapLibreMap, timeout = 5000): Promise<void> {
 				map.off('styledata', check);
 				map.off('style.load', check);
 				map.off('load', check);
-			} catch (e) {
+			} catch {
 				/* map already removed */
 			}
 			resolve();

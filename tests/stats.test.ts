@@ -505,7 +505,7 @@ describe('elevationProfile', () => {
 		const profile = elevationProfile([line(coords)], 100);
 		expect(profile.length).toBeLessThanOrEqual(100);
 		expect(profile[0]).toEqual({ d: 0, ele: 0 });
-		expect(profile[profile.length - 1]).toEqual({ d: expect.any(Number), ele: 999 });
+		expect(profile[profile.length - 1]).toEqual({ d: expect.any(Number) as number, ele: 999 });
 	});
 
 	it('uses the default sample cap when none is given', () => {
@@ -530,7 +530,7 @@ describe('elevationProfile', () => {
 	it('handles a degenerate sample cap of 1 by returning just the last point', () => {
 		const coords: number[][] = [];
 		for (let i = 0; i < 50; i++) coords.push([0, i * 0.0001, i]);
-		expect(elevationProfile([line(coords)], 1)).toEqual([{ d: expect.any(Number), ele: 49 }]);
+		expect(elevationProfile([line(coords)], 1)).toEqual([{ d: expect.any(Number) as number, ele: 49 }]);
 	});
 
 	it('skips positions with no elevation but keeps their distance folded into the next known point', () => {

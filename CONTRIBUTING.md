@@ -21,11 +21,19 @@ installed; there is nothing for this plugin to extend otherwise.
 npm run check     # prettier, eslint, tsc, vitest — the same set CI runs
 ```
 
+`eslint` here is type-aware and includes `eslint-plugin-obsidianmd`, which is the
+same pair the community-plugin scorecard scans releases with. It is stricter than
+the usual plugin setup on purpose: the alternative is reading about a finding on
+a web page after the release rather than in the terminal before it.
+
 ## What the tests cover, and what they cannot
 
-`src/coords.ts`, `src/parse.ts`, `src/geometry.ts`, `src/view-options.ts` and
-`src/i18n.ts` run outside Obsidian and are held above 90 % coverage. Anything
-touching the coordinate maths or a parser needs a test in the same PR.
+`src/coords.ts`, `src/parse.ts`, `src/stats.ts`, `src/maplinks.ts`,
+`src/geometry.ts`, `src/view-options.ts`, `src/map-block.ts`, `src/geolink.ts`,
+`src/geocode.ts`, `src/locate.ts` and `src/i18n.ts` run outside Obsidian and are
+held above 90 % coverage — the list lives in `vitest.config.ts`. Anything
+touching the coordinate maths, a parser, the statistics or the locator needs a
+test in the same PR.
 
 The view wrappers cannot be tested here — they need a live Bases map. Try them
 in a real vault and say in the PR what you tried.

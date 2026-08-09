@@ -120,7 +120,7 @@ export function setIcon(_el: HTMLElement, _icon: string): void {}
 export function getLanguage(): string {
 	try {
 		return window.localStorage.getItem('language') || '';
-	} catch (e) {
+	} catch {
 		return '';
 	}
 }

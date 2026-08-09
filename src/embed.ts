@@ -303,7 +303,7 @@ export class TrackEmbed extends Component {
 		if (this.view) {
 			try {
 				this.view.destroyMap();
-			} catch (e) {
+			} catch {
 				/* never got that far */
 			}
 			this.view.containerEl?.detach();
@@ -360,9 +360,7 @@ function statsFields(stats: TrackStats): Array<{ title: string; text: string }> 
 	return fields;
 }
 
-/** A namespaced element `createDiv`/`createSpan` cannot make — Obsidian's DOM helpers only cover the HTML namespace. */
+/** Obsidian's own helper for the SVG namespace — the `createEl` family covers it too. */
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string>): SVGElementTagNameMap[K] {
-	const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
-	for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
-	return el;
+	return createSvg(tag, { attr: attrs });
 }

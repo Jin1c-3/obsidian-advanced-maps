@@ -294,14 +294,25 @@ export function parseKml(text: string): ParsedTrack {
 	return { features };
 }
 
+/** What `JSON.parse` may hand back before anything has been checked about it. */
+type LooseGeoJson = { type?: unknown; features?: unknown; geometry?: unknown };
+
 export function parseGeoJson(text: string): ParsedTrack {
-	const data = JSON.parse(text);
+	// `unknown`, not the `any` JSON.parse is typed to return: this reads a file
+	// off disk that nothing has validated, so every field is a claim until it has
+	// been checked. `features` in particular arrives as whatever was in the file —
+	// `.filter` on a string would throw where an empty list is the honest answer.
+	const data: unknown = JSON.parse(text);
 	if (!data || typeof data !== 'object') throw new Error('not a GeoJSON object');
-	if (data.type === 'FeatureCollection') {
-		return { features: (data.features ?? []).filter((f: Feature | null) => f && f.geometry) };
+	const doc = data as LooseGeoJson;
+	if (doc.type === 'FeatureCollection') {
+		const features = Array.isArray(doc.features) ? (doc.features as ParsedTrack['features']) : [];
+		return { features: features.filter((f) => f && f.geometry) };
 	}
-	if (data.type === 'Feature') return { features: data.geometry ? [data] : [] };
-	if (data.type) return { features: [{ type: 'Feature', properties: null, geometry: data }] };
+	if (doc.type === 'Feature') {
+		return { features: doc.geometry ? [data as ParsedTrack['features'][number]] : [] };
+	}
+	if (doc.type) return { features: [{ type: 'Feature', properties: null, geometry: data as Geometry }] };
 	throw new Error('not a GeoJSON object');
 }
 

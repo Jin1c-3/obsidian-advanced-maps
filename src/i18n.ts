@@ -349,7 +349,7 @@ export function detectLocale(): Locale {
 	let tag = '';
 	try {
 		tag = getLanguage() || '';
-	} catch (e) {
+	} catch {
 		/* not running inside Obsidian */
 	}
 	return tag.toLowerCase().startsWith('zh') ? 'zh' : 'en';

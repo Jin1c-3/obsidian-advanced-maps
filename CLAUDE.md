@@ -666,6 +666,63 @@ control's shape is pinned by reading `obsidian-maps/src/map/controls/`.
 
 Say in the PR what was tried and what the numbers were.
 
+## Linting, and the community scorecard
+
+`community.obsidian.md/plugins/advanced-maps` runs its own scans on each release
+and publishes the findings. They are worth reading, but they are not worth
+finding out about **from a web page after a release** — so the repo lints with
+the same two things the scorecard does, and `npm run lint` fails on what it would
+have reported:
+
+- **`typescript-eslint`'s type-checked rules**, not just the syntactic ones. That
+  is what catches `any` escaping `JSON.parse` and the undeclared internals into
+  code that then reads properties off it, and it needs `projectService: true`.
+- **`eslint-plugin-obsidianmd`**, which knows the things only Obsidian knows:
+  `createEl` over `document.createElement`, `instanceof TFile` over a cast,
+  deprecated settings API.
+
+Both are scoped to plugin code. Build scripts under `.github/` and
+`esbuild.config.mjs` are Node by definition and print as they work, so
+`no-nodejs-modules` and the `no-console` message are off there; the stub in
+`tests/` exists to _provide_ `createDiv`, so it cannot be written with it.
+
+The first run of this turned up 44 findings, and one was a real bug rather than a
+style point: `vault.process` was called without `await` inside a `try`/`catch`,
+so a failed write to the base file rejected into nothing and the notice that
+exists to report it could never fire.
+
+Release assets carry **GitHub build provenance** (`actions/attest-build-provenance`),
+so `gh attestation verify main.js --repo Jin1c-3/obsidian-advanced-maps` ties the
+downloaded bytes to the workflow run and commit that produced them. That needs
+`id-token: write` and `attestations: write` on the release job.
+
+### The settings tab is declared, not drawn
+
+`getSettingDefinitions()` rather than `display()`. Obsidian 1.13 indexes what it
+renders from definitions, so every setting is reachable from the search box at
+the top of the settings window; a tab that paints itself is invisible to it. The
+plugin already requires 1.13.1, so there was no older path to keep.
+
+Three things were measured rather than assumed, because none are in the docs:
+
+- **A definition with neither a `control` nor a `render` never reaches the DOM.**
+  The one-line intro under each heading was written as `{ name: '', desc }` first
+  and rendered nothing at all. Obsidian's own keychain tab does prose as
+  `{ name: '', render(setting) { … } }`; so does this.
+- **`visible` works, including on first paint.** It resolves through the same
+  helper on render and on `refreshDomState`, and a false one leaves the row in
+  the DOM with `display: none` — which is why "the row is in
+  `querySelectorAll('.setting-item')`" proves nothing. Filter on computed style.
+- **Re-opening the tab without closing the window leaves the previous render in
+  the DOM.** A stale copy of a row is why the Amap key looked visible when it was
+  not. Measure from a closed settings window.
+
+`setControlValue` is the one seam for everything that used to live in an
+`onChange`: it trims, applies the two fallbacks that a cleared field has, checks
+the two dropdown values against their own lists, and then does the side effects —
+`reprojectAll`, `resetLocator`, `refreshTracks`, and `update()` for the Amap key
+row that states its own visibility.
+
 ## Translations
 
 `src/i18n.ts` holds one flat table per language. English is the source of truth

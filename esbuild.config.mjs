@@ -1,5 +1,7 @@
 import esbuild from 'esbuild';
-import builtins from 'builtin-modules';
+// Node's own list, rather than the `builtin-modules` package that used to be in
+// every Obsidian plugin template: one fewer dependency to have, and to explain.
+import { builtinModules as builtins } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';

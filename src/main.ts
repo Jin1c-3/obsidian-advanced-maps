@@ -293,7 +293,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 			checkCallback: (checking) => {
 				const file = this.app.workspace.getActiveFile();
 				if (!this.hasCoords(file)) return false;
-				if (!checking) void this.openMapForFile(file as TFile);
+				if (!checking) void this.openMapForFile(file);
 				return true;
 			},
 		});
@@ -307,7 +307,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 					item
 						.setTitle(this.menuLabel())
 						.setIcon('map-pin')
-						.onClick(() => void this.openMapForFile(file as TFile))
+						.onClick(() => void this.openMapForFile(file))
 				);
 			})
 		);
@@ -315,14 +315,23 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	private readCoords(file: TAbstractFile | null): { raw: unknown; frontmatter: Record<string, unknown> } | null {
 		if (!(file instanceof TFile) || file.extension !== 'md') return null;
-		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		// FrontMatterCache is `any` by declaration; narrowed here so everything
+		// downstream reads a property off something with a stated shape.
+		const frontmatter: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(file)?.frontmatter;
 		if (!frontmatter) return null;
 		const raw = frontmatter[this.settings.coordsProperty];
-		if (raw === undefined || raw === null || String(raw).trim() === '') return null;
+		// Each kind of empty stated on its own rather than inferred from
+		// `String(raw).trim()`: that turned any object into a non-empty
+		// "[object Object]", and only caught the empty list by the accident of
+		// `String([])` being "".
+		if (raw === undefined || raw === null) return null;
+		if (typeof raw === 'string' && raw.trim() === '') return null;
+		if (Array.isArray(raw) && raw.length === 0) return null;
 		return { raw, frontmatter };
 	}
 
-	private hasCoords(file: TAbstractFile | null): boolean {
+	/** A type predicate, so the callers that already checked need no cast afterwards. */
+	private hasCoords(file: TAbstractFile | null): file is TFile {
 		return this.readCoords(file) !== null;
 	}
 
@@ -388,8 +397,13 @@ export default class AdvancedMapsPlugin extends Plugin {
 		});
 
 		// Obsidian's own parser, so `aliases: a, b` reads the way it does elsewhere.
-		const label = parseFrontMatterAliases(found.frontmatter)?.[0] || found.frontmatter.place || file.basename;
-		new MapModal(this.app, file, spec, `${String(label)} · ${coords}`).open();
+		// `place` is whatever the note put there, so it only gets to be the label
+		// when it is something a reader would recognise as one.
+		const place = found.frontmatter.place;
+		const label =
+			parseFrontMatterAliases(found.frontmatter)?.[0] ??
+			(typeof place === 'string' || typeof place === 'number' ? String(place) : file.basename);
+		new MapModal(this.app, file, spec, `${label} · ${coords}`).open();
 	}
 
 	/* ---- a map of the notes around this one ---- */
@@ -468,7 +482,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 		if (findView(loaded.base, name)) return true;
 		const filter = pointerFilter(this.settings.coordsProperty);
 		try {
-			this.app.vault.process(loaded.file, (data) => {
+			// Awaited, so the catch below can actually see a failed write. Left
+			// floating, the rejection escaped as an unhandled promise and the
+			// notice this try/catch exists to show never appeared.
+			await this.app.vault.process(loaded.file, (data) => {
 				const fresh = (parseYaml(data) as BaseSpec) ?? {};
 				const source = pickMapView(fresh, this.settings.viewName) ?? loaded.view;
 				const next = withAroundView(fresh, source, name, filter);
@@ -543,7 +560,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	/** The one place a coordinate reaches disk from a deliberate command. */
 	private async writeCoords(file: TFile, coords: string): Promise<void> {
-		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
 			frontmatter[this.settings.coordsProperty] = coords;
 		});
 	}
@@ -602,7 +619,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 			return;
 		}
 		const coords = formatFix(fix);
-		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
 			frontmatter[this.settings.coordsProperty] = coords;
 		});
 		new Notice(t('notice.locate.done', { property: this.settings.coordsProperty, coords }));
@@ -633,7 +650,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		try {
 			const fix = await this.locator.locate();
 			if (!fix) return;
-			await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+			await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
 				// Seconds have passed waiting for the fix. The blank may have been
 				// filled in by hand since, or the property dropped altogether.
 				if (!Object.prototype.hasOwnProperty.call(frontmatter, key)) return;
@@ -650,7 +667,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 	/* ---- settings ---- */
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		// loadData() is `any` — whatever the last version of this plugin wrote, on
+		// disk since. The defaults underneath it are what make the result whole.
+		const saved = (await this.loadData()) as Partial<AdvancedMapsSettings> | null;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
 	}
 
 	async saveSettings(): Promise<void> {
