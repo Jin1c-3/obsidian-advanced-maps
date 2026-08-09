@@ -49,7 +49,7 @@ jobs:
       # what turns "the source is on GitHub" into something a reader can confirm
       # about the file they actually downloaded.
       - name: Attest the release assets
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             main.js
