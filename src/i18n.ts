@@ -52,6 +52,51 @@ const en = {
 	/* ---- commands ---- */
 	'command.openInMap': 'Open in map',
 	'command.fillCoords': 'Fill coordinates from current location',
+	'command.fillFromLink': 'Set coordinates from a map link',
+	'command.searchPlace': 'Search for a place and set coordinates',
+
+	/* ---- "set coordinates from a link" ---- */
+	'link.title': 'Set coordinates from a map link',
+	'link.intro':
+		'Paste a share link from Amap, Baidu, Tencent, Google or Apple Maps — or plain coordinates. Whatever ' +
+		'system it is in, what gets written is WGS-84.',
+	'link.input': 'Link or coordinates',
+	'link.placeholder': 'Paste a link, or 30.260901,120.147030',
+	'link.system': 'Coordinate system',
+	'link.system.detected': 'As detected',
+	'link.confirm': 'Set',
+	'link.waiting': 'Waiting for something to read.',
+	'link.unreadable': 'No coordinate in that. Paste the whole link, or two numbers as "lat,lng".',
+	'link.short': 'That is a shortened {provider} link. Open it once and paste the address it lands on.',
+	'link.found': 'Read as {provider}, {system}.',
+	'link.provider.amap': 'Amap',
+	'link.provider.baidu': 'Baidu',
+	'link.provider.tencent': 'Tencent',
+	'link.provider.google': 'Google Maps',
+	'link.provider.apple': 'Apple Maps',
+	'link.provider.osm': 'OpenStreetMap',
+	'link.provider.geo': 'a geo: URI',
+	'link.provider.dms': 'degrees, minutes, seconds',
+	'link.provider.plain': 'plain coordinates',
+
+	/* ---- place search ---- */
+	'search.placeholder': 'Type a place name…',
+	'search.empty': 'No matches.',
+	'search.provider.nominatim': 'OpenStreetMap (Nominatim) — no key, thin on Chinese POIs',
+	'search.provider.amap': 'Amap 高德 — needs a free web-service key',
+	'notice.search.failed': 'Advanced Maps: the search failed — {reason}',
+	'notice.search.needsKey': 'Advanced Maps: add an Amap web-service key in the plugin settings, or switch provider.',
+
+	/* ---- settings: place search ---- */
+	'settings.search.heading': 'Place search',
+	'settings.search.intro':
+		'Looks a place name up and writes the coordinate it comes back with. This is the only request the plugin ' +
+		'makes on its own behalf — what you type goes to the source below, and nothing else does. A map on screen ' +
+		'still fetches tiles from whichever background it is set to.',
+	'settings.search.provider.name': 'Search provider',
+	'settings.search.provider.desc': 'Amap knows Chinese places far better; OpenStreetMap needs no signing up.',
+	'settings.search.amapKey.name': 'Amap web-service key',
+	'settings.search.amapKey.desc': 'From console.amap.com — a "Web service" key, not a JS API one.',
 
 	/* ---- settings ----
 	 * One line per setting, and one line under each heading. Why a thing works
@@ -155,6 +200,45 @@ const zh: Record<TranslationKey, string> = {
 
 	'command.openInMap': '在地图中打开',
 	'command.fillCoords': '用当前定位填写坐标',
+	'command.fillFromLink': '从地图链接填写坐标',
+	'command.searchPlace': '搜索地点并填写坐标',
+
+	'link.title': '从地图链接填写坐标',
+	'link.intro':
+		'粘贴高德、百度、腾讯、Google 或 Apple 地图的分享链接，或者直接粘坐标。不管原来是哪个坐标系，写进笔记的都是 WGS-84。',
+	'link.input': '链接或坐标',
+	'link.placeholder': '粘贴链接，或 30.260901,120.147030',
+	'link.system': '坐标系',
+	'link.system.detected': '按识别结果',
+	'link.confirm': '填写',
+	'link.waiting': '等待输入。',
+	'link.unreadable': '没认出坐标。把整条链接粘进来，或者直接写「纬度,经度」两个数。',
+	'link.short': '这是{provider}的短链接。先打开一次，再把跳转后的地址粘进来。',
+	'link.found': '识别为{provider}，{system}。',
+	'link.provider.amap': '高德',
+	'link.provider.baidu': '百度',
+	'link.provider.tencent': '腾讯',
+	'link.provider.google': 'Google 地图',
+	'link.provider.apple': 'Apple 地图',
+	'link.provider.osm': 'OpenStreetMap',
+	'link.provider.geo': 'geo: 链接',
+	'link.provider.dms': '度分秒',
+	'link.provider.plain': '纯坐标',
+
+	'search.placeholder': '输入地点名称…',
+	'search.empty': '没有匹配结果。',
+	'search.provider.nominatim': 'OpenStreetMap（Nominatim）—— 不用申请，但国内 POI 很少',
+	'search.provider.amap': '高德 —— 需要免费的 Web 服务 key',
+	'notice.search.failed': 'Advanced Maps：搜索失败 —— {reason}',
+	'notice.search.needsKey': 'Advanced Maps：请在插件设置里填高德 Web 服务 key，或者换一个搜索源。',
+
+	'settings.search.heading': '地点搜索',
+	'settings.search.intro':
+		'搜地名，把查到的坐标写进笔记。这是插件自己发起的唯一一次请求：只有你输入的内容会发给下面选的搜索源，别的都不会。地图本身仍然会向所配置的底图服务请求瓦片。',
+	'settings.search.provider.name': '搜索源',
+	'settings.search.provider.desc': '高德对国内地点熟得多；OpenStreetMap 不用注册。',
+	'settings.search.amapKey.name': '高德 Web 服务 key',
+	'settings.search.amapKey.desc': '在 console.amap.com 申请，要选「Web 服务」类型，不是 JS API。',
 
 	'settings.locate.heading': '定位',
 	'settings.locate.intro': '用设备定位填写笔记的坐标属性。桌面端也可以，只要操作系统能给出位置。',

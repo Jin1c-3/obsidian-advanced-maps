@@ -1,5 +1,6 @@
 import { PluginSettingTab, Setting, type App } from 'obsidian';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
+import { GEOCODE_PROVIDERS, type GeocodeProvider } from './geocode';
 import { t, type TranslationKey } from './i18n';
 import type AdvancedMapsPlugin from './main';
 
@@ -17,6 +18,9 @@ export interface AdvancedMapsSettings {
 	coordsProperty: string;
 	openZoom: number;
 	menuLabel: string;
+	/** Place search — the one feature that leaves the vault. */
+	geocodeProvider: GeocodeProvider;
+	amapKey: string;
 	/** Location — filling `coordsProperty` from the device. */
 	locate: boolean;
 	autoFillCoords: boolean;
@@ -43,6 +47,8 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	coordsProperty: 'coords',
 	openZoom: 15,
 	menuLabel: '',
+	geocodeProvider: 'nominatim',
+	amapKey: '',
 	locate: false,
 	autoFillCoords: true,
 	autoFillExclude: 'templates',
@@ -73,7 +79,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	/** Heading, then the one line under it that says what the group is for. */
-	private group(key: 'coord' | 'open' | 'locate' | 'tracks'): void {
+	private group(key: 'coord' | 'open' | 'search' | 'locate' | 'tracks'): void {
 		new Setting(this.containerEl).setName(t(`settings.${key}.heading`)).setHeading();
 		this.containerEl.createEl('p', { cls: 'setting-item-description', text: t(`settings.${key}.intro`) });
 	}
@@ -89,7 +95,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 */
 	private text(
 		setting: Setting,
-		key: 'menuLabel' | 'basePath' | 'viewName' | 'coordsProperty' | 'autoFillExclude' | 'trackColor',
+		key: 'menuLabel' | 'basePath' | 'viewName' | 'coordsProperty' | 'autoFillExclude' | 'trackColor' | 'amapKey',
 		opts: { placeholder?: string; fallback?: string } = {}
 	): void {
 		setting.addText((text) =>
@@ -164,6 +170,25 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		this.text(this.row('settings.open.label.name', 'settings.open.label.desc'), 'menuLabel', {
 			placeholder: t('command.openInMap'),
 		});
+
+		/* ---- place search ---- */
+
+		this.group('search');
+		this.row('settings.search.provider.name', 'settings.search.provider.desc').addDropdown((d) => {
+			for (const provider of GEOCODE_PROVIDERS) d.addOption(provider, t(`search.provider.${provider}`));
+			d.setValue(this.plugin.settings.geocodeProvider).onChange(async (value) => {
+				this.plugin.settings.geocodeProvider = (GEOCODE_PROVIDERS as readonly string[]).includes(value)
+					? (value as GeocodeProvider)
+					: 'nominatim';
+				await this.plugin.saveSettings();
+				this.display();
+			});
+		});
+		// Only shown for the provider that needs it: an empty box under a provider
+		// that ignores it reads as something left unconfigured.
+		if (this.plugin.settings.geocodeProvider === 'amap') {
+			this.text(this.row('settings.search.amapKey.name', 'settings.search.amapKey.desc'), 'amapKey');
+		}
 
 		/* ---- location ---- */
 

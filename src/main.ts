@@ -25,8 +25,11 @@ import type { TAbstractFile } from 'obsidian';
 import { TRACK_EXTS } from './constants';
 import { TrackEmbed } from './embed';
 import { t } from './i18n';
+import { needsKey } from './geocode';
+import { LinkModal } from './link-modal';
 import { formatFix, isBlank, Locator } from './locate';
 import { MapModal } from './modal';
+import { PlaceSearchModal } from './search-modal';
 import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMapsSettings } from './settings';
 import { TrackCache } from './track-cache';
 import { TrackLayer } from './track-layer';
@@ -78,6 +81,8 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 		this.registerTrackEmbeds();
 		this.registerOpenInMap();
+		this.registerLinkPaste();
+		this.registerPlaceSearch();
 		this.registerLocate();
 		this.addSettingTab(new AdvancedMapsSettingTab(this.app, this));
 
@@ -380,6 +385,67 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// Obsidian's own parser, so `aliases: a, b` reads the way it does elsewhere.
 		const label = parseFrontMatterAliases(found.frontmatter)?.[0] || found.frontmatter.place || file.basename;
 		new MapModal(this.app, file, spec, `${String(label)} · ${coords}`).open();
+	}
+
+	/* ---- coordinates from a link ---- */
+
+	/**
+	 * Deliberately not behind the **Enable location** switch. That setting exists
+	 * because asking the device where it is raises a permission prompt and records
+	 * where each note was written; pasting a link a person already has does
+	 * neither, and gating it there would hide it from everyone who turned the
+	 * device off precisely because they wanted to type locations in by hand.
+	 */
+	private registerLinkPaste(): void {
+		this.addCommand({
+			id: 'coords-from-link',
+			name: t('command.fillFromLink'),
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || file.extension !== 'md') return false;
+				if (!checking) this.openLinkModal(file);
+				return true;
+			},
+		});
+	}
+
+	private openLinkModal(file: TFile): void {
+		new LinkModal(this.app, this.settings.coordsProperty, (coords) => this.writeCoords(file, coords)).open();
+	}
+
+	/* ---- place search ---- */
+
+	private registerPlaceSearch(): void {
+		this.addCommand({
+			id: 'search-place',
+			name: t('command.searchPlace'),
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || file.extension !== 'md') return false;
+				if (!checking) this.openSearchModal(file);
+				return true;
+			},
+		});
+	}
+
+	private openSearchModal(file: TFile): void {
+		const { geocodeProvider, amapKey, coordsProperty } = this.settings;
+		// Said up front rather than as a failed search: an empty result list looks
+		// like "no such place", which is the wrong thing to conclude.
+		if (needsKey(geocodeProvider, amapKey)) {
+			new Notice(t('notice.search.needsKey'));
+			return;
+		}
+		new PlaceSearchModal(this.app, geocodeProvider, amapKey, coordsProperty, (coords) =>
+			this.writeCoords(file, coords)
+		).open();
+	}
+
+	/** The one place a coordinate reaches disk from a deliberate command. */
+	private async writeCoords(file: TFile, coords: string): Promise<void> {
+		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+			frontmatter[this.settings.coordsProperty] = coords;
+		});
 	}
 
 	/* ---- location ---- */

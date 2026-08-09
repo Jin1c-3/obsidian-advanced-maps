@@ -41,6 +41,10 @@ src/
   modal.ts           the "open in map" pop-up
   settings.ts        settings tab and defaults
   locate.ts          device location, and when to stop asking ← tested
+  geolink.ts         coordinates out of a pasted map link ← pure, tested
+  link-modal.ts      the paste box for the above
+  geocode.ts         place search: request building and reading ← pure, tested
+  search-modal.ts    the search box, and the only network call
   coords.ts          GCJ-02 / BD-09 conversion            ← pure, tested
   parse.ts           GPX / GeoJSON readers                ← pure, tested
   geometry.ts        bounds, clamping, the style gate     ← pure, tested
@@ -208,6 +212,64 @@ auto-fit back to the whole data set.
 The ⋮ menu item and the command only appear on markdown notes that actually hold
 the coordinate property. Changing the label updates the ⋮ menu immediately; the
 command palette entry picks up the new name after a plugin reload.
+
+## Coordinates from a map link
+
+`geolink.ts` reads a coordinate out of pasted text; `link-modal.ts` is the box
+you paste into. Both are new seams, and three decisions in them are load-bearing:
+
+- **Per-provider readers, never one clever regex.** 高德 writes `position=lng,lat`
+  and 百度 writes `location=lat,lng`; a single pattern that matched both would
+  swap the axes on one of them and land the pin a province away with nothing on
+  screen to say so. Routing is by hostname first, and only text with no host at
+  all falls through to `geo:` / DMS / bare numbers.
+- **The datum is stated, not inferred, wherever a provider states it.** 百度's
+  `coord_type` is believed when present. Google and Apple say nothing, so
+  `chinaAware()` asks `outOfChina` — both serve GCJ-02 inside China and WGS-84
+  everywhere else.
+- **Short links are recognised and refused.** `surl.amap.com`,
+  `maps.app.goo.gl`, `j.map.baidu.com` carry no coordinate; resolving one means
+  handing a third party the link, which is a different kind of decision from
+  parsing text. `shortLink()` exists so the modal can say what would fix it.
+
+Two traps worth remembering. `Number(q.get('lat'))` is `0`, not `NaN`, when the
+parameter is absent — an absent latitude reads as a perfectly finite equator, and
+the null-island guard then returns null from a branch that should have fallen
+through. Use `numParam()`. And a `geo:` URI whose CRS is not WGS-84 must be
+terminal: fall through and the bare-number reader parses the very same digits and
+relabels them WGS-84.
+
+The command is deliberately **not** behind **Enable location**. That switch is
+about raising a permission prompt and recording where notes were written; pasting
+a link a person already has does neither.
+
+## Place search
+
+`geocode.ts` builds the request and reads the answer; `search-modal.ts` holds the
+one line that goes to the network. Splitting it that way is what lets both
+providers' quirks be tested with no network at all.
+
+- **Two providers, because one will not do.** Nominatim needs no key and is thin
+  on Chinese POIs — it finds 西湖 and not 楼外楼. 高德 needs a free web-service
+  key (the _Web service_ kind, not JS API) and answers in **GCJ-02**, which is
+  stated on the `Place` and converted by coords.ts on the way to the note, the
+  same as a pasted link.
+- **高德 signals failure with HTTP 200.** `status` is `"1"` or `"0"` and a bad
+  key is a perfectly well-formed success, so `parseAmap` checks the status before
+  the array and surfaces `info` verbatim. `address` is documented as a string and
+  arrives as an empty array when there is none.
+- **A SuggestModal fires per keystroke**, which is one request per character —
+  past what Nominatim's policy allows. `QUIET_MS` waits out the typing and a
+  superseded query resolves to nothing; answers are cached for the life of the
+  modal.
+
+**Do not add a `Referer` header.** It looks like ordinary politeness and
+Electron refuses the whole request with `net::ERR_BLOCKED_BY_CLIENT` — which,
+measured through `requestUrl`, is a promise that never settles rather than an
+error. The symptom is a search box that stays empty forever with nothing in the
+console. `User-Agent` alone goes through and is what Nominatim asks for. Verified
+live: with both headers the request hung indefinitely; with User-Agent only it
+returned 200 and ten results.
 
 ## Location
 
