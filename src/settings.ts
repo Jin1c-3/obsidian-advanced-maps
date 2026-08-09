@@ -17,11 +17,20 @@ export interface AdvancedMapsSettings {
 	coordsProperty: string;
 	openZoom: number;
 	menuLabel: string;
+	/** Location — filling `coordsProperty` from the device. */
+	locate: boolean;
+	autoFillCoords: boolean;
+	autoFillExclude: string;
 }
 
 /* Blank is meaningful for three of these: `menuLabel` blank falls back to the
  * localized command name, and `viewName` blank takes the base's first map view.
- * `basePath` blank simply means "Open in map" is not configured yet. */
+ * `basePath` blank simply means "Open in map" is not configured yet.
+ *
+ * `locate` starts off because the first request raises a permission prompt and
+ * because recording where each note was written is a decision, not a default.
+ * `autoFillCoords` starts on: it only matters once `locate` is on, and by then
+ * filling in the blank is the thing that was asked for. */
 export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	coordSystem: 'auto',
 	trackColor: 'var(--bases-map-marker-background)',
@@ -34,7 +43,24 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	coordsProperty: 'coords',
 	openZoom: 15,
 	menuLabel: '',
+	locate: false,
+	autoFillCoords: true,
+	autoFillExclude: 'templates',
 };
+
+/** Path fragments that switch off the automatic fill, as a usable list. */
+export function excludedFragments(setting: string): string[] {
+	return setting
+		.split(',')
+		.map((part) => part.trim().toLowerCase())
+		.filter((part) => part.length > 0);
+}
+
+/** Is this note one the automatic fill should keep its hands off? */
+export function isExcluded(path: string, setting: string): boolean {
+	const lower = path.toLowerCase();
+	return excludedFragments(setting).some((fragment) => lower.includes(fragment));
+}
 
 const BASE_PATH_PLACEHOLDER = 'places.base';
 
@@ -137,6 +163,48 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					await save();
 				})
 		);
+
+		/* ---- location ---- */
+
+		new Setting(containerEl).setName(t('settings.locate.heading')).setHeading();
+		this.intro(t('settings.locate.intro'));
+
+		new Setting(containerEl)
+			.setName(t('settings.locate.enable.name'))
+			.setDesc(t('settings.locate.enable.desc'))
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.locate).onChange(async (value) => {
+					this.plugin.settings.locate = value;
+					await save();
+					// The command is registered for good at load; turning this on
+					// mid-session should not need a reload to take effect, and the
+					// checkCallback reads the flag every time the palette opens.
+					this.plugin.resetLocator();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName(t('settings.locate.auto.name'))
+			.setDesc(t('settings.locate.auto.desc', { property: this.plugin.settings.coordsProperty }))
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.autoFillCoords).onChange(async (value) => {
+					this.plugin.settings.autoFillCoords = value;
+					await save();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName(t('settings.locate.exclude.name'))
+			.setDesc(t('settings.locate.exclude.desc'))
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_SETTINGS.autoFillExclude)
+					.setValue(this.plugin.settings.autoFillExclude)
+					.onChange(async (value) => {
+						this.plugin.settings.autoFillExclude = value.trim();
+						await save();
+					})
+			);
 
 		/* ---- tracks ---- */
 

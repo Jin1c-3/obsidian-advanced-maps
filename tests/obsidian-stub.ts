@@ -77,6 +77,9 @@ export class Setting {
 	addDropdown(): this {
 		return this;
 	}
+	addToggle(): this {
+		return this;
+	}
 }
 
 export class Modal {

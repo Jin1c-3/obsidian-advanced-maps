@@ -6,6 +6,16 @@ where they do not.
 
 ## [Unreleased]
 
+### Added
+
+- Location: a note's coordinate property can be filled from the device's own
+  position. A property that is present but empty — the blank a template leaves —
+  is filled when the note is opened or its properties change; a command fills the
+  active note outright. Unlike the map plugins this one sits beside, neither is
+  restricted to mobile: current Chromium asks the operating system rather than a
+  Google service, so a desktop with its location service on can answer too. A
+  platform that cannot is asked once per session and then left alone.
+
 ## [1.0.0]
 
 First public release. Previously a single hand-written `main.js` living inside

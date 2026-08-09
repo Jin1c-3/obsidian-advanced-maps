@@ -20,7 +20,14 @@ export default defineConfig({
 			reporter: ['text', 'lcov'],
 			// Only the parts that can run outside Obsidian are worth a threshold;
 			// the view wrappers need a live Bases map to mean anything.
-			include: ['src/coords.ts', 'src/parse.ts', 'src/geometry.ts', 'src/view-options.ts', 'src/i18n.ts'],
+			include: [
+				'src/coords.ts',
+				'src/parse.ts',
+				'src/geometry.ts',
+				'src/view-options.ts',
+				'src/i18n.ts',
+				'src/locate.ts',
+			],
 			thresholds: { statements: 90, branches: 85, functions: 90, lines: 90 },
 		},
 	},

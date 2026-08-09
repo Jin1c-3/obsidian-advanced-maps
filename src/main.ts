@@ -10,6 +10,8 @@
  *   · GCJ-02 / BD-09 alignment for Chinese tile providers
  *   · inline maps for ![[track.gpx]] embeds
  *   · an "open in map" pop-up on a note's ⋮ menu
+ *   · filling a note's blank coordinate property from the device's location,
+ *     on the desktop as well as on mobile
  *
  * It works by wrapping the "map" entry in Bases' view registry: the factory is
  * replaced with one that builds the native view and then attaches a TrackLayer
@@ -23,8 +25,9 @@ import type { TAbstractFile } from 'obsidian';
 import { TRACK_EXTS } from './constants';
 import { TrackEmbed } from './embed';
 import { t } from './i18n';
+import { formatFix, isBlank, Locator } from './locate';
 import { MapModal } from './modal';
-import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, type AdvancedMapsSettings } from './settings';
+import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMapsSettings } from './settings';
 import { TrackCache } from './track-cache';
 import { TrackLayer } from './track-layer';
 import { appendTrackOptions } from './view-options';
@@ -50,8 +53,11 @@ export default class AdvancedMapsPlugin extends Plugin {
 	/** Declared on Plugin as `unknown` since 1.13; narrowed here. */
 	override settings!: AdvancedMapsSettings;
 	tracks!: TrackCache;
+	locator!: Locator;
 	readonly layers = new Set<TrackLayer>();
 	readonly embeds = new Set<TrackEmbed>();
+	/** Notes whose blank coordinate property is already being filled in. */
+	private readonly filling = new Set<string>();
 
 	private nativeFactory: BasesViewFactory | null = null;
 	private patched: { factory: BasesViewFactory; options?: BasesViewRegistration['options'] } | null = null;
@@ -60,6 +66,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 	override async onload(): Promise<void> {
 		await this.loadSettings();
 		this.tracks = new TrackCache(this.app);
+		this.locator = new Locator({
+			geolocation: typeof navigator !== 'undefined' ? (navigator.geolocation ?? null) : null,
+			onGiveUp: (message) => new Notice(message),
+		});
 
 		if (!this.patchMapsView()) {
 			// Load order is not guaranteed, so try again once everything is up.
@@ -73,6 +83,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 		this.registerTrackEmbeds();
 		this.registerOpenInMap();
+		this.registerLocate();
 		this.addSettingTab(new AdvancedMapsSettingTab(this.app, this));
 
 		this.registerEvent(
@@ -373,6 +384,105 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 		const label = firstAlias(found.frontmatter) || found.frontmatter.place || file.basename;
 		new MapModal(this.app, file, spec, `${String(label)} · ${coords}`).open();
+	}
+
+	/* ---- location ---- */
+
+	/** Toggling the setting is a fresh statement of intent; forget any refusal. */
+	resetLocator(): void {
+		this.locator.reset();
+	}
+
+	private registerLocate(): void {
+		this.addCommand({
+			id: 'fill-coords',
+			name: t('command.fillCoords'),
+			checkCallback: (checking) => {
+				if (!this.settings.locate) return false;
+				const file = this.app.workspace.getActiveFile();
+				if (!file || file.extension !== 'md') return false;
+				if (!checking) void this.stampCurrentLocation(file);
+				return true;
+			},
+		});
+
+		this.registerEvent(this.app.workspace.on('file-open', (file) => void this.fillCoordsIfEmpty(file)));
+
+		// A template's frontmatter usually lands a beat after the file opens, so
+		// the open on its own never sees the blank the template left behind.
+		// Restricting this to the active note keeps a sync writing files in the
+		// background from being stamped with wherever this device happens to be.
+		this.registerEvent(
+			this.app.metadataCache.on('changed', (file) => {
+				if (this.app.workspace.getActiveFile() === file) void this.fillCoordsIfEmpty(file);
+			})
+		);
+	}
+
+	/**
+	 * The command. Explicit intent, so it differs from the automatic path twice:
+	 * it overwrites a property that already holds something, and it forgives a
+	 * platform that refused earlier — running it by hand is a statement that
+	 * something has changed, such as a permission finally being granted.
+	 */
+	private async stampCurrentLocation(file: TFile): Promise<void> {
+		this.locator.reset();
+		// Duration 0: a cold fix outlasts the default notice by a wide margin.
+		const working = new Notice(t('notice.locate.working'), 0);
+		let fix;
+		try {
+			fix = await this.locator.locate();
+		} finally {
+			working.hide();
+		}
+		if (!fix) {
+			new Notice(t(this.locator.lastFailure() ?? 'notice.locate.failed'));
+			return;
+		}
+		const coords = formatFix(fix);
+		await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+			frontmatter[this.settings.coordsProperty] = coords;
+		});
+		new Notice(t('notice.locate.done', { property: this.settings.coordsProperty, coords }));
+	}
+
+	/**
+	 * The automatic path: fill in a coordinate property that is there but empty.
+	 *
+	 * This runs on every metadata change to the active note, so everything before
+	 * the await is a property lookup or a substring scan — deliberately so.
+	 */
+	private async fillCoordsIfEmpty(file: TAbstractFile | null): Promise<void> {
+		if (!this.settings.locate || !this.settings.autoFillCoords) return;
+		if (!(file instanceof TFile) || file.extension !== 'md') return;
+		if (isExcluded(file.path, this.settings.autoFillExclude)) return;
+		if (this.filling.has(file.path)) return;
+		if (!this.locator.available()) return;
+
+		const key = this.settings.coordsProperty;
+		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		// Absent is not blank. A note with no coordinate property never asked for
+		// one, and adding it would be the plugin volunteering rather than filling
+		// in what a template left for it.
+		if (!frontmatter || !Object.prototype.hasOwnProperty.call(frontmatter, key)) return;
+		if (!isBlank(frontmatter[key])) return;
+
+		this.filling.add(file.path);
+		try {
+			const fix = await this.locator.locate();
+			if (!fix) return;
+			await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+				// Seconds have passed waiting for the fix. The blank may have been
+				// filled in by hand since, or the property dropped altogether.
+				if (!Object.prototype.hasOwnProperty.call(frontmatter, key)) return;
+				if (!isBlank(frontmatter[key])) return;
+				frontmatter[key] = formatFix(fix);
+			});
+		} catch (e) {
+			console.error('Advanced Maps: could not write coordinates', e);
+		} finally {
+			this.filling.delete(file.path);
+		}
 	}
 
 	/* ---- settings ---- */

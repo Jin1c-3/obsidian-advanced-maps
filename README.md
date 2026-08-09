@@ -5,7 +5,8 @@
 
 Adds to Obsidian's built-in **Maps** view instead of replacing it: GPX/GeoJSON
 tracks, zoom-to-fit, Chinese coordinate systems, inline `![[track.gpx]]` maps,
-and an "open in map" pop-up.
+an "open in map" pop-up, and coordinates filled in from where you are — on the
+desktop too.
 
 Everything the built-in view already does — markers, icons, colours, tiles,
 popups, the right-click menu — stays the built-in view doing it. No Leaflet, no
@@ -153,6 +154,76 @@ scope. The spec overrides `center`, `defaultZoom` and `mapHeight` only, and
 sets both `center` and `defaultZoom` because an explicit centre without an
 explicit zoom just gets auto-fit back to the whole data set.
 
+## Location
+
+Fills a note's coordinate property from the device's own position, two ways:
+
+- **Automatically**, when the property is _present but empty_. Give a template an
+  empty `coords:` line and every note made from it is stamped with where it was
+  written. A property that already holds something is never overwritten, and a
+  note with no such property is never given one — absent is not blank, and only
+  the template's blank counts as an invitation.
+- **By hand**, through the _Fill coordinates from current location_ command,
+  which overwrites whatever is there.
+
+Both are off until **Enable location** is switched on. The first request raises a
+permission prompt, and where each note was written is not something to start
+recording on a user's behalf.
+
+### Why this one is not mobile-only
+
+Both map plugins that came before this one register their location features on
+mobile alone. The built-in Maps plugin says why in one line:
+
+```ts
+// Only registered on mobile, since desktop has no location provider
+if (Platform.isMobileApp) { ... }
+```
+
+Map View does the same, in `addFrontMatterLocationIfEmpty`:
+
+```ts
+if (!utils.isMobile(this.app)) return;
+```
+
+That was true of older Electron. Chromium's only desktop fallback was Google's
+network location service, whose API key is a build-time secret Electron does not
+ship, so the request failed no matter what the OS knew. Current Chromium asks the
+**operating system** instead — the Windows location service, CoreLocation on
+macOS — and no API key is involved. Obsidian 1.13 carries Chromium 150, well past
+that change, so the desktop is worth asking and this plugin asks it.
+
+Worth being honest about the shape of that claim: it depends on the platform, on
+the OS location service being switched on, and on Linux having a working GeoClue,
+which often it does not. So the plugin does not assume — it asks, once. The first
+failure that arrives before any success trips a breaker and nothing is asked
+again for the rest of the session, which is what keeps a machine that genuinely
+cannot answer from prompting on every note opened. Running the command by hand
+resets it, on the grounds that asking deliberately means something has changed.
+
+To find out where your own desktop stands, paste this into the developer console
+(`Ctrl+Shift+I`):
+
+```js
+navigator.geolocation.getCurrentPosition(
+  (p) => console.log('OK', p.coords.latitude, p.coords.longitude, '±' + p.coords.accuracy + 'm'),
+  (e) => console.log('FAIL', e.code, e.message),
+  { enableHighAccuracy: true, timeout: 15000 }
+);
+```
+
+### What gets written
+
+`lat,lng` at six decimal places — `28.624415,115.788091`. Fixes are **WGS-84**,
+which is what the vault stores; the GCJ-02 / BD-09 shift happens on the way to
+the tiles, never on the way to disk. Six decimals is far past what any GPS
+delivers, but rounding harder would make a re-stamp of the same spot look like
+the note had moved.
+
+Notes whose path contains any fragment in **Skip paths containing** (default
+`templates`) are left alone — otherwise opening a template to edit it would fill
+in the very blank the template exists to provide.
+
 ## Inline `![[track.gpx]]`
 
 There is no exported MapLibre to build a map with, so the embed borrows the
@@ -235,11 +306,12 @@ Without it, ⌘/Ctrl+P → "Reload app without saving" does the same thing by ha
 
 ```
 src/
-  main.ts            plugin class, registry patch, commands, "open in map"
+  main.ts            plugin class, registry patch, commands, "open in map", location
   track-layer.ts     everything added to one native map view
   embed.ts           inline ![[track.gpx]]
   modal.ts           the "open in map" pop-up
   settings.ts        settings tab and defaults
+  locate.ts          device location, and when to stop asking ← tested
   coords.ts          GCJ-02 / BD-09 conversion            ← pure, tested
   parse.ts           GPX / GeoJSON readers                ← pure, tested
   geometry.ts        bounds, clamping, the style gate     ← pure, tested

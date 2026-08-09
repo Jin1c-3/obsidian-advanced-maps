@@ -16,6 +16,16 @@ const en = {
 	'notice.noMapView': '{path} has no map view',
 	'notice.noCoords': '"{file}" has no {property}',
 
+	/* ---- notices: location ---- */
+	'notice.locate.working': 'Getting your location…',
+	'notice.locate.done': '{property}: {coords}',
+	'notice.locate.noProvider': 'this device has no location service',
+	'notice.locate.denied': 'location permission was denied',
+	'notice.locate.unavailable': 'no position could be determined',
+	'notice.locate.timeout': 'the location request timed out',
+	'notice.locate.failed': 'the location request failed',
+	'notice.locate.gaveUp': 'Advanced Maps: {reason}. Not asking again until you run the command by hand.',
+
 	/* ---- map controls and embeds ---- */
 	'control.zoomToFit': 'Zoom to fit',
 	'embed.failed': 'Could not draw {file}: {message}',
@@ -38,6 +48,28 @@ const en = {
 
 	/* ---- commands ---- */
 	'command.openInMap': 'Open in map',
+	'command.fillCoords': 'Fill coordinates from current location',
+
+	/* ---- settings: location ---- */
+	'settings.locate.heading': 'Location',
+	'settings.locate.intro':
+		"Fills a note's coordinate property from the device's own location, through the same Web geolocation API a " +
+		'browser offers. Unlike the map plugins this one sits beside, it is not restricted to mobile: current Chromium ' +
+		'asks the operating system rather than a Google service, so a desktop with its location service switched on can ' +
+		'answer too. A platform that cannot is asked once and then left alone for the rest of the session.',
+	'settings.locate.enable.name': 'Enable location',
+	'settings.locate.enable.desc':
+		'Adds the command, and allows the automatic fill below. Off by default: the first request raises a permission ' +
+		'prompt, and where a note was written is not something to start recording without being asked.',
+	'settings.locate.auto.name': 'Fill an empty coordinate property',
+	'settings.locate.auto.desc':
+		'When a note is opened, or its properties change, and the coordinate property is present but empty, fill it in. ' +
+		'A property that already holds something is never overwritten. Give your template an empty "{property}:" line and ' +
+		'every note made from it is stamped where it was written.',
+	'settings.locate.exclude.name': 'Skip paths containing',
+	'settings.locate.exclude.desc':
+		'Comma-separated. A note whose path contains any of these is left alone — templates above all, since opening one ' +
+		'to edit it would otherwise fill in the blank the template exists to provide.',
 
 	/* ---- settings: coordinate system ---- */
 	'settings.coord.heading': 'Coordinate system',
@@ -91,6 +123,15 @@ const zh: Record<TranslationKey, string> = {
 	'notice.noMapView': '{path} 里没有地图视图',
 	'notice.noCoords': '「{file}」没有 {property}',
 
+	'notice.locate.working': '正在定位…',
+	'notice.locate.done': '{property}：{coords}',
+	'notice.locate.noProvider': '此设备没有定位服务',
+	'notice.locate.denied': '定位权限被拒绝',
+	'notice.locate.unavailable': '拿不到位置信息',
+	'notice.locate.timeout': '定位超时',
+	'notice.locate.failed': '定位失败',
+	'notice.locate.gaveUp': 'Advanced Maps：{reason}。本次启动不再自动重试，手动执行命令可以重来。',
+
 	'control.zoomToFit': '缩放到全部',
 	'embed.failed': '无法绘制 {file}：{message}',
 	'embed.mapsDisabled': '内置的 Maps 插件未启用',
@@ -109,6 +150,23 @@ const zh: Record<TranslationKey, string> = {
 	'options.tileCoordSystem': '瓦片坐标系',
 
 	'command.openInMap': '在地图中打开',
+	'command.fillCoords': '用当前定位填写坐标',
+
+	'settings.locate.heading': '定位',
+	'settings.locate.intro':
+		'用设备自身的定位填写笔记的坐标属性，走的是浏览器那套 Web geolocation API。' +
+		'和边上那两个地图插件不同，这里不限移动端：新版 Chromium 问的是操作系统（Windows 定位服务、macOS 的 CoreLocation）而不是 Google 的服务，' +
+		'所以开着定位服务的电脑同样能给出结果。给不出的平台只会被问一次，之后本次启动内不再打扰。',
+	'settings.locate.enable.name': '启用定位',
+	'settings.locate.enable.desc':
+		'启用后会注册命令，下面的自动填写也才生效。默认关闭：第一次请求会弹权限框，而「笔记写于何处」这种事不该不打招呼就开始记录。',
+	'settings.locate.auto.name': '自动填写空的坐标属性',
+	'settings.locate.auto.desc':
+		'打开笔记、或笔记属性发生变化时，如果坐标属性存在但是空的，就填进去；已经有值的属性永远不会被覆盖。' +
+		'在模板里留一行空的「{property}:」，用它新建的每篇笔记就都会带上写下时的位置。',
+	'settings.locate.exclude.name': '跳过路径包含',
+	'settings.locate.exclude.desc':
+		'逗号分隔。路径里含有其中任意一段的笔记会被跳过 —— 首先是模板本身，否则打开模板改两笔，就会把它专门留出来的那个空位填掉。',
 
 	'settings.coord.heading': '坐标系',
 	'settings.coord.intro':
