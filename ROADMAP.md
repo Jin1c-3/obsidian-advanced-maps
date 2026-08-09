@@ -11,44 +11,30 @@ already installed on the view — and others disproportionately expensive.
 
 ## Next
 
-### Track statistics
+### Statistics on a base map, not just inline
 
-Distance, ascent, moving time, pace — and an elevation profile. `.gpx` files
-carry all of it and the plugin currently throws it away.
+The numbers under an inline `![[track.gpx]]` exist now. A track drawn on a
+**base** map view shows none of them, because the surface it would use is the
+note's own popup — and that popup is the native manager's, handed the note's
+property value rather than the feature that was drawn. Adding to it means
+deciding what a popup is for when the note holds several tracks.
 
-Not as cheap as it looks. `collectPoints` in `parse.ts` keeps `[lon, lat]` and
-drops `<ele>` and `<time>` entirely, so the parser has to grow first. Elevation
-is easy: GeoJSON positions allow a third member, and `projectGeometry` already
-preserves trailing members through the coordinate conversion. Time has no place
-in a GeoJSON position at all and would have to ride along in feature properties,
-the way most GPX converters do it.
-
-The statistics themselves are then pure functions over an array — exactly the
-kind of thing this repo tests properly. One trap: measure `rec.features`, never
-what `projectedFeatures()` hands back. The GCJ and BD offsets are non-linear, so
-a distance taken in tile space is a distance in the wrong space — small enough
-to look right, which is what makes it worth writing down.
+Cheap part: `trackStats` is already a pure function over `rec.features` and the
+cache already holds the parse. Expensive part is entirely the question above.
 
 ## Worth doing
 
-### KML and TCX
+### Adding a coordinate to an existing note from the map
 
-Two more branches in `parseTrack` and two more entries in `TRACK_EXTS`; the
-shapes they produce are the same ones already drawn. Low glamour. The value is
-mostly that a "not supported" line disappears — on a comparison table, a blank
-cell puts people off more than the missing feature does.
+The map's right-click menu creates a **new** note at the click, and now opens
+the spot in an external map app. Stamping a note that already exists is the
+missing third: it needs a note picker, which is a modal this plugin does not yet
+have — `search-modal.ts` is the closest shape to copy.
 
-### More on the map's right-click menu
-
-Adding a coordinate to an **existing** note, and opening a spot in an external
-map app for navigation. The native menu already creates a new note and copies
-coordinates.
-
-Feasible without re-implementing the menu: `showMapContextMenu` is wrapped
-already, and the same trick used there for `unproject` — swap something for the
-length of one synchronous call, restore it in a `finally` — reaches the `Menu`
-the native code builds. Rebuilding the menu instead would mean re-implementing
-four native items and losing whatever a future one adds.
+The menu seam itself is solved and costs nothing to reuse: the native view
+builds its menu with `Menu.forEvent(evt)`, which is Obsidian's public way for
+several contributors to share one menu, so items can be appended after the
+native call returns without patching anything.
 
 ### Follow the active note
 
@@ -68,7 +54,9 @@ here so the question does not keep getting reopened.
   owning a store, on a map instance this plugin does not create.
 - **Drawing and editing shapes on the map.** No drawing library is reachable —
   MapLibre comes from the native view and nothing else is bundled — so it would
-  be hand-rolled from pointer events.
+  be hand-rolled from pointer events. The elevation profile under an inline map
+  is hand-rolled SVG for the same reason, and is about the size such a thing can
+  reasonably get before the argument stops holding.
 - **Display rules and a query language.** Bases already has filters, formulas and
   per-note colours and icons, and the map view reads them. Building a second
   system beside it would duplicate the host and undercut the one thing this

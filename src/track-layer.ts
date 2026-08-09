@@ -2,7 +2,7 @@
  * TrackLayer — everything this plugin adds to one native map view.
  */
 
-import { Keymap } from 'obsidian';
+import { Keymap, Menu } from 'obsidian';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { TFile } from 'obsidian';
 import { LINE_LAYER, MARKER_LAYER, POINT_LAYER, SRC } from './constants';
@@ -16,6 +16,7 @@ import {
 	type CoordSystem,
 } from './coords';
 import { clamp, emptyBounds, extendBounds, styleReady } from './geometry';
+import { getLocale, t } from './i18n';
 import {
 	addTrackLayers,
 	applyTrackPaint,
@@ -24,6 +25,7 @@ import {
 	removeTrackLayers,
 	type LocateGuard,
 } from './layers';
+import { externalMapUrl, mapOrder, type ExternalMap } from './maplinks';
 import { projectedFeatures } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type {
@@ -45,6 +47,29 @@ interface DrawItem {
 }
 
 type TrackFeature = Feature<Geometry, { amColor: string; amIndex: number }>;
+
+/**
+ * Can this Obsidian build nest menus? `MenuItem.setSubmenu` is undeclared, so
+ * it is checked for rather than assumed.
+ *
+ * Probed on a throwaway `Menu` that is never shown, and remembered: a `MenuItem`
+ * is only reachable from inside `addItem`, and probing on the real menu would
+ * leave an empty entry sitting in it that there is no API to take out again.
+ */
+let nestedMenus: boolean | null = null;
+function canNestMenus(): boolean {
+	if (nestedMenus === null) {
+		nestedMenus = false;
+		try {
+			new Menu().addItem((item) => {
+				nestedMenus = typeof item.setSubmenu === 'function';
+			});
+		} catch (e) {
+			/* flat items work everywhere; that is the fallback */
+		}
+	}
+	return nestedMenus;
+}
 
 /**
  * Replace one method on an *instance*; the returned function puts it back.
@@ -171,6 +196,10 @@ export class TrackLayer {
 				const system = this.system();
 				if (!map || system === 'wgs84' || typeof map.unproject !== 'function') {
 					orig.call(view, ev);
+					// No patch was installed above — under 'wgs84' tile space already
+					// *is* WGS-84, so addExternalMapItems's own toWgs84() call below is
+					// a correct no-op rather than a missing conversion.
+					if (map) this.addExternalMapItems(ev, map, system);
 					return;
 				}
 				const restore = override(map, 'unproject', (native) => (point) => {
@@ -184,6 +213,11 @@ export class TrackLayer {
 				} finally {
 					restore();
 				}
+				// restore() has already put map.unproject back to its native,
+				// tile-space form, so addExternalMapItems reading it now gets exactly
+				// what the native "New note" item got before *its* un-shift — one
+				// more toWgs84() away from WGS-84, same as everything else here.
+				this.addExternalMapItems(ev, map, system);
 			});
 		}
 
@@ -211,6 +245,82 @@ export class TrackLayer {
 		});
 
 		return this;
+	}
+
+	/**
+	 * "Open in external map" — one item per provider, in the order
+	 * `mapOrder(locale)` prefers, appended to the menu the native handler above
+	 * just built.
+	 *
+	 * `Menu.forEvent` keys its menu off the *event*, not off the caller. Read out
+	 * of the shipped Obsidian build (undocumented, so this was verified rather
+	 * than assumed — `npx asar extract` on `obsidian.asar`), it is exactly a
+	 * lookup-or-build against a `WeakMap<Event, Menu>`, with the actual
+	 * `showAtMouseEvent` deferred to a `setTimeout(0)`:
+	 * `n = map.get(e); if (!n) { n = new Menu(); map.set(e, n);
+	 * e.win.setTimeout(() => n.showAtMouseEvent(e)); } return n;`. The native
+	 * `showMapContextMenu` above has already called `Menu.forEvent(ev)` once for
+	 * this exact `ev`, so calling it again here — synchronously, in the same
+	 * task, before that deferred show fires — finds the same menu rather than
+	 * building a second, unrelated one, and the item lands before the reader
+	 * ever sees it open. This is `Menu.forEvent`'s documented purpose: several
+	 * contributors adding items to one menu for one event.
+	 *
+	 * The six providers go in a submenu. `MenuItem.setSubmenu` is absent from
+	 * `obsidian.d.ts` but present in the shipped build and used by Obsidian's own
+	 * menus — see the declaration in `types/obsidian-internals.d.ts` for what was
+	 * read out of `obsidian.asar`. Undeclared means unpromised, so it is checked
+	 * for at runtime and six flat items are added instead when it is not there:
+	 * repetitive, but a working menu beats a missing one.
+	 */
+	private addExternalMapItems(ev: MouseEvent, map: NonNullable<BasesMapView['map']>, system: CoordSystem): void {
+		if (typeof map.unproject !== 'function') return;
+		let lngLat: LngLat;
+		try {
+			// The same pixel showMapContextMenu itself reads the click from.
+			lngLat = map.unproject([ev.offsetX, ev.offsetY]);
+		} catch (e) {
+			return;
+		}
+		// By the time this runs, map.unproject is back to its native, tile-space
+		// form — either the wrapper above patched it and its own restore() already
+		// ran (the finally block, above), or system was already 'wgs84' and no
+		// patch was ever installed in the first place. Either way toWgs84() here
+		// is exactly *one* un-shift: never the zero a still-patched unproject would
+		// leave (this would then double-convert), and never the two an extra call
+		// elsewhere would add. Both errors are invisible on screen and land the pin
+		// ~500 m from where the reader actually clicked.
+		const [lng, lat] = toWgs84(system, lngLat.lng, lngLat.lat);
+
+		const menu = Menu.forEvent(ev);
+		const providers = mapOrder(getLocale());
+		// No label anywhere below: the click is on empty map, not on a note, so
+		// there is no name to hand externalMapUrl — inventing one would be worse
+		// than none.
+		const open = (provider: ExternalMap) => window.open(externalMapUrl(provider, lat, lng), '_blank');
+
+		if (canNestMenus()) {
+			menu.addItem((item) => {
+				item.setTitle(t('menu.openExternal')).setIcon('external-link').setSection('external-map');
+				const submenu = item.setSubmenu();
+				for (const provider of providers) {
+					submenu.addItem((child) =>
+						child.setTitle(t(`link.provider.${provider}`)).onClick(() => open(provider))
+					);
+				}
+			});
+			return;
+		}
+
+		for (const provider of providers) {
+			menu.addItem((item) =>
+				item
+					.setTitle(`${t('menu.openExternal')}: ${t(`link.provider.${provider}`)}`)
+					.setIcon('external-link')
+					.setSection('external-map')
+					.onClick(() => open(provider))
+			);
+		}
 	}
 
 	detach(): void {

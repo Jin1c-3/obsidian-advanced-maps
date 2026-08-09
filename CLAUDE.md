@@ -46,8 +46,10 @@ src/
   link-modal.ts      the paste box for the above
   geocode.ts         place search: request building and reading ← pure, tested
   search-modal.ts    the search box, and the only network call
+  maplinks.ts        a coordinate out to an external map app ← pure, tested
   coords.ts          GCJ-02 / BD-09 conversion            ← pure, tested
-  parse.ts           GPX / GeoJSON readers                ← pure, tested
+  parse.ts           GPX / GeoJSON / KML / TCX readers    ← pure, tested
+  stats.ts           distance, ascent, moving time, profile ← pure, tested
   geometry.ts        bounds, clamping, the style gate     ← pure, tested
   view-options.ts    the two option groups and where they go
   track-cache.ts     parsed tracks, keyed by path, invalidated by mtime
@@ -102,8 +104,8 @@ need redrawing too.
 ## How tracks find their way onto the map
 
 Tracks are **not** pulled from the query result. For every note in the base, the
-plugin reads that note's embeds from the metadata cache and resolves any
-`.gpx` / `.geojson` link:
+plugin reads that note's embeds from the metadata cache and resolves any link
+whose extension is in `TRACK_EXTS` — `.gpx`, `.geojson`, `.kml`, `.tcx`:
 
 ```
 moments/20260412191024.md  ──embeds──▶  assets/2026年4月12日 下午831.gpx
@@ -117,8 +119,8 @@ Two consequences:
   `markerManager.getCustomColor` the pins use — because it belongs to that note.
   Hovering the track shows that note's popup; clicking it opens the note.
 
-A `.gpx`/`.geojson` file that appears in the query result directly is also drawn,
-so `file.ext == "gpx"` style bases work too.
+A track file that appears in the query result directly is also drawn, so
+`file.ext == "gpx"` style bases work too.
 
 Every track becomes one GeoJSON source with two layers: a `line` layer and a
 `circle` layer for waypoints, both coloured per-feature via `['get','amColor']`.
@@ -479,6 +481,92 @@ a base view, in either direction.
 Extensions are claimed only if nothing else has them, so a plugin that already
 renders `.gpx` keeps working alongside this one.
 
+## Track statistics
+
+`stats.ts` is pure arithmetic over the features `parse.ts` produced; `embed.ts`
+puts the numbers and the profile under an inline map. Both are behind settings,
+both default on, and both are absent from base map views — see the roadmap for
+why that is a design question rather than a missing call.
+
+`parse.ts` had to grow first. Elevation is the third member of a position, which
+GeoJSON allows and `projectGeometry` already carried through untouched. A
+timestamp has nowhere to live in a position at all, so it rides in feature
+properties as `times: (number | null)[]`, one entry per coordinate, `null` for a
+point whose source gave none — a hole rather than a dropped point, because
+dropping one would desync the array from the coordinates it describes. A feature
+with nothing extra to say still gets `properties: null`, which is what every
+existing caller assumes.
+
+**Measure `rec.features`, never `projectedFeatures()`.** The GCJ and BD offsets
+are non-linear, so a distance taken in tile space is a distance in the wrong
+space — wrong by little enough to look right. `projectedFeatures` also drops
+`properties`, so the times would vanish too; that is the cheap proof, not the
+reason.
+
+Two numbers are judgement calls and both are written down where they are set:
+
+- **Ascent uses hysteresis, not a sum of positive deltas.** Consumer elevation
+  is noisy at ±3–5 m and a naive sum turns a flat ride into hundreds of metres
+  of climb. Only a monotone change past `ASCENT_THRESHOLD_M` (5 m) commits.
+  Measured on the real 3.2 km stair climb the screenshots use: naive 335 m,
+  hysteresis 300 m, against 183 m of net gain.
+- **`MOVING_SPEED_MPS` is 0.25, not the usual 0.5.** That was measured, not
+  chosen: at 0.5 m/s the same walk reported 45:36 of moving time against 1:14:57
+  elapsed, having thrown away nearly twenty minutes of genuine uphill walking.
+  1.8 km/h is an ordinary pace on steps, so a threshold there does not separate
+  resting from climbing — it penalises climbing. At 0.25 it reports the ten
+  minutes the walk actually stopped for.
+
+The elevation profile is hand-rolled inline SVG — there is no chart library to
+reach for, same as there is no map library — and `elevationProfile()` downsamples
+so an 11 k-point export does not become an 11 k-point path.
+
+### KML and TCX
+
+Both are XML and both go through the same `DOMParser` GPX already used. TCX is
+the richest of the four: every field GPX may omit, a Garmin export states. A
+`<Trackpoint>` with no `<Position>` is a heart-rate-only sample and is skipped
+rather than read as `0,0`.
+
+KML is looked up **by local name**, not by tag string. `getElementsByTagName(
+'gx:coord')` matches that exact prefix and nothing else, so a document that
+aliases the namespace differently — or prefixes the whole file `kml:` — silently
+yields nothing. Both shapes are in the tests. `<gx:Track>` is KML's only
+time-carrying form, and its `<gx:coord>` is space-separated where `<coordinates>`
+is comma-separated inside a tuple and whitespace-separated between them.
+
+## Opening a spot in another map app
+
+`maplinks.ts` is the exact inverse of `geolink.ts` and mirrors its decisions
+rather than re-making them: 高德 writes longitude first and 百度 latitude first,
+高德/腾讯 are GCJ-02, 百度 BD-09, and Google/Apple are GCJ-02 inside China and
+WGS-84 outside by `outOfChina`. Order is by locale, not by the view's basemap —
+which tiles a map happens to draw says nothing about which app is on the reader's
+phone.
+
+Two things in the menu wiring are worth keeping:
+
+- **`Menu.forEvent(ev)` is the seam, and nothing is patched.** The native
+  `showMapContextMenu` builds its menu that way, and `forEvent` is a
+  lookup-or-build against a `WeakMap<Event, Menu>` whose `showAtMouseEvent` is
+  deferred to a `setTimeout(0)` — read out of `obsidian.asar`, not assumed. So
+  calling it again synchronously in the same task finds the same menu, and the
+  items land before the reader sees it open. No prototype patch, no rebuilt menu.
+- **The coordinate is un-shifted exactly once.** `addExternalMapItems` runs
+  _after_ the `unproject` swap has been restored, so it reads tile space and does
+  its own single `toWgs84`. Zero un-shifts double-convert; two cancel out. Both
+  are invisible on screen. Verified live on 高德 tiles: the 高德 URL came back
+  carrying the clicked pixel's own tile-space coordinate to six decimals, and the
+  OpenStreetMap URL carried `gcj2wgs` of it to 0.05 m — against a local GCJ
+  offset of 525.3 m, which is what either mistake would have cost.
+
+`MenuItem.setSubmenu` is undeclared in `obsidian.d.ts` but present in the shipped
+build and used by Obsidian's own menus, so it is declared in
+`types/obsidian-internals.d.ts` and probed for at runtime, with six flat items as
+the fallback. The probe runs on a throwaway `Menu` that is never shown: a
+`MenuItem` is only reachable from inside `addItem`, and probing on the real menu
+would leave an empty entry behind that no API can remove.
+
 ## Non-obvious things to leave alone
 
 All of them cost real debugging time. Read this before "simplifying" any of them.
@@ -523,10 +611,18 @@ All of them cost real debugging time. Read this before "simplifying" any of them
 
 ## Testing
 
-`src/coords.ts`, `src/parse.ts`, `src/geometry.ts`, `src/locate.ts`,
-`src/view-options.ts`, `src/map-block.ts` and `src/i18n.ts` run outside Obsidian
-and are held above 90 % coverage in CI. Anything touching the coordinate maths, a parser or the
-locator needs a test in the same PR.
+`src/coords.ts`, `src/parse.ts`, `src/stats.ts`, `src/maplinks.ts`,
+`src/geometry.ts`, `src/locate.ts`, `src/view-options.ts`, `src/map-block.ts`,
+`src/geolink.ts`, `src/geocode.ts` and `src/i18n.ts` run outside Obsidian and are
+held above 90 % coverage in CI (the list lives in `vitest.config.ts`). Anything
+touching the coordinate maths, a parser, the statistics or the locator needs a
+test in the same PR.
+
+One kind of test is worth more than its line count: **the same track in four
+formats must produce the same numbers**. Geometry and elevation are identical
+across a GPX, a TCX and both KML forms of one walk by construction, so distance
+and ascent agreeing to the metre says far more than each reader drawing
+something. It caught nothing, but it is what makes a fifth format cheap to add.
 
 The view wrappers need a live Bases map, but that does not put them out of reach:
 the [Obsidian CLI](https://help.obsidian.md/cli) runs arbitrary code inside the
@@ -576,11 +672,6 @@ Say in the PR what was tried and what the numbers were.
 and its keys are the key type, so a missing entry is a compile error. A new
 language is one object plus one line in `LOCALES`; `tests/i18n.test.ts` checks
 placeholders match across languages.
-
-## Not supported
-
-KML and TCX. Adding them means another branch in `parseTrack` plus their
-extensions in `TRACK_EXTS`; the shapes they produce are the same.
 
 ## Releasing
 

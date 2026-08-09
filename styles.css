@@ -19,6 +19,84 @@
 	height: 100%;
 }
 
+/* Distance/ascent/duration bar and elevation profile under an inline map.
+ * Deliberately a sibling of .advanced-maps-embed rather than a child of it:
+ * that box has a fixed height and `overflow: hidden` so the map fills exactly
+ * what the height setting configures, and this grows the block underneath it
+ * instead of shrinking the map to make room. Only the bottom margin lives
+ * here — .advanced-maps-embed already carries the gap above it — so the
+ * block's total margin matches a plain map embed's when this panel is absent. */
+.advanced-maps-panel {
+	width: 100%;
+	margin: 0 0 var(--size-4-2) 0;
+}
+
+/* Values only, no labels — see embed.ts's statsFields() for why; a field's
+ * name is one hover (or a screen reader) away on its own element instead.
+ * flex-wrap keeps a note narrow enough to wrap the line from ever pushing the
+ * block wider than the note, which a plain overflow-x rule could not do for
+ * text that just needs to break, not scroll. */
+.advanced-maps-stats-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--size-4-1) var(--size-4-2);
+	padding: var(--size-4-2) var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+/* A middot between values rather than a border between elements, so a line
+ * that wraps never ends on a dangling rule. */
+.advanced-maps-stats-field:not(:first-child)::before {
+	content: '·';
+	margin-right: var(--size-4-2);
+	color: var(--text-muted);
+}
+
+/* The elevation profile: sized by its SVG's viewBox, not a fixed pixel width,
+ * so it scales with the note rather than ever being the thing that overflows
+ * it. Roughly 48–64 px tall — tall enough to read the shape of a climb,
+ * short enough to still read as an accessory to the bar above it. */
+.advanced-maps-profile {
+	display: block;
+	width: 100%;
+	height: 56px;
+	margin-top: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	overflow: hidden;
+}
+
+.advanced-maps-profile svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+/* var(--text-accent) rather than the track's own colour: the track colour is
+ * chosen per-note (or per-file default) for contrast against a tile layer,
+ * with no guarantee it also reads against --background-secondary, which is
+ * what this chart sits on instead. */
+.advanced-maps-profile-area {
+	fill: var(--text-accent);
+	opacity: 0.2;
+}
+
+.advanced-maps-profile-line {
+	fill: none;
+	stroke: var(--text-accent);
+	stroke-width: 1.5;
+	/* Keeps the outline a constant visual weight under preserveAspectRatio's
+	 * non-uniform scaling — without it a wide, short note stretches the stroke
+	 * thin in one axis and thick in the other. */
+	vector-effect: non-scaling-stroke;
+}
+
 .advanced-maps-error {
 	display: flex;
 	align-items: center;

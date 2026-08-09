@@ -35,6 +35,21 @@ const en = {
 	'embed.failed': 'Could not draw {file}: {message}',
 	'embed.mapsDisabled': 'the built-in Maps plugin is not enabled',
 
+	/* ---- track statistics ----
+	 * Names for what the numbers are. The bar itself shows values only — eight
+	 * labels across a line is unreadable — so these ride on the tooltip. */
+	'stats.distance': 'Distance',
+	'stats.ascent': 'Ascent',
+	'stats.descent': 'Descent',
+	'stats.duration': 'Duration',
+	'stats.moving': 'Moving time',
+	'stats.speed': 'Average speed',
+	'stats.elevation': 'Elevation',
+	'stats.profile': 'Elevation profile',
+
+	/* ---- the map's right-click menu ---- */
+	'menu.openExternal': 'Open in external map',
+
 	/* ---- coordinate systems ---- */
 	/* Named by provider, not by standard: nobody picks a basemap by its datum. */
 	'coord.auto': 'Auto — follow the basemap',
@@ -169,6 +184,12 @@ const en = {
 	'settings.tracks.fitMaxZoom.desc': 'How far auto-framing may zoom in.',
 	'settings.tracks.embedHeight.name': 'Inline map height',
 	'settings.tracks.embedHeight.desc': 'Height in pixels of an inline ![[track.gpx]] map.',
+	'settings.tracks.stats.name': 'Show track statistics',
+	'settings.tracks.stats.desc':
+		'Distance, ascent and time under an inline map. GPX and TCX carry them; a GeoJSON usually carries neither, ' +
+		'and what is missing is left out rather than shown as zero.',
+	'settings.tracks.profile.name': 'Show the elevation profile',
+	'settings.tracks.profile.desc': 'A small chart under the statistics, for files that record elevation.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -196,6 +217,17 @@ const zh: Record<TranslationKey, string> = {
 	'control.zoomToFit': '缩放到全部',
 	'embed.failed': '无法绘制 {file}：{message}',
 	'embed.mapsDisabled': '内置的 Maps 插件未启用',
+
+	'stats.distance': '距离',
+	'stats.ascent': '累计爬升',
+	'stats.descent': '累计下降',
+	'stats.duration': '总时长',
+	'stats.moving': '移动时间',
+	'stats.speed': '平均速度',
+	'stats.elevation': '海拔',
+	'stats.profile': '高程剖面',
+
+	'menu.openExternal': '用外部地图打开',
 
 	'coord.auto': '自动 · 跟随当前底图',
 	'coord.wgs84': 'OpenStreetMap、天地图、ArcGIS · WGS-84',
@@ -296,6 +328,11 @@ const zh: Record<TranslationKey, string> = {
 	'settings.tracks.fitMaxZoom.desc': '自动框选时最多放大到的级别。',
 	'settings.tracks.embedHeight.name': '内联地图高度',
 	'settings.tracks.embedHeight.desc': '内联 ![[track.gpx]] 地图的高度（像素）。',
+	'settings.tracks.stats.name': '显示轨迹统计',
+	'settings.tracks.stats.desc':
+		'在内联地图下方显示距离、爬升和时间。GPX 和 TCX 带这些信息，GeoJSON 通常两样都没有；缺的那几项直接不显示，而不是显示成 0。',
+	'settings.tracks.profile.name': '显示高程剖面',
+	'settings.tracks.profile.desc': '统计下面的小图，只对记录了高程的文件出现。',
 };
 
 const LOCALES = { en, zh } as const;

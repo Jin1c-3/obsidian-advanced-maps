@@ -21,6 +21,21 @@ declare module 'obsidian' {
 		internalPlugins: InternalPlugins;
 		embedRegistry: EmbedRegistry;
 	}
+
+	interface MenuItem {
+		/**
+		 * Turns this item into a nested menu and hands back the child to fill.
+		 * Undeclared in `obsidian.d.ts` but present in the shipped build and used
+		 * by Obsidian's own menus — read out of `obsidian.asar`, where it is
+		 * `setSubmenu = function () { this.submenu || (this.dom.addClass(
+		 * 'has-submenu'), this.submenu = new …); return this.submenu }`, and where
+		 * core calls it as `.setIcon('lucide-paintbrush').setSubmenu().addItem(…)`.
+		 *
+		 * Undeclared means unpromised, so the one call site checks for it at
+		 * runtime and falls back to flat items rather than assuming it is there.
+		 */
+		setSubmenu(): Menu;
+	}
 }
 
 /* ---- internal plugins ---- */

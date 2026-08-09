@@ -409,10 +409,11 @@ export default class AdvancedMapsPlugin extends Plugin {
 	 * dragging a note into the body, which is Obsidian's own behaviour, and the
 	 * map follows because Bases re-runs the filter.
 	 *
-	 * Deliberately not on the ⋮ menu. It writes at the cursor, so it needs an
-	 * editor open at a particular spot — which is what the command palette
-	 * offers and a file menu, reachable from the explorer or a tab header, does
-	 * not.
+	 * Deliberately not on the file menu. It writes at the cursor, and `file-menu`
+	 * fires from the explorer and from tab headers, neither of which has one.
+	 * `editor-menu` is the entry point that does — a right-click inside the
+	 * editor is exactly a cursor at a particular spot — so the command sits on
+	 * the command palette and there.
 	 */
 	private registerInsertMap(): void {
 		this.addCommand({
@@ -425,6 +426,19 @@ export default class AdvancedMapsPlugin extends Plugin {
 				return true;
 			},
 		});
+
+		this.registerEvent(
+			this.app.workspace.on('editor-menu', (menu, editor, ctx) => {
+				const file = ctx.file;
+				if (!file || file.extension !== 'md') return;
+				menu.addItem((item) =>
+					item
+						.setTitle(t('command.insertMap'))
+						.setIcon('map-plus')
+						.onClick(() => void this.insertAroundMap(editor, file))
+				);
+			})
+		);
 	}
 
 	private async insertAroundMap(editor: Editor, note: TFile): Promise<void> {

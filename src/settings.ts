@@ -12,6 +12,9 @@ export interface AdvancedMapsSettings {
 	trackOpacity: number;
 	fitMaxZoom: number;
 	embedHeight: number;
+	/** The numbers under an inline map, and the chart under those. */
+	trackStats: boolean;
+	elevationProfile: boolean;
 	/** "Open in map" — the pop-up launched from a note's ⋮ menu. */
 	basePath: string;
 	viewName: string;
@@ -45,6 +48,8 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	trackOpacity: 85,
 	fitMaxZoom: 16,
 	embedHeight: 320,
+	trackStats: true,
+	elevationProfile: true,
 	basePath: '',
 	viewName: '',
 	coordsProperty: 'coords',
@@ -140,7 +145,11 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		);
 	}
 
-	private toggle(setting: Setting, key: 'locate' | 'autoFillCoords', after?: () => void): void {
+	private toggle(
+		setting: Setting,
+		key: 'locate' | 'autoFillCoords' | 'trackStats' | 'elevationProfile',
+		after?: () => void
+	): void {
 		setting.addToggle((toggle) =>
 			toggle.setValue(this.plugin.settings[key]).onChange(async (value) => {
 				this.plugin.settings[key] = value;
@@ -246,6 +255,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			160,
 			800,
 			20
+		);
+		// Both re-render the open embeds rather than waiting for a reload: the
+		// point of a toggle you can see the result of is seeing the result.
+		this.toggle(this.row('settings.tracks.stats.name', 'settings.tracks.stats.desc'), 'trackStats', () =>
+			this.plugin.refreshTracks()
+		);
+		this.toggle(this.row('settings.tracks.profile.name', 'settings.tracks.profile.desc'), 'elevationProfile', () =>
+			this.plugin.refreshTracks()
 		);
 	}
 }

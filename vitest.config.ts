@@ -28,6 +28,8 @@ export default defineConfig({
 				'src/geocode.ts',
 				'src/view-options.ts',
 				'src/map-block.ts',
+				'src/stats.ts',
+				'src/maplinks.ts',
 				'src/i18n.ts',
 				'src/locate.ts',
 			],

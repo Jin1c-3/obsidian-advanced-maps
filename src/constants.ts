@@ -1,5 +1,5 @@
 /** File extensions this plugin knows how to draw. */
-export const TRACK_EXTS = new Set(['gpx', 'geojson']);
+export const TRACK_EXTS = new Set(['gpx', 'geojson', 'kml', 'tcx']);
 
 /* This plugin's own source and layer ids. The native marker layer is
  * "marker-pins" on the "markers" source; tracks go in below it so a pin sitting

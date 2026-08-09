@@ -3,11 +3,12 @@
 [![CI](https://github.com/Jin1c-3/obsidian-advanced-maps/actions/workflows/ci.yml/badge.svg)](https://github.com/Jin1c-3/obsidian-advanced-maps/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Adds to Obsidian's built-in **Maps** view instead of replacing it: GPX/GeoJSON
-tracks, zoom-to-fit, Chinese coordinate systems, inline `![[track.gpx]]` maps,
-an "open in map" pop-up, a one-line map of the notes around a note, and three
-ways to fill in a note's coordinates — paste a share link, search for the place,
-or take it from where you are, on the desktop too.
+Adds to Obsidian's built-in **Maps** view instead of replacing it: GPX, GeoJSON,
+KML and TCX tracks with distance, ascent and an elevation profile; zoom-to-fit;
+Chinese coordinate systems; inline `![[track.gpx]]` maps; an "open in map"
+pop-up; a one-line map of the notes around a note; and three ways to fill in a
+note's coordinates — paste a share link, search for the place, or take it from
+where you are, on the desktop too.
 
 Everything the built-in view already does — markers, icons, colours, tiles,
 popups, the right-click menu — stays the built-in view doing it. No Leaflet, no
@@ -20,6 +21,7 @@ vendored map library, no runtime dependencies at all.
 | Problem                                                                                                           | What this plugin does                                                                                                     |
 | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | A note has a `.gpx` from a walk attached, and the map shows only a pin.                                           | Draws the track, in that note's colour. Hover for its popup, click to open it.                                            |
+| The `.gpx` knows how far you walked and how much you climbed, and nothing ever tells you.                         | Distance, ascent, moving time and pace under the inline map, with an elevation profile.                                   |
 | Mainland Chinese basemaps don't serve WGS-84, so every pin floats several streets — up to a kilometre — off.      | Converts coordinates on the way to the map and back on the way out. Nothing on disk changes; your notes stay WGS-84.      |
 | The map opens on the whole world, or on wherever the config happens to point.                                     | Auto-frames markers _and_ tracks, and gets out of the way once you pan. A ⛶ button re-frames on demand.                   |
 | `![[track.gpx]]` in a note renders as a link.                                                                     | Renders it as a real map, inline.                                                                                         |
@@ -49,21 +51,34 @@ Community plugins.
 
 ### Tracks
 
-Attach a `.gpx` or `.geojson` to a note — `![[2026-04-12.gpx]]` — and any map
-view whose base includes that note draws the track. Nothing to configure, and no
-need to widen the base's filters to let attachment files in. A base that queries
-`file.ext == "gpx"` directly works too.
+Attach a `.gpx`, `.geojson`, `.kml` or `.tcx` to a note — `![[2026-04-12.gpx]]`
+— and any map view whose base includes that note draws the track. Nothing to
+configure, and no need to widen the base's filters to let attachment files in. A
+base that queries `file.ext == "gpx"` directly works too.
 
-### Inline maps
+### Inline maps, and what the track knows
 
 The same embed renders as a real map in the note itself — pan it, zoom it, switch
-its background. Maps are built only once they scroll into view, because each one
-holds a WebGL context and browsers cap how many can be alive at once.
+its background — with the numbers the file was carrying all along underneath.
 
-![A note with an embedded .gpx rendering as a live map below the note's text](docs/inline-embed.png)
+![A note with an embedded .gpx rendering as a live map, distance, ascent, times and pace on a line below it, and an elevation profile under that](docs/inline-embed.png)
 
-Extensions are claimed only if nothing else has them, so a plugin that already
-renders `.gpx` keeps working alongside this one.
+Distance, ascent and descent, the elevation range, elapsed and moving time, and
+the average pace. Whatever the file does not record is left out rather than shown
+as zero — a `.geojson` usually has no elevation and no timestamps, so it gets a
+distance and nothing else. Hover any number to see what it is. Both the line and
+the profile can be switched off in settings.
+
+Two of those are less obvious than they look, and both are set the careful way:
+**ascent** ignores drift under 5 m, because raw GPS elevation is noisy enough to
+turn a flat ride into hundreds of metres of imaginary climb; **moving time**
+counts anything above 0.9 km/h, low enough that walking up steps still counts as
+walking.
+
+Maps are built only once they scroll into view, because each one holds a WebGL
+context and browsers cap how many can be alive at once. Extensions are claimed
+only if nothing else has them, so a plugin that already renders `.gpx` keeps
+working alongside this one.
 
 ### View options
 
@@ -90,6 +105,20 @@ hosts that serve GCJ-02 or BD-09 are recognised by name, and everything else is
 treated as WGS-84. Set a default in plugin settings, or force one per view when a
 proxied tile URL can't reveal where it came from.
 
+### Open a spot in another map app
+
+Right-click anywhere on a map view. Alongside the built-in items — new note here,
+copy coordinates, set the default centre — is _Open in external map_.
+
+![The map's right-click menu, with "Open in external map" opening a submenu of Amap, Baidu, Tencent, Google, Apple and OpenStreetMap](docs/external-map.png)
+
+Each app is sent the datum it actually expects, converted from the spot you
+clicked: GCJ-02 to Amap and Tencent, BD-09 to Baidu, and WGS-84 or GCJ-02 to
+Google and Apple depending on whether the point is inside China. That is the
+whole difficulty — the same six links built naively land in the wrong place in
+three different ways, none of them visible until you are standing in the wrong
+street.
+
 ### One base, reused everywhere
 
 The two features below are worth understanding together, because they share one
@@ -107,16 +136,13 @@ answer to all three questions a map has to settle:
 
 So you tune the look once and every map follows: the pop-up from a note's ⋮
 menu, and every _Around_ map embedded anywhere in the vault. Add a formula for a
-new icon and it appears on all of them, retroactively, because none of them
-carry a copy of your base — they reference it.
+new icon and it appears on all of them, retroactively, because none of them carry
+a copy of your base — they reference it. A note that shows a map holds one line
+and no configuration, which is also what lets those maps survive being edited,
+moved or synced by something else.
 
-Notes stay clean. A note that shows a map holds one line and no configuration,
-which is also what makes the maps survive being edited, moved or synced by
-something else.
-
-If you keep several unrelated sets of places, a base each is fine — but then
-**Base path** names the one the commands use, and the others are opened the
-ordinary way.
+Several unrelated sets of places? A base each is fine — **Base path** just names
+the one the commands use.
 
 ### Open in map
 
@@ -128,8 +154,9 @@ colours and icons — just centred on that note.
 ### A map of the notes around a note
 
 A trip note is about several places, and each of those places is usually already
-a note of its own. _Insert a map of the notes around this one_ writes a single
-line into the note you are in:
+a note of its own. _Insert a map of the notes around this one_ — right-click in
+the editor, or the command palette — writes a single line into the note you are
+in:
 
 ```
 ![[places.base#Around]]
@@ -148,15 +175,14 @@ no list to keep, no second place the truth lives: the links around the note _are
 the map.
 
 Both directions count, so a note that names this one — a follow-up, a child
-entry, anything carrying a link back — arrives on the map without the note being
-edited at all. The note you are in joins as soon as it has a coordinate of its
-own, and drops out again if you clear it: you never have to link a note to
-itself, and a note with no coordinate never shows up as a result with no pin.
+entry, anything carrying a link back — arrives without being edited at all. The
+note you are in joins as soon as it has a coordinate of its own and drops out
+again if you clear it, so you never have to link a note to itself.
 
-It reads the same **Base path** and **View name** as _Open in map_ — the added
+It reads the same **Base path** and **View name** as _Open in map_, and the added
 view is copied from that map view, so the markers keep your coordinate property,
-icons and colours. Its centre and zoom are left free on purpose, so it frames
-whatever you have collected so far.
+icons and colours. Its centre and zoom are left free, so it frames whatever you
+have collected so far.
 
 Two edges worth knowing:
 
@@ -228,10 +254,6 @@ working GeoClue — so the plugin asks once and stops asking for the session if 
 platform refuses. See [CLAUDE.md](CLAUDE.md#why-location-is-not-mobile-only) for
 the details and a console snippet to test your own machine.
 
-### Not supported
-
-KML and TCX, for now — see the [roadmap](ROADMAP.md).
-
 ## What leaves your vault
 
 Short version: your notes and your tracks never go anywhere. Everything below is
@@ -241,6 +263,7 @@ either something a map cannot work without, or something you asked for.
 | --------------------------------- | ----------------------------------------------------------- | --------------------------------------- |
 | Any map is on screen              | Tile requests, so your IP and the area you are looking at   | Whichever background the view is set to |
 | You type in the search box        | The words you typed, your language, your key if you set one | The search source you picked            |
+| You pick _Open in external map_   | The one spot you right-clicked, in that browser tab         | The map app you chose, in your browser  |
 | You switch on **Enable location** | Nothing leaves — the fix comes from the operating system    | —                                       |
 
 The plugin has no telemetry, no update ping and no server of its own. Track
@@ -256,19 +279,17 @@ use and want a second look for anything else.
 
 ## Attribution
 
-The screenshots in this README were taken against third-party basemaps and
-search services, and are here to show what the plugin does — nothing more. Each
-image carries its source. The demo vault behind them is synthetic: the places and
-the route are built from openly published coordinates, and no personal data is
-shown.
+The screenshots were taken against third-party basemaps and search services, and
+are here to show what the plugin does — nothing more; each image carries its
+source. The demo vault behind them is synthetic: the places, the trail and its
+elevations are openly published data, and nothing personal is shown.
 
 The plugin ships no map data of its own. It draws whatever tiles the view is
 configured with, and their copyright, licensing and any survey-approval
-requirements are the tile provider's and the user's, not this plugin's.
-
-If you hold rights in anything reproduced here and would rather it were not,
-[open an issue](https://github.com/Jin1c-3/obsidian-advanced-maps/issues) and it
-will be removed promptly.
+requirements are the tile provider's and the user's, not this plugin's. If you
+hold rights in anything reproduced here and would rather it were not, [open an
+issue](https://github.com/Jin1c-3/obsidian-advanced-maps/issues) and it will be
+removed promptly.
 
 ## Development
 
