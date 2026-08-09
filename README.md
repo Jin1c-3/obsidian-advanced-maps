@@ -5,9 +5,9 @@
 
 Adds to Obsidian's built-in **Maps** view instead of replacing it: GPX/GeoJSON
 tracks, zoom-to-fit, Chinese coordinate systems, inline `![[track.gpx]]` maps,
-an "open in map" pop-up, and three ways to fill in a note's coordinates — paste
-a share link, search for the place, or take it from where you are, on the
-desktop too.
+an "open in map" pop-up, a one-line map of the notes around a note, and three
+ways to fill in a note's coordinates — paste a share link, search for the place,
+or take it from where you are, on the desktop too.
 
 Everything the built-in view already does — markers, icons, colours, tiles,
 popups, the right-click menu — stays the built-in view doing it. No Leaflet, no
@@ -24,6 +24,7 @@ vendored map library, no runtime dependencies at all.
 | The map opens on the whole world, or on wherever the config happens to point.                                     | Auto-frames markers _and_ tracks, and gets out of the way once you pan. A ⛶ button re-frames on demand.                   |
 | `![[track.gpx]]` in a note renders as a link.                                                                     | Renders it as a real map, inline.                                                                                         |
 | You want to see one note on the map without hunting for it in a base.                                             | An "open in map" entry on the note's ⋮ menu pops up your base's map view, centred on that note.                           |
+| A trip note is about six places, and a note holds one coordinate.                                                 | One line embeds a map of the notes around it — linked, linking back, and itself. Drag a note in and it appears.           |
 | Somebody sends you a map share link and you have to dig the numbers out — in the right order, in the right datum. | Paste it. The coordinate is read and written as WGS-84, whatever the link was in.                                         |
 | You know the name of the place but not where it is.                                                               | Search for it and pick it off the list.                                                                                   |
 | Filling in a note's coordinates by hand.                                                                          | Stamps a template's blank `coords:` with where you are — including on desktop, which the plugins before this one skipped. |
@@ -89,13 +90,82 @@ hosts that serve GCJ-02 or BD-09 are recognised by name, and everything else is
 treated as WGS-84. Set a default in plugin settings, or force one per view when a
 proxied tile URL can't reveal where it came from.
 
+### One base, reused everywhere
+
+The two features below are worth understanding together, because they share one
+idea: **you keep a single `.base` file, and every map in the vault is that base
+seen through a different filter.**
+
+Point **Base path** at it once, in settings. From then on that base is the
+answer to all three questions a map has to settle:
+
+| Question                     | Where the answer lives                                             |
+| ---------------------------- | ------------------------------------------------------------------ |
+| Which notes count as places? | The base's own filters — a folder, a tag, a property, whatever     |
+| What does a pin look like?   | The base's formulas, through **Marker icon** and **Marker colour** |
+| Where is the coordinate?     | The map view's **Coordinates** property                            |
+
+So you tune the look once and every map follows: the pop-up from a note's ⋮
+menu, and every _Around_ map embedded anywhere in the vault. Add a formula for a
+new icon and it appears on all of them, retroactively, because none of them
+carry a copy of your base — they reference it.
+
+Notes stay clean. A note that shows a map holds one line and no configuration,
+which is also what makes the maps survive being edited, moved or synced by
+something else.
+
+If you keep several unrelated sets of places, a base each is fine — but then
+**Base path** names the one the commands use, and the others are opened the
+ordinary way.
+
 ### Open in map
 
-Point **Base path** at a `.base` file in settings, and notes carrying the
-coordinate property (`coords` by default) get an _Open in map_ entry on their ⋮
-menu and in the command palette. Leave **View name** blank to use that base's
-first map view. The pop-up is your base, with your filters, colours and icons —
-just centred on that note.
+Notes carrying the coordinate property (`coords` by default) get an _Open in map_
+entry on their ⋮ menu and in the command palette. Leave **View name** blank to
+use that base's first map view. The pop-up is your base, with your filters,
+colours and icons — just centred on that note.
+
+### A map of the notes around a note
+
+A trip note is about several places, and each of those places is usually already
+a note of its own. _Insert a map of the notes around this one_ writes a single
+line into the note you are in:
+
+```
+![[places.base#Around]]
+```
+
+It is a view in your own base, filtered to the notes this one **links to**, the
+notes **that link to it**, and the note itself. The view is added to the base the
+first time you use the command and referenced every time after, so it is your
+base doing the work — and a change you make to the base later reaches every map
+already inserted.
+
+After that the plugin is out of the way. Drag a note into the body — Obsidian
+makes a link, the way it always does — and it appears on the map, with the
+colour, icon and popup your base gives it. Delete the link and it goes. There is
+no list to keep, no second place the truth lives: the links around the note _are_
+the map.
+
+Both directions count, so a note that names this one — a follow-up, a child
+entry, anything carrying a link back — arrives on the map without the note being
+edited at all. The note you are in joins as soon as it has a coordinate of its
+own, and drops out again if you clear it: you never have to link a note to
+itself, and a note with no coordinate never shows up as a result with no pin.
+
+It reads the same **Base path** and **View name** as _Open in map_ — the added
+view is copied from that map view, so the markers keep your coordinate property,
+icons and colours. Its centre and zoom are left free on purpose, so it frames
+whatever you have collected so far.
+
+Two edges worth knowing:
+
+- **The link names the view.** Rename it in Bases — or in **"Around this note"
+  view name** — and maps already inserted stop resolving, quietly. Obsidian does
+  not rewrite `#view` fragments for you.
+- **The base's own filters still apply.** If your base is scoped to a folder, a
+  note kept outside that folder can collect other notes onto a map but cannot put
+  itself on it.
 
 ### Coordinates from a map link
 
@@ -160,7 +230,7 @@ the details and a console snippet to test your own machine.
 
 ### Not supported
 
-KML and TCX.
+KML and TCX, for now — see the [roadmap](ROADMAP.md).
 
 ## What leaves your vault
 
@@ -219,6 +289,8 @@ plugin once and every save reloads Advanced Maps without touching Obsidian.
 You need a vault with **Bases** on and the first-party **Maps** plugin installed;
 there is nothing for this plugin to extend otherwise.
 
+- [ROADMAP.md](ROADMAP.md) — what might come next, what deliberately will not,
+  and where the seam is for each.
 - [CLAUDE.md](CLAUDE.md) — architecture, the internals this leans on, the
   coordinate pipeline, and the non-obvious things not to undo.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup, what the tests cover, house rules

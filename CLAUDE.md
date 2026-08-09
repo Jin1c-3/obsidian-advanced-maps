@@ -36,6 +36,7 @@ installed in that vault, every save reloads the plugin.
 ```
 src/
   main.ts            plugin class, registry patch, commands, "open in map", location
+  map-block.ts       the "Around" view and its embed line   ← pure, tested
   track-layer.ts     everything added to one native map view
   embed.ts           inline ![[track.gpx]]
   modal.ts           the "open in map" pop-up
@@ -212,6 +213,119 @@ auto-fit back to the whole data set.
 The ⋮ menu item and the command only appear on markdown notes that actually hold
 the coordinate property. Changing the label updates the ⋮ menu immediately; the
 command palette entry picks up the new name after a plugin reload.
+
+## A map of the notes around a note
+
+The command adds **one view to the base file** and writes **one embed line** into
+the note:
+
+```
+![[moments.base#Around]]
+```
+
+That is the whole feature — there is no state, no drop handler and nothing to
+keep in step, because the question "which notes" is one Bases already answers:
+
+```yaml
+or:
+  - this.file.hasLink(file) # the notes this note links to
+  - file.hasLink(this.file) # the notes that link to it
+  - and: # …and this note itself,
+      - file == this.file #   once it holds
+      - '!this["coords"].isEmpty()' #   a coordinate of its own
+```
+
+Inside an **embedded** base, `this` is the _embedding_ file rather than the base
+file, so that filter reads the host note's own links. Adding a place is dragging
+a note into the body — Obsidian's own behaviour — and Bases re-runs the filter.
+
+The host's own clause is **stated as a filter, not decided when the block is
+written**, so it stays true in both directions: a note that gains a coordinate
+later appears with nothing touched, and one that never has a coordinate is never
+a result that draws no pin. `this["coords"]` uses brackets because the property
+name is configurable and `this.my coords` is a syntax error.
+
+**The two link clauses are not mirror images of each other.** Written the wrong
+way round they still parse and still return notes, which is what makes it worth
+stating: `this.file.hasLink(file)` reads one file's links, the host's;
+`file.hasLink(this.file)` reads the links of every row the base offers. And
+`file.backlinks.contains(this)` is _not_ the backlink direction despite its name
+— a row whose backlinks hold the host is a row the host links to, so it is the
+first clause again. Measured: the two return the same set.
+
+### Why the view lives in the base and not in the note
+
+The first shape of this copied the whole base spec into a ` ```base ` block in
+the note. Self-contained, and wrong: a copy freezes the base's formulas at the
+moment it was written, so changing a colour rule leaves every map inserted before
+then on the old one, silently. That is what a "refresh" command would have
+existed to paper over. Referencing the view instead means there is nothing to
+refresh because nothing can go stale, and the note carries one line rather than
+sixty.
+
+The cost is real and is not hidden: **the link names the view**. Rename it in
+Bases and every embed stops resolving, with no error — Obsidian does not rewrite
+`#view` fragments. The setting that holds the name says so.
+
+Four things are load-bearing:
+
+- **The added view is copied from a view the base already has**, never written
+  from scratch — same lesson as "open in map". `coordinates`, `markerIcon` and
+  `markerColor` come with it; a hand-built view loses the icons and the colours.
+  The base's top-level filters and formulas need no copying at all now: the view
+  is inside the base.
+- **`center` and `defaultZoom` are dropped.** `fit()` stands down whenever a view
+  pins either, and a map of the notes around this one that opens somewhere else
+  is the one thing it must not do.
+- **The pointer is ANDed in, not assigned.** The copied view may already filter
+  on something. Only the `and` case can be appended to; every other shape — a
+  bare expression, an `or`, a `not` — is nested under a fresh `and`, which means
+  the same thing and cannot misread the original.
+- **An existing view by that name is never rewritten.** `withAroundView` answers
+  null, which is the signal to leave the base file alone entirely — so a view the
+  reader has since edited keeps its edits, and a second insert costs no write.
+
+The base is re-read **inside** `vault.process` rather than reusing what
+`loadBase` parsed: there is an await between the two, and the base is a file
+Bases itself writes to.
+
+Rewriting the file means re-serializing all of it, which was the one thing worth
+measuring before shipping. Against a real 8.8 kB base with nine views and a
+screenful of nested-`if` formulas, `parseYaml` → `stringifyYaml` produced a
+**30-line diff, every line an addition** (`292a293,322`) — nothing removed,
+nothing reflowed, and the parsed structure identical but for the added view. It
+was measured on a copy; the real base was never written to.
+
+**The base's own top-level filter still applies**, which is the one sharp edge:
+under `file.inFolder("moments")` a host note kept anywhere else can never include
+itself, coordinate or not. Measured — a root-level note with `coords` and one
+link rendered exactly one row, the link.
+
+Verified against a running Obsidian 1.13 rather than assumed. Both
+`this.file.hasLink(file)` and `file.backlinks.contains(this)` return exactly the
+linked notes; the first is used because the docs call `file.backlinks`
+performance heavy. `file == this.file` and the bracket form of a property both
+parse — the bracket form was measured after a first attempt whose YAML escaping
+was wrong and which therefore proved nothing. With three links in the host note
+the embedded view reported `data.data.length === 3`,
+`config.get('markerIcon') === 'formula.icon'`, `mapConfig.center === null` and
+`hasConfiguredZoom() === false` — the last two being what leaves auto-fit free.
+Adding a fourth link took it to four with no further action. Deleting the host's
+`coords` took a three-row map to two and restoring it took it back to three,
+with nothing touched. A host note with one outward link, one note pointing back
+at it and a coordinate of its own rendered all three rows — one per clause.
+
+`this` resolves to the embedding note for a **file** embed as well as for a code
+block, which is what makes the one-line form possible: `![[x.base]]` in a note
+returned that note's outward link, where a base-file `this` would have returned
+nothing. `![[base#view]]` selects by view name — `![[moments.base#地图]]`
+rendered 369 rows carrying `formula.icon`. Running the command twice left the
+base byte-for-byte identical the second time.
+
+The command is `editorCheckCallback`, so it is absent in reading view. That is
+correct — it writes at a cursor — but it also means `executeCommandById` from
+`obsidian eval` does nothing until the leaf is in source mode. It looks exactly
+like a broken command; it is not.
 
 ## Coordinates from a map link
 
@@ -410,8 +524,8 @@ All of them cost real debugging time. Read this before "simplifying" any of them
 ## Testing
 
 `src/coords.ts`, `src/parse.ts`, `src/geometry.ts`, `src/locate.ts`,
-`src/view-options.ts` and `src/i18n.ts` run outside Obsidian and are held above
-90 % coverage in CI. Anything touching the coordinate maths, a parser or the
+`src/view-options.ts`, `src/map-block.ts` and `src/i18n.ts` run outside Obsidian
+and are held above 90 % coverage in CI. Anything touching the coordinate maths, a parser or the
 locator needs a test in the same PR.
 
 The view wrappers need a live Bases map, but that does not put them out of reach:

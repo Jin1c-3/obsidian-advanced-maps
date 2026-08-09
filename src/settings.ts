@@ -18,6 +18,8 @@ export interface AdvancedMapsSettings {
 	coordsProperty: string;
 	openZoom: number;
 	menuLabel: string;
+	/** The view added to the base for "a map of the notes around this one". */
+	aroundViewName: string;
 	/** Place search — the one feature that leaves the vault. */
 	geocodeProvider: GeocodeProvider;
 	amapKey: string;
@@ -27,9 +29,10 @@ export interface AdvancedMapsSettings {
 	autoFillExclude: string;
 }
 
-/* Blank is meaningful for three of these: `menuLabel` blank falls back to the
- * localized command name, and `viewName` blank takes the base's first map view.
- * `basePath` blank simply means "Open in map" is not configured yet.
+/* Blank is meaningful for four of these: `menuLabel` and `aroundViewName` blank
+ * fall back to their localized names, and `viewName` blank takes the base's
+ * first map view. `basePath` blank simply means "Open in map" is not configured
+ * yet.
  *
  * `locate` starts off because the first request raises a permission prompt and
  * because recording where each note was written is a decision, not a default.
@@ -47,6 +50,7 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	coordsProperty: 'coords',
 	openZoom: 15,
 	menuLabel: '',
+	aroundViewName: '',
 	geocodeProvider: 'nominatim',
 	amapKey: '',
 	locate: false,
@@ -95,7 +99,15 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 */
 	private text(
 		setting: Setting,
-		key: 'menuLabel' | 'basePath' | 'viewName' | 'coordsProperty' | 'autoFillExclude' | 'trackColor' | 'amapKey',
+		key:
+			| 'menuLabel'
+			| 'basePath'
+			| 'viewName'
+			| 'aroundViewName'
+			| 'coordsProperty'
+			| 'autoFillExclude'
+			| 'trackColor'
+			| 'amapKey',
 		opts: { placeholder?: string; fallback?: string } = {}
 	): void {
 		setting.addText((text) =>
@@ -166,6 +178,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			{ placeholder: DEFAULT_SETTINGS.coordsProperty, fallback: DEFAULT_SETTINGS.coordsProperty }
 		);
 		this.slider(this.row('settings.open.zoom.name'), 'openZoom', 1, 18, 1);
+		this.text(this.row('settings.open.aroundView.name', 'settings.open.aroundView.desc'), 'aroundViewName', {
+			placeholder: t('view.around'),
+		});
 		// The only cosmetic field in the group, so it comes last.
 		this.text(this.row('settings.open.label.name', 'settings.open.label.desc'), 'menuLabel', {
 			placeholder: t('command.openInMap'),

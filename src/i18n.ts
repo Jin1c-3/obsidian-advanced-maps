@@ -17,6 +17,8 @@ const en = {
 	'notice.viewNotFound': '{path} has no view named "{view}"',
 	'notice.noMapView': '{path} has no map view',
 	'notice.noCoords': '"{file}" has no {property}',
+	'notice.around.added': 'Added the "{view}" view to {path}',
+	'notice.around.writeFailed': 'Could not add the view to {path}: {error}',
 
 	/* ---- notices: location ---- */
 	'notice.locate.working': 'Getting your location…',
@@ -51,6 +53,9 @@ const en = {
 
 	/* ---- commands ---- */
 	'command.openInMap': 'Open in map',
+	'command.insertMap': 'Insert a map of the notes around this one',
+	/* Doubles as the base view's name and as the link fragment, so it is short. */
+	'view.around': 'Around',
 	'command.fillCoords': 'Fill coordinates from current location',
 	'command.fillFromLink': 'Set coordinates from a map link',
 	'command.searchPlace': 'Search for a place and set coordinates',
@@ -137,13 +142,18 @@ const en = {
 	'settings.open.label.desc':
 		'Blank for the default. The ⋮ menu follows at once, the command palette after a reload.',
 	'settings.open.basePath.name': 'Base file path',
-	'settings.open.basePath.desc': 'The .base file the map view is taken from.',
+	'settings.open.basePath.desc':
+		'The .base file the map view is taken from — for the pop-up and the inserted map alike.',
 	'settings.open.viewName.name': 'View name',
 	'settings.open.viewName.desc': 'Which view inside that base. Blank takes its first map view.',
 	'settings.open.coordsProperty.name': 'Coordinate property',
 	'settings.open.coordsProperty.desc':
 		'The property holding "latitude,longitude". Location, below, writes to this one too.',
 	'settings.open.zoom.name': 'Pop-up zoom level',
+	'settings.open.aroundView.name': '"Around this note" view name',
+	'settings.open.aroundView.desc':
+		'The view added to that base for maps of the notes around a note. Renaming it here does not repoint maps ' +
+		'already inserted — their links name the old one.',
 
 	/* ---- settings: tracks ---- */
 	'settings.tracks.heading': 'Tracks',
@@ -171,6 +181,8 @@ const zh: Record<TranslationKey, string> = {
 	'notice.viewNotFound': '{path} 里没有「{view}」视图',
 	'notice.noMapView': '{path} 里没有地图视图',
 	'notice.noCoords': '「{file}」没有 {property}',
+	'notice.around.added': '已在 {path} 中添加「{view}」视图',
+	'notice.around.writeFailed': '无法向 {path} 添加视图：{error}',
 
 	'notice.locate.working': '正在定位…',
 	'notice.locate.done': '{property}：{coords}',
@@ -199,6 +211,8 @@ const zh: Record<TranslationKey, string> = {
 	'options.tileCoordSystem': '瓦片坐标系',
 
 	'command.openInMap': '在地图中打开',
+	'command.insertMap': '插入本篇相关笔记的地图',
+	'view.around': '周围',
 	'command.fillCoords': '用当前定位填写坐标',
 	'command.fillFromLink': '从地图链接填写坐标',
 	'command.searchPlace': '搜索地点并填写坐标',
@@ -262,12 +276,15 @@ const zh: Record<TranslationKey, string> = {
 	'settings.open.label.name': '菜单项名称',
 	'settings.open.label.desc': '留空用默认名称。⋮ 菜单立即生效，命令面板要重载插件。',
 	'settings.open.basePath.name': 'Base 文件路径',
-	'settings.open.basePath.desc': '从哪个 .base 文件取地图视图。',
+	'settings.open.basePath.desc': '从哪个 .base 文件取地图视图。弹窗和插入的地图取的是同一个。',
 	'settings.open.viewName.name': '视图名称',
 	'settings.open.viewName.desc': '该 base 里的哪个视图。留空取第一个地图视图。',
 	'settings.open.coordsProperty.name': '坐标属性',
 	'settings.open.coordsProperty.desc': '存放「纬度,经度」的属性名。下面的定位写入的也是它。',
 	'settings.open.zoom.name': '弹窗缩放级别',
+	'settings.open.aroundView.name': '「周围」视图名称',
+	'settings.open.aroundView.desc':
+		'为「本篇相关笔记的地图」在该 base 中添加的视图。在这里改名不会改已经插入的地图——它们的链接指向旧名字。',
 
 	'settings.tracks.heading': '轨迹',
 	'settings.tracks.intro': 'GPX / GeoJSON 轨迹的画法。线宽、透明度和缩放上限都可以在单个地图视图里另设。',

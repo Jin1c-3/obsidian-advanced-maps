@@ -21,13 +21,22 @@
  */
 
 import { Notice, parseFrontMatterAliases, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
-import type { TAbstractFile } from 'obsidian';
+import type { Editor, TAbstractFile } from 'obsidian';
 import { TRACK_EXTS } from './constants';
 import { TrackEmbed } from './embed';
 import { t } from './i18n';
 import { needsKey } from './geocode';
 import { LinkModal } from './link-modal';
 import { formatFix, isBlank, Locator } from './locate';
+import {
+	embedLink,
+	findView,
+	pickMapView,
+	pointerFilter,
+	withAroundView,
+	type BaseSpec,
+	type BaseView,
+} from './map-block';
 import { MapModal } from './modal';
 import { PlaceSearchModal } from './search-modal';
 import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMapsSettings } from './settings';
@@ -35,17 +44,6 @@ import { TrackCache } from './track-cache';
 import { TrackLayer } from './track-layer';
 import { appendTrackOptions } from './view-options';
 import type { BasesMapView, BasesViewFactory, BasesViewRegistration } from './types/obsidian-internals';
-
-interface BaseView {
-	name?: string;
-	type?: string;
-	[key: string]: unknown;
-}
-
-interface BaseSpec {
-	views?: BaseView[];
-	[key: string]: unknown;
-}
 
 export default class AdvancedMapsPlugin extends Plugin {
 	/** Declared on Plugin as `unknown` since 1.13; narrowed here. */
@@ -81,6 +79,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 		this.registerTrackEmbeds();
 		this.registerOpenInMap();
+		this.registerInsertMap();
 		this.registerLinkPaste();
 		this.registerPlaceSearch();
 		this.registerLocate();
@@ -327,11 +326,45 @@ export default class AdvancedMapsPlugin extends Plugin {
 		return this.readCoords(file) !== null;
 	}
 
-	/** The view to pop up: the one named in settings, or the base's first map view. */
-	private pickView(base: BaseSpec): BaseView | undefined {
-		const views = base.views ?? [];
-		if (this.settings.viewName) return views.find((v) => v && v.name === this.settings.viewName);
-		return views.find((v) => v && v.type === 'map');
+	/**
+	 * The configured base, its file and the view to copy out of it, or null with
+	 * the reason already on screen. Both the pop-up and the embed start here, and
+	 * neither has anything to add to a missing file or a bad parse.
+	 */
+	private async loadBase(): Promise<{ base: BaseSpec; view: BaseView; file: TFile } | null> {
+		const basePath = this.settings.basePath;
+		if (!basePath) {
+			new Notice(t('notice.baseNotConfigured'));
+			return null;
+		}
+
+		const baseFile = this.app.vault.getFileByPath(basePath);
+		if (!baseFile) {
+			new Notice(t('notice.baseNotFound', { path: basePath }));
+			return null;
+		}
+
+		let base: BaseSpec;
+		try {
+			base = (parseYaml(await this.app.vault.cachedRead(baseFile)) as BaseSpec) ?? {};
+		} catch (e) {
+			new Notice(
+				t('notice.baseParseFailed', { path: basePath, error: e instanceof Error ? e.message : String(e) })
+			);
+			return null;
+		}
+
+		const view = pickMapView(base, this.settings.viewName);
+		if (!view) {
+			new Notice(
+				this.settings.viewName
+					? t('notice.viewNotFound', { path: basePath, view: this.settings.viewName })
+					: t('notice.noMapView', { path: basePath })
+			);
+			return null;
+		}
+
+		return { base, view, file: baseFile };
 	}
 
 	private async openMapForFile(file: TFile): Promise<void> {
@@ -342,37 +375,9 @@ export default class AdvancedMapsPlugin extends Plugin {
 		}
 		const coords = String(found.raw);
 
-		const basePath = this.settings.basePath;
-		if (!basePath) {
-			new Notice(t('notice.baseNotConfigured'));
-			return;
-		}
-
-		const baseFile = this.app.vault.getFileByPath(basePath);
-		if (!baseFile) {
-			new Notice(t('notice.baseNotFound', { path: basePath }));
-			return;
-		}
-
-		let base: BaseSpec;
-		try {
-			base = (parseYaml(await this.app.vault.cachedRead(baseFile)) as BaseSpec) ?? {};
-		} catch (e) {
-			new Notice(
-				t('notice.baseParseFailed', { path: basePath, error: e instanceof Error ? e.message : String(e) })
-			);
-			return;
-		}
-
-		const view = this.pickView(base);
-		if (!view) {
-			new Notice(
-				this.settings.viewName
-					? t('notice.viewNotFound', { path: basePath, view: this.settings.viewName })
-					: t('notice.noMapView', { path: basePath })
-			);
-			return;
-		}
+		const loaded = await this.loadBase();
+		if (!loaded) return;
+		const { base, view } = loaded;
 
 		const mapHeight = Math.max(200, Math.min(800, Math.round(window.innerHeight * 0.7)));
 		// An explicit centre needs an explicit zoom, otherwise auto-fit frames the
@@ -385,6 +390,87 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// Obsidian's own parser, so `aliases: a, b` reads the way it does elsewhere.
 		const label = parseFrontMatterAliases(found.frontmatter)?.[0] || found.frontmatter.place || file.basename;
 		new MapModal(this.app, file, spec, `${String(label)} · ${coords}`).open();
+	}
+
+	/* ---- a map of the notes around this one ---- */
+
+	/** Blank falls back to the localized name, the way `menuLabel` does. */
+	aroundViewName(): string {
+		return this.settings.aroundViewName || t('view.around');
+	}
+
+	/**
+	 * Writes one line — an embed of a view in the configured base, filtered to
+	 * the notes this note links to, the notes that link to it, and itself. The
+	 * view is added to the base file the first time and referenced afterwards, so
+	 * a later change to the base reaches every note that embeds it.
+	 *
+	 * After that the plugin is out of the loop entirely: adding a place is
+	 * dragging a note into the body, which is Obsidian's own behaviour, and the
+	 * map follows because Bases re-runs the filter.
+	 *
+	 * Deliberately not on the ⋮ menu. It writes at the cursor, so it needs an
+	 * editor open at a particular spot — which is what the command palette
+	 * offers and a file menu, reachable from the explorer or a tab header, does
+	 * not.
+	 */
+	private registerInsertMap(): void {
+		this.addCommand({
+			id: 'insert-linked-map',
+			name: t('command.insertMap'),
+			editorCheckCallback: (checking, editor, ctx) => {
+				const file = ctx.file;
+				if (!file || file.extension !== 'md') return false;
+				if (!checking) void this.insertAroundMap(editor, file);
+				return true;
+			},
+		});
+	}
+
+	private async insertAroundMap(editor: Editor, note: TFile): Promise<void> {
+		const loaded = await this.loadBase();
+		if (!loaded) return;
+		const name = this.aroundViewName();
+
+		if (!(await this.ensureAroundView(loaded, name))) return;
+
+		// fileToLinktext, so the link is written the way Obsidian writes links —
+		// shortest unambiguous form, and correct when two bases share a basename.
+		const linktext = this.app.metadataCache.fileToLinktext(loaded.file, note.path);
+		editor.replaceSelection(embedLink(linktext, name));
+	}
+
+	/**
+	 * Add the view to the base file unless it is already there.
+	 *
+	 * The whole file is re-serialized, so it is read again inside `process`
+	 * rather than reusing what `loadBase` parsed: between the two there is an
+	 * await, and the base is a file Bases itself writes to.
+	 */
+	private async ensureAroundView(
+		loaded: { base: BaseSpec; view: BaseView; file: TFile },
+		name: string
+	): Promise<boolean> {
+		if (findView(loaded.base, name)) return true;
+		const filter = pointerFilter(this.settings.coordsProperty);
+		try {
+			this.app.vault.process(loaded.file, (data) => {
+				const fresh = (parseYaml(data) as BaseSpec) ?? {};
+				const source = pickMapView(fresh, this.settings.viewName) ?? loaded.view;
+				const next = withAroundView(fresh, source, name, filter);
+				return next ? stringifyYaml(next) : data;
+			});
+		} catch (e) {
+			new Notice(
+				t('notice.around.writeFailed', {
+					path: loaded.file.path,
+					error: e instanceof Error ? e.message : String(e),
+				})
+			);
+			return false;
+		}
+		new Notice(t('notice.around.added', { view: name, path: loaded.file.path }));
+		return true;
 	}
 
 	/* ---- coordinates from a link ---- */
