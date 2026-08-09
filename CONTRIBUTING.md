@@ -45,8 +45,9 @@ survivable:
 If you lean on a new internal, declare it there with a note on where it came
 from, rather than casting to `any` at the call site.
 
-The "six non-obvious things" section of the README exists because each of those
-looks like dead weight and is not. Read it before simplifying.
+[CLAUDE.md](CLAUDE.md) is the architecture document: the registry patch, the
+coordinate pipeline, and a "non-obvious things to leave alone" list that exists
+because each entry looks like dead weight and is not. Read it before simplifying.
 
 ## Translations
 

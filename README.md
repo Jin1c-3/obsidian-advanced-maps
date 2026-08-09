@@ -12,6 +12,17 @@ Everything the built-in view already does — markers, icons, colours, tiles,
 popups, the right-click menu — stays the built-in view doing it. No Leaflet, no
 vendored map library, no runtime dependencies at all.
 
+## What it fixes
+
+| Problem                                                                                                                      | What this plugin does                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| A note has a `.gpx` from a walk attached, and the map shows only a pin.                                                      | Draws the track, in that note's colour. Hover for its popup, click to open it.                                            |
+| Chinese tile providers (高德, 腾讯, 百度) don't serve WGS-84, so every pin floats several streets — up to a kilometre — off. | Converts coordinates on the way to the map and back on the way out. Nothing on disk changes; your notes stay WGS-84.      |
+| The map opens on the whole world, or on wherever the config happens to point.                                                | Auto-frames markers _and_ tracks, and gets out of the way once you pan. A ⛶ button re-frames on demand.                   |
+| `![[track.gpx]]` in a note renders as a link.                                                                                | Renders it as a real map, inline.                                                                                         |
+| You want to see one note on the map without hunting for it in a base.                                                        | An "open in map" entry on the note's ⋮ menu pops up your base's map view, centred on that note.                           |
+| Filling in a note's coordinates by hand.                                                                                     | Stamps a template's blank `coords:` with where you are — including on desktop, which the plugins before this one skipped. |
+
 ## Requirements
 
 - Obsidian 1.13.1 or newer, with **Bases** enabled (core plugin).
@@ -28,100 +39,20 @@ Community plugins.
 **With BRAT.** Add `Jin1c-3/obsidian-advanced-maps` in
 [BRAT](https://github.com/TfTHacker/obsidian42-brat).
 
-## How the patch works
+## Using it
 
-Bases keeps its view types in a plain, writable object:
+### Tracks
 
-```
-app.internalPlugins.getPluginById('bases').instance.registrations.map
-  → { name, icon, factory, options }
-```
+Attach a `.gpx` or `.geojson` to a note — `![[2026-04-12.gpx]]` — and any map
+view whose base includes that note draws the track. Nothing to configure, and no
+need to widen the base's filters to let attachment files in. A base that queries
+`file.ext == "gpx"` directly works too.
 
-`factory` is replaced with one that builds the native view and then attaches a
-`TrackLayer` to the instance; `options` is replaced with one that splices an
-extra group into the list. The native class is never subclassed or edited.
+### View options
 
-`TrackLayer` wraps methods **on the instance** — `initializeMap`, `destroyMap`,
-`onunload`, `loadConfig`, `switchToTileSet` — plus `markerManager.updateMarkers`
-and `markerManager.createGeoJSONFeatures`. Instance wrappers die with the view,
-and `delete` restores the untouched prototype.
-
-`updateMarkers` is the seam worth knowing about. The native view calls it once
-the map exists, again on every data change, and again on `styledata` after a new
-style has wiped every source — which is exactly the set of moments the tracks
-need redrawing too.
-
-## How tracks find their way onto the map
-
-Tracks are **not** pulled from the query result. For every note in the base, the
-plugin reads that note's embeds from the metadata cache and resolves any
-`.gpx` / `.geojson` link:
-
-```
-moments/20260412191024.md  ──embeds──▶  assets/2026年4月12日 下午831.gpx
-```
-
-Two consequences worth knowing:
-
-- The base's own filters keep working untouched. No need to widen a filter to
-  let attachment files into the result set.
-- A track is drawn in **its note's colour** — resolved through the same
-  `markerManager.getCustomColor` the pins use — because it belongs to that note.
-  Hovering the track shows that note's popup; clicking it opens the note.
-
-A `.gpx`/`.geojson` file that appears in the query result directly is also
-drawn, so `file.ext == "gpx"` style bases work too.
-
-Every track becomes one GeoJSON source with two layers: a `line` layer and a
-`circle` layer for waypoints, both coloured per-feature via `['get','amColor']`.
-
-## Coordinate systems (GCJ-02 / BD-09)
-
-Chinese tile providers do not serve WGS-84. 高德 and 腾讯 serve **GCJ-02**, 百度
-serves **BD-09** — deliberate, non-linear offsets that land 300–600 m (GCJ) or
-about 1 km (BD) from the true position. Point a Maps tile set at
-`webrd01.is.autonavi.com` and every pin floats several streets away.
-
-Raster tiles cannot be nudged back, so the data moves instead. Every coordinate
-is converted on its way onto the map and converted back on the way out;
-MapLibre never learns the difference. **Nothing on disk is touched** — notes and
-`.gpx` files stay WGS-84, and switching back restores the original positions to
-the metre.
-
-The system is a property of the **tile source**, not of the view, so the default
-mode is `auto`: it reads the answer off the tile URL. That is what makes the
-mixed case work — one note can hold an OpenStreetMap embed and a 高德 base view
-at once, each correct, and the ⧉ background switcher flips the system live.
-
-| Mode           | When                                                                    |
-| -------------- | ----------------------------------------------------------------------- |
-| Auto (default) | Match the tile URL against known 高德/腾讯/百度/Google-CN hosts         |
-| WGS-84         | OpenStreetMap, ArcGIS, 天地图 (CGCS2000; the difference is centimetres) |
-| GCJ-02         | Force it — a proxied or self-hosted 高德 mirror the URL cannot reveal   |
-| BD-09          | Same, for 百度                                                          |
-
-Set the default in plugin settings; override per view under **Coordinate
-system**. Conversion happens at four places, all of which have to agree:
-
-- **Markers** — `markerManager.createGeoJSONFeatures` is the single point where
-  pin coordinates are minted, so wrapping it covers every pin.
-- **Tracks** — memoised per file per system; a 11 k-point export is transformed
-  once, not on every redraw.
-- **The configured `center`** — converted inside the `loadConfig` wrapper, where
-  the config object is born. Patching `initializeMap` or `updateCenter` alone
-  makes the two fight over the centre. The untouched WGS-84 value is kept on the
-  config as `__amCenterWgs` so a later tile switch can re-derive it.
-- **Auto-fit bounds** — native `getBounds()` still answers in WGS-84, so
-  `bounds()` reads the moved features instead.
-
-Accuracy: GCJ round-trips to under a nanometre, BD to under 0.2 m; outside China
-both are the identity. `tests/coords.test.ts` holds those figures to account.
-
-## View options
-
-The built-in options are untouched. This plugin appends two groups —
-**Tracks** behind Markers, and **Coordinate system** behind Background, next to
-the tile URLs that decide it:
+The built-in options are untouched; two groups are appended — **Tracks** behind
+Markers, and **Coordinate system** behind Background, next to the tile URLs that
+decide it.
 
 | Option                 | Meaning                          |
 | ---------------------- | -------------------------------- |
@@ -130,150 +61,43 @@ the tile URLs that decide it:
 | Max zoom when fitting  | Upper bound for auto-fit         |
 | Tile coordinate system | Blank follows the plugin setting |
 
-Auto-fit covers markers _and_ tracks, and stands down when the view pins a
-`center` or a `defaultZoom`, or once you pan or zoom. The ⛶ button re-frames on
-demand and ignores all of that.
+### Coordinate systems
 
-## Open in map
+Leave it on **Auto** and the right system is picked from the tile URL: GCJ-02 for
+高德 and 腾讯, BD-09 for 百度, WGS-84 for OpenStreetMap and friends. Set a default
+in plugin settings, or force one per view when a proxied tile URL can't reveal
+where it came from.
 
-Adds an entry to a note's ⋮ menu (and the command palette) that pops up a base's
-map view centred on that note. The item only appears on markdown notes that
-actually have the coordinate property, so it stays out of the way everywhere
-else.
+### Open in map
 
-Settings: menu label, base path, view name, coordinate property, pop-up zoom.
-The base path starts blank and has to be pointed at a `.base` file; leaving the
-view name blank takes that base's first map view. Changing the label updates the
-⋮ menu immediately; the command palette entry picks up the new name after a
-plugin reload.
+Point **Base path** at a `.base` file in settings, and notes carrying the
+coordinate property (`coords` by default) get an _Open in map_ entry on their ⋮
+menu and in the command palette. Leave **View name** blank to use that base's
+first map view. The pop-up is your base, with your filters, colours and icons —
+just centred on that note.
 
-It renders the base as a ` ```base ` block rather than constructing a view
-directly — that is what carries the base's filters, formulas and properties
-across. Build the view spec by hand and you lose the icons, the colours and the
-scope. The spec overrides `center`, `defaultZoom` and `mapHeight` only, and
-sets both `center` and `defaultZoom` because an explicit centre without an
-explicit zoom just gets auto-fit back to the whole data set.
+### Location
 
-## Location
+Switch on **Enable location** and a note whose coordinate property is _present
+but empty_ gets filled in with where you are. Give a template an empty `coords:`
+line and every note made from it is stamped. A property that already holds
+something is never overwritten, and a note without the property never gains one.
+The _Fill coordinates from current location_ command overwrites on demand.
 
-Fills a note's coordinate property from the device's own position, two ways:
+Values are written as `lat,lng` in WGS-84 — `28.624415,115.788091`. Notes whose
+path contains any fragment in **Skip paths containing** (default `templates`) are
+left alone.
 
-- **Automatically**, when the property is _present but empty_. Give a template an
-  empty `coords:` line and every note made from it is stamped with where it was
-  written. A property that already holds something is never overwritten, and a
-  note with no such property is never given one — absent is not blank, and only
-  the template's blank counts as an invitation.
-- **By hand**, through the _Fill coordinates from current location_ command,
-  which overwrites whatever is there.
+It works on desktop as well as mobile, where the plugins before this one gave up:
+current Chromium asks the operating system for a fix, so no API key is involved.
+That still depends on the OS location service being on — and on Linux, on a
+working GeoClue — so the plugin asks once and stops asking for the session if the
+platform refuses. See [CLAUDE.md](CLAUDE.md#why-location-is-not-mobile-only) for
+the details and a console snippet to test your own machine.
 
-Both are off until **Enable location** is switched on. The first request raises a
-permission prompt, and where each note was written is not something to start
-recording on a user's behalf.
+### Not supported
 
-### Why this one is not mobile-only
-
-Both map plugins that came before this one register their location features on
-mobile alone. The built-in Maps plugin says why in one line:
-
-```ts
-// Only registered on mobile, since desktop has no location provider
-if (Platform.isMobileApp) { ... }
-```
-
-Map View does the same, in `addFrontMatterLocationIfEmpty`:
-
-```ts
-if (!utils.isMobile(this.app)) return;
-```
-
-That was true of older Electron. Chromium's only desktop fallback was Google's
-network location service, whose API key is a build-time secret Electron does not
-ship, so the request failed no matter what the OS knew. Current Chromium asks the
-**operating system** instead — the Windows location service, CoreLocation on
-macOS — and no API key is involved. Obsidian 1.13 carries Chromium 150, well past
-that change, so the desktop is worth asking and this plugin asks it.
-
-Worth being honest about the shape of that claim: it depends on the platform, on
-the OS location service being switched on, and on Linux having a working GeoClue,
-which often it does not. So the plugin does not assume — it asks, once. The first
-failure that arrives before any success trips a breaker and nothing is asked
-again for the rest of the session, which is what keeps a machine that genuinely
-cannot answer from prompting on every note opened. Running the command by hand
-resets it, on the grounds that asking deliberately means something has changed.
-
-To find out where your own desktop stands, paste this into the developer console
-(`Ctrl+Shift+I`):
-
-```js
-navigator.geolocation.getCurrentPosition(
-  (p) => console.log('OK', p.coords.latitude, p.coords.longitude, '±' + p.coords.accuracy + 'm'),
-  (e) => console.log('FAIL', e.code, e.message),
-  { enableHighAccuracy: true, timeout: 15000 }
-);
-```
-
-### What gets written
-
-`lat,lng` at six decimal places — `28.624415,115.788091`. Fixes are **WGS-84**,
-which is what the vault stores; the GCJ-02 / BD-09 shift happens on the way to
-the tiles, never on the way to disk. Six decimals is far past what any GPS
-delivers, but rounding harder would make a re-stamp of the same spot look like
-the note had moved.
-
-Notes whose path contains any fragment in **Skip paths containing** (default
-`templates`) are left alone — otherwise opening a template to edit it would fill
-in the very blank the template exists to provide.
-
-## Inline `![[track.gpx]]`
-
-There is no exported MapLibre to build a map with, so the embed borrows the
-built-in view: the native factory is called with a stub controller
-(`{app}` plus a `config` that answers nothing), which yields a fully configured
-map — tiles, dark mode, zoom controls, background switcher — that happens to
-have no rows behind it. The track is then drawn on top.
-
-Each map holds a WebGL context and browsers cap how many can be alive at once,
-so an embed only builds once it scrolls into view.
-
-The extensions are claimed only if nothing else has them, so a plugin that
-already renders `.gpx` keeps working alongside this one.
-
-## Six non-obvious things this had to work around
-
-All of them cost real debugging time; don't undo them.
-
-1. **`isStyleLoaded()` is the wrong gate.** It stays false until every _tile_
-   has arrived, so waiting on it before `addSource` costs seconds on a busy map
-   — long enough that a background switch looks like it dropped the tracks.
-   `styleUsable()` reads `map.style._loaded` instead, which is the flag
-   `addSource` itself checks.
-
-2. **Tracks are re-added on `style.load`, not on the native `styledata` hook.**
-   The built-in view arms a _one-shot_ `styledata` listener to restore its
-   markers. Riding that would work exactly once per style change and is not
-   ours to depend on.
-
-3. **Track layers are inserted below `marker-pins`.** Otherwise a pin sitting on
-   its own track is unclickable.
-
-4. **Already-open views are adopted on load.** A map view that was built before
-   the patch never passed through the patched factory, so enabling the plugin —
-   or Maps reloading — would leave it plain until the tab was reopened.
-   `adoptOpenViews()` walks the component tree and picks those up.
-
-5. **The patch is re-applied on `layout-change`.** Maps re-registers its view
-   whenever it reloads, which drops the wrapper on the floor. The check is a
-   property lookup, so running it that often is free.
-
-6. **`switchToTileSet` never goes back through `loadConfig`.** It rewrites
-   `mapConfig.mapTiles` in place, so under `auto` the coordinate system can
-   change without the configured centre hearing about it. It is wrapped too,
-   and re-derives the centre from the WGS-84 value kept beside it.
-
-## Not supported
-
-KML and TCX. Adding them means another branch in `parseTrack` plus their
-extensions in `TRACK_EXTS`; the shapes they produce are the same.
+KML and TCX.
 
 ## Development
 
@@ -283,68 +107,27 @@ cd obsidian-advanced-maps
 npm install
 cp .env.example .env      # point OBSIDIAN_PLUGIN_DIR at a vault
 npm run dev               # watch, rebuild into that vault, hot-reload
+npm run check             # prettier, eslint, tsc, vitest — the same set CI runs
 ```
 
-`npm run dev` writes `main.js`, `manifest.json` and `styles.css` straight into
-the vault folder and drops a `.hotreload` marker beside them, which is what
-[pjeby/hot-reload](https://github.com/pjeby/hot-reload) watches for — install
-that plugin once and every save reloads Advanced Maps without touching Obsidian.
-Without it, ⌘/Ctrl+P → "Reload app without saving" does the same thing by hand.
+`npm run dev` writes the build straight into the vault folder and drops a
+`.hotreload` marker beside it, which is what
+[pjeby/hot-reload](https://github.com/pjeby/hot-reload) watches for — install that
+plugin once and every save reloads Advanced Maps without touching Obsidian.
 
-| Script                                      | What it does                                                          |
-| ------------------------------------------- | --------------------------------------------------------------------- |
-| `npm run dev`                               | esbuild watch → the vault in `OBSIDIAN_PLUGIN_DIR`, plus `.hotreload` |
-| `npm run build`                             | Typecheck, then a minified bundle at the repo root                    |
-| `npm run deploy`                            | One-off production build into the vault                               |
-| `npm test` / `test:watch` / `test:coverage` | Vitest                                                                |
-| `npm run typecheck`                         | `tsc --noEmit`                                                        |
-| `npm run lint` / `lint:fix`                 | ESLint                                                                |
-| `npm run format` / `format:check`           | Prettier                                                              |
-| `npm run check`                             | All of the above, the way CI runs them                                |
+You need a vault with **Bases** on and the first-party **Maps** plugin installed;
+there is nothing for this plugin to extend otherwise.
 
-### Layout
-
-```
-src/
-  main.ts            plugin class, registry patch, commands, "open in map", location
-  track-layer.ts     everything added to one native map view
-  embed.ts           inline ![[track.gpx]]
-  modal.ts           the "open in map" pop-up
-  settings.ts        settings tab and defaults
-  locate.ts          device location, and when to stop asking ← tested
-  coords.ts          GCJ-02 / BD-09 conversion            ← pure, tested
-  parse.ts           GPX / GeoJSON readers                ← pure, tested
-  geometry.ts        bounds, clamping, the style gate     ← pure, tested
-  view-options.ts    the two option groups and where they go
-  track-cache.ts     parsed tracks, keyed by path, invalidated by mtime
-  layers.ts          MapLibre layer specs, zoom-to-fit control
-  i18n.ts            en / zh tables
-  constants.ts       source and layer ids, track extensions
-  types/obsidian-internals.d.ts   the undocumented surface this leans on
-tests/               vitest, happy-dom, no vault required
-```
-
-Everything that can run outside Obsidian is tested and kept above 90 % coverage
-in CI. The view wrappers are not: they need a live Bases map, so they are held
-honest by the type shim and by comments explaining why each wrapper exists.
-
-### Releasing
-
-```bash
-npm version minor      # bumps package.json, manifest.json and versions.json
-git push --follow-tags
-```
-
-The tag triggers `.github/workflows/release.yml`, which re-runs every check,
-refuses to continue if the tag and `manifest.json` disagree, and publishes a
-release with `main.js`, `manifest.json` and `styles.css` attached.
+- [CLAUDE.md](CLAUDE.md) — architecture, the internals this leans on, the
+  coordinate pipeline, and the non-obvious things not to undo.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, what the tests cover, house rules
+  for the patching code, translations.
 
 ## Translations
 
 `src/i18n.ts` holds one flat table per language; English is the source of truth
 and its keys are the type, so a missing entry is a compile error. A new language
-is one object plus one line in `LOCALES`, and the test suite checks the tables
-stay in step.
+is one object plus one line in `LOCALES`.
 
 ## Licence
 
