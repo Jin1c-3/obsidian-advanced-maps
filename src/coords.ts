@@ -15,8 +15,7 @@
 import type { Geometry } from 'geojson';
 import type { MapConfig } from './types/obsidian-internals';
 
-export const COORD_SYSTEMS = ['wgs84', 'gcj02', 'bd09'] as const;
-export type CoordSystem = (typeof COORD_SYSTEMS)[number];
+export type CoordSystem = 'wgs84' | 'gcj02' | 'bd09';
 
 /** What the dropdowns offer. "auto" is a way of deciding, not a system. */
 export const COORD_MODES = ['auto', 'wgs84', 'gcj02', 'bd09'] as const;

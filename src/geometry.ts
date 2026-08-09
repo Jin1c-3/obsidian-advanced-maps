@@ -11,6 +11,12 @@ export function walkCoords(coords: unknown, fn: (lng: number, lat: number) => vo
 	for (const child of coords) walkCoords(child, fn);
 }
 
+/** An empty bounds of the map's own kind — MapLibre exports no constructor to import. */
+export function emptyBounds(map: MapLibreMap): LngLatBounds {
+	const Ctor = map.getBounds().constructor as new () => LngLatBounds;
+	return new Ctor();
+}
+
 /** Grow a MapLibre LngLatBounds to cover a GeoJSON geometry. Returns a count. */
 export function extendBounds(bounds: LngLatBounds, geometry: Geometry | null | undefined): number {
 	let n = 0;

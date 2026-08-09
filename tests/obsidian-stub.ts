@@ -116,6 +116,21 @@ export const Keymap = {
 
 export function setIcon(_el: HTMLElement, _icon: string): void {}
 
+/** Obsidian answers this from the language it stored; so does the stub. */
+export function getLanguage(): string {
+	try {
+		return window.localStorage.getItem('language') || '';
+	} catch (e) {
+		return '';
+	}
+}
+
+export function parseFrontMatterAliases(frontmatter: Record<string, unknown> | null): string[] | null {
+	const raw = frontmatter?.aliases;
+	if (typeof raw === 'string') return raw.split(',').map((part) => part.trim());
+	return Array.isArray(raw) ? raw.map(String) : null;
+}
+
 export function parseYaml(_text: string): unknown {
 	throw new Error('parseYaml is not stubbed; inject a parser in the test');
 }

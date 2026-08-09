@@ -20,7 +20,7 @@
  * Maps lands here untouched.
  */
 
-import { Notice, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
+import { Notice, parseFrontMatterAliases, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
 import type { TAbstractFile } from 'obsidian';
 import { TRACK_EXTS } from './constants';
 import { TrackEmbed } from './embed';
@@ -42,11 +42,6 @@ interface BaseView {
 interface BaseSpec {
 	views?: BaseView[];
 	[key: string]: unknown;
-}
-
-function firstAlias(frontmatter: Record<string, unknown>): string | null {
-	const aliases = ([] as unknown[]).concat((frontmatter.aliases as unknown[]) ?? []);
-	return aliases.length > 0 ? String(aliases[0]) : null;
 }
 
 export default class AdvancedMapsPlugin extends Plugin {
@@ -382,7 +377,8 @@ export default class AdvancedMapsPlugin extends Plugin {
 			views: [{ ...view, center: coords, defaultZoom: this.settings.openZoom, mapHeight }],
 		});
 
-		const label = firstAlias(found.frontmatter) || found.frontmatter.place || file.basename;
+		// Obsidian's own parser, so `aliases: a, b` reads the way it does elsewhere.
+		const label = parseFrontMatterAliases(found.frontmatter)?.[0] || found.frontmatter.place || file.basename;
 		new MapModal(this.app, file, spec, `${String(label)} · ${coords}`).open();
 	}
 

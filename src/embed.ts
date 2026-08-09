@@ -10,14 +10,14 @@
 import { Component } from 'obsidian';
 import type { TFile } from 'obsidian';
 import type { FeatureCollection, Geometry } from 'geojson';
-import { LINE_LAYER, POINT_LAYER, SRC } from './constants';
-import { resolveSystem } from './coords';
-import { clamp, extendBounds, styleReady } from './geometry';
+import { SRC } from './constants';
+import { resolveSystem, type CoordSystem } from './coords';
+import { clamp, emptyBounds, extendBounds, styleReady } from './geometry';
 import { t } from './i18n';
-import { lineLayerSpec, pointLayerSpec } from './layers';
+import { addTrackLayers, applyTrackPaint, guardLocateControl, removeTrackLayers, type LocateGuard } from './layers';
 import { projectedFeatures, type TrackRecord } from './track-cache';
 import type AdvancedMapsPlugin from './main';
-import type { BasesMapView, LngLatBounds, MapLibreMap } from './types/obsidian-internals';
+import type { BasesMapView, MapLibreMap } from './types/obsidian-internals';
 
 export class TrackEmbed extends Component {
 	private rootEl: HTMLElement | null = null;
@@ -26,6 +26,7 @@ export class TrackEmbed extends Component {
 	private view: BasesMapView | null = null;
 	private map: MapLibreMap | null = null;
 	private rec: TrackRecord | null = null;
+	private locate: LocateGuard | null = null;
 	private framed = false;
 	private dead = false;
 
@@ -39,6 +40,15 @@ export class TrackEmbed extends Component {
 
 	/** The embed API calls this when the file is swapped underneath us. */
 	loadFile(): void {}
+
+	/**
+	 * An embed has no base behind it, so there is no view option to read — but it
+	 * does have tiles, and under "auto" those are the deciding vote. They are
+	 * usually the default tile set, not whatever a base view happens to use.
+	 */
+	private system(): CoordSystem {
+		return resolveSystem(this.plugin.settings.coordSystem, this.view?.mapConfig);
+	}
 
 	override onload(): void {
 		this.rootEl = this.containerEl.createDiv('advanced-maps-embed');
@@ -81,6 +91,10 @@ export class TrackEmbed extends Component {
 		this.map = view.map;
 		// An inline map that eats the scroll wheel makes the note unreadable.
 		this.map.scrollZoom.disable();
+		// initializeMap adds the locate button on mobile whether or not there is a
+		// base behind the view, so an inline map gets one too — and needs the same
+		// correction the base views get.
+		this.locate = guardLocateControl(this.map, () => this.system());
 
 		this.resizeObserver = new ResizeObserver(() => this.map?.resize());
 		this.resizeObserver.observe(this.rootEl);
@@ -104,12 +118,8 @@ export class TrackEmbed extends Component {
 		if (!this.map || this.dead) return;
 		this.rec = await this.plugin.tracks.load(this.file);
 		if (!this.map || this.dead) return;
-		try {
-			for (const id of [LINE_LAYER, POINT_LAYER]) if (this.map.getLayer(id)) this.map.removeLayer(id);
-			if (this.map.getSource(SRC)) this.map.removeSource(SRC);
-		} catch (e) {
-			/* style already torn down */
-		}
+		removeTrackLayers(this.map);
+		this.locate?.replaceDot();
 		this.framed = false;
 		await this.draw();
 	}
@@ -125,13 +135,9 @@ export class TrackEmbed extends Component {
 		if (map.getSource(SRC)) return;
 
 		const color = view.markerManager.resolveColor(this.plugin.settings.trackColor);
-		// An embed has no base behind it, so there is no view option to read —
-		// but it does have tiles, and under "auto" those are the deciding vote.
-		// They are usually the default tile set, not whatever a base view uses.
-		const system = resolveSystem(this.plugin.settings.coordSystem, view.mapConfig);
 		const data: FeatureCollection<Geometry, { amColor: string }> = {
 			type: 'FeatureCollection',
-			features: projectedFeatures(this.rec, system).map((feature) => ({
+			features: projectedFeatures(this.rec, this.system()).map((feature) => ({
 				type: 'Feature',
 				geometry: feature.geometry,
 				properties: { amColor: color },
@@ -140,38 +146,38 @@ export class TrackEmbed extends Component {
 
 		try {
 			map.addSource(SRC, { type: 'geojson', data });
-			map.addLayer(lineLayerSpec(LINE_LAYER, SRC));
-			map.addLayer(pointLayerSpec(POINT_LAYER, SRC));
+			addTrackLayers(map);
 		} catch (e) {
 			console.warn('Advanced Maps: deferring track layers —', e instanceof Error ? e.message : e);
 			return;
 		}
 
-		const weight = clamp(this.plugin.settings.trackWeight, 1, 24, 4);
-		const opacity = clamp(this.plugin.settings.trackOpacity, 0, 100, 85) / 100;
-		map.setPaintProperty(LINE_LAYER, 'line-width', weight);
-		map.setPaintProperty(LINE_LAYER, 'line-opacity', opacity);
-		map.setPaintProperty(POINT_LAYER, 'circle-radius', Math.max(3, Math.round(weight * 1.1)));
-		map.setPaintProperty(
-			POINT_LAYER,
-			'circle-stroke-color',
+		applyTrackPaint(
+			map,
+			clamp(this.plugin.settings.trackWeight, 1, 24, 4),
+			clamp(this.plugin.settings.trackOpacity, 0, 100, 85) / 100,
 			view.markerManager.resolveColor('var(--background-primary)')
 		);
 
 		if (this.framed) return;
-		const LngLatBoundsCtor = map.getBounds().constructor as new () => LngLatBounds;
-		const bounds = new LngLatBoundsCtor();
+		const bounds = emptyBounds(map);
 		let points = 0;
 		for (const feature of data.features) points += extendBounds(bounds, feature.geometry);
 		if (points === 0 || bounds.isEmpty()) return;
 		this.framed = true;
-		map.fitBounds(bounds, { padding: 16, maxZoom: 17, animate: false });
+		map.fitBounds(bounds, {
+			padding: 16,
+			maxZoom: clamp(this.plugin.settings.fitMaxZoom, 1, 22, 16),
+			animate: false,
+		});
 	}
 
 	override onunload(): void {
 		this.dead = true;
 		this.observer?.disconnect();
 		this.resizeObserver?.disconnect();
+		this.locate?.restore();
+		this.locate = null;
 		if (this.view) {
 			try {
 				this.view.destroyMap();

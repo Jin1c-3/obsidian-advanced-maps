@@ -1,6 +1,6 @@
 import { PluginSettingTab, Setting, type App } from 'obsidian';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
-import { t } from './i18n';
+import { t, type TranslationKey } from './i18n';
 import type AdvancedMapsPlugin from './main';
 
 export interface AdvancedMapsSettings {
@@ -72,206 +72,140 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		super(app, plugin);
 	}
 
-	private intro(text: string): void {
-		this.containerEl.createEl('p', { cls: 'setting-item-description', text });
+	/** Heading, then the one line under it that says what the group is for. */
+	private group(key: 'coord' | 'open' | 'locate' | 'tracks'): void {
+		new Setting(this.containerEl).setName(t(`settings.${key}.heading`)).setHeading();
+		this.containerEl.createEl('p', { cls: 'setting-item-description', text: t(`settings.${key}.intro`) });
+	}
+
+	private row(name: TranslationKey, desc?: TranslationKey, vars?: Record<string, string>): Setting {
+		const setting = new Setting(this.containerEl).setName(t(name));
+		return desc ? setting.setDesc(t(desc, vars)) : setting;
+	}
+
+	/**
+	 * A text setting. `fallback` is what a cleared field means: blank where the
+	 * empty string is itself an answer, the default where it is not.
+	 */
+	private text(
+		setting: Setting,
+		key: 'menuLabel' | 'basePath' | 'viewName' | 'coordsProperty' | 'autoFillExclude' | 'trackColor',
+		opts: { placeholder?: string; fallback?: string } = {}
+	): void {
+		setting.addText((text) =>
+			text
+				.setPlaceholder(opts.placeholder ?? '')
+				.setValue(this.plugin.settings[key])
+				.onChange(async (value) => {
+					this.plugin.settings[key] = value.trim() || opts.fallback || '';
+					await this.plugin.saveSettings();
+				})
+		);
+	}
+
+	private slider(
+		setting: Setting,
+		key: 'openZoom' | 'trackWeight' | 'trackOpacity' | 'fitMaxZoom' | 'embedHeight',
+		min: number,
+		max: number,
+		step: number
+	): void {
+		setting.addSlider((slider) =>
+			slider
+				.setLimits(min, max, step)
+				.setValue(this.plugin.settings[key])
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings[key] = value;
+					await this.plugin.saveSettings();
+				})
+		);
+	}
+
+	private toggle(setting: Setting, key: 'locate' | 'autoFillCoords', after?: () => void): void {
+		setting.addToggle((toggle) =>
+			toggle.setValue(this.plugin.settings[key]).onChange(async (value) => {
+				this.plugin.settings[key] = value;
+				await this.plugin.saveSettings();
+				after?.();
+			})
+		);
 	}
 
 	override display(): void {
-		const { containerEl } = this;
-		containerEl.empty();
-
-		const save = () => this.plugin.saveSettings();
+		this.containerEl.empty();
 
 		/* ---- coordinate system ---- */
 
-		new Setting(containerEl).setName(t('settings.coord.heading')).setHeading();
-		this.intro(t('settings.coord.intro'));
-
-		new Setting(containerEl)
-			.setName(t('settings.coord.default.name'))
-			.setDesc(t('settings.coord.default.desc'))
-			.addDropdown((d) => {
-				for (const mode of COORD_MODES) d.addOption(mode, t(`coord.${mode}`));
-				d.setValue(knownMode(this.plugin.settings.coordSystem) ?? 'auto').onChange(async (value) => {
-					this.plugin.settings.coordSystem = knownMode(value) ?? 'auto';
-					await save();
-					this.plugin.reprojectAll();
-				});
+		this.group('coord');
+		this.row('settings.coord.default.name', 'settings.coord.default.desc').addDropdown((d) => {
+			for (const mode of COORD_MODES) d.addOption(mode, t(`coord.${mode}`));
+			d.setValue(knownMode(this.plugin.settings.coordSystem) ?? 'auto').onChange(async (value) => {
+				this.plugin.settings.coordSystem = knownMode(value) ?? 'auto';
+				await this.plugin.saveSettings();
+				this.plugin.reprojectAll();
 			});
+		});
 
 		/* ---- open in map ---- */
 
-		new Setting(containerEl).setName(t('settings.open.heading')).setHeading();
-		this.intro(t('settings.open.intro'));
-
-		new Setting(containerEl)
-			.setName(t('settings.open.label.name'))
-			.setDesc(t('settings.open.label.desc'))
-			.addText((text) =>
-				text
-					.setPlaceholder(t('command.openInMap'))
-					.setValue(this.plugin.settings.menuLabel)
-					.onChange(async (value) => {
-						this.plugin.settings.menuLabel = value.trim();
-						await save();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName(t('settings.open.basePath.name'))
-			.setDesc(t('settings.open.basePath.desc'))
-			.addText((text) =>
-				text
-					.setPlaceholder(BASE_PATH_PLACEHOLDER)
-					.setValue(this.plugin.settings.basePath)
-					.onChange(async (value) => {
-						this.plugin.settings.basePath = value.trim();
-						await save();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName(t('settings.open.viewName.name'))
-			.setDesc(t('settings.open.viewName.desc'))
-			.addText((text) =>
-				text.setValue(this.plugin.settings.viewName).onChange(async (value) => {
-					this.plugin.settings.viewName = value.trim();
-					await save();
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t('settings.open.coordsProperty.name'))
-			.setDesc(t('settings.open.coordsProperty.desc'))
-			.addText((text) =>
-				text
-					.setPlaceholder(DEFAULT_SETTINGS.coordsProperty)
-					.setValue(this.plugin.settings.coordsProperty)
-					.onChange(async (value) => {
-						this.plugin.settings.coordsProperty = value.trim() || DEFAULT_SETTINGS.coordsProperty;
-						await save();
-					})
-			);
-
-		new Setting(containerEl).setName(t('settings.open.zoom.name')).addSlider((slider) =>
-			slider
-				.setLimits(1, 18, 1)
-				.setValue(this.plugin.settings.openZoom)
-				.setDynamicTooltip()
-				.onChange(async (value) => {
-					this.plugin.settings.openZoom = value;
-					await save();
-				})
+		this.group('open');
+		this.text(this.row('settings.open.basePath.name', 'settings.open.basePath.desc'), 'basePath', {
+			placeholder: BASE_PATH_PLACEHOLDER,
+		});
+		this.text(this.row('settings.open.viewName.name', 'settings.open.viewName.desc'), 'viewName');
+		this.text(
+			this.row('settings.open.coordsProperty.name', 'settings.open.coordsProperty.desc'),
+			'coordsProperty',
+			{ placeholder: DEFAULT_SETTINGS.coordsProperty, fallback: DEFAULT_SETTINGS.coordsProperty }
 		);
+		this.slider(this.row('settings.open.zoom.name'), 'openZoom', 1, 18, 1);
+		// The only cosmetic field in the group, so it comes last.
+		this.text(this.row('settings.open.label.name', 'settings.open.label.desc'), 'menuLabel', {
+			placeholder: t('command.openInMap'),
+		});
 
 		/* ---- location ---- */
 
-		new Setting(containerEl).setName(t('settings.locate.heading')).setHeading();
-		this.intro(t('settings.locate.intro'));
-
-		new Setting(containerEl)
-			.setName(t('settings.locate.enable.name'))
-			.setDesc(t('settings.locate.enable.desc'))
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.locate).onChange(async (value) => {
-					this.plugin.settings.locate = value;
-					await save();
-					// The command is registered for good at load; turning this on
-					// mid-session should not need a reload to take effect, and the
-					// checkCallback reads the flag every time the palette opens.
-					this.plugin.resetLocator();
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t('settings.locate.auto.name'))
-			.setDesc(t('settings.locate.auto.desc', { property: this.plugin.settings.coordsProperty }))
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.autoFillCoords).onChange(async (value) => {
-					this.plugin.settings.autoFillCoords = value;
-					await save();
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t('settings.locate.exclude.name'))
-			.setDesc(t('settings.locate.exclude.desc'))
-			.addText((text) =>
-				text
-					.setPlaceholder(DEFAULT_SETTINGS.autoFillExclude)
-					.setValue(this.plugin.settings.autoFillExclude)
-					.onChange(async (value) => {
-						this.plugin.settings.autoFillExclude = value.trim();
-						await save();
-					})
-			);
+		this.group('locate');
+		// The command is registered for good at load; turning this on mid-session
+		// should not need a reload to take effect, and the checkCallback reads the
+		// flag every time the palette opens.
+		this.toggle(this.row('settings.locate.enable.name', 'settings.locate.enable.desc'), 'locate', () =>
+			this.plugin.resetLocator()
+		);
+		this.toggle(
+			this.row('settings.locate.auto.name', 'settings.locate.auto.desc', {
+				property: this.plugin.settings.coordsProperty,
+			}),
+			'autoFillCoords'
+		);
+		this.text(this.row('settings.locate.exclude.name', 'settings.locate.exclude.desc'), 'autoFillExclude', {
+			placeholder: DEFAULT_SETTINGS.autoFillExclude,
+		});
 
 		/* ---- tracks ---- */
 
-		new Setting(containerEl).setName(t('settings.tracks.heading')).setHeading();
-		this.intro(t('settings.tracks.intro'));
-
-		new Setting(containerEl)
-			.setName(t('settings.tracks.color.name'))
-			.setDesc(t('settings.tracks.color.desc'))
-			.addText((text) =>
-				text
-					.setPlaceholder(DEFAULT_SETTINGS.trackColor)
-					.setValue(this.plugin.settings.trackColor)
-					.onChange(async (value) => {
-						this.plugin.settings.trackColor = value.trim() || DEFAULT_SETTINGS.trackColor;
-						await save();
-					})
-			);
-
-		new Setting(containerEl).setName(t('settings.tracks.weight.name')).addSlider((slider) =>
-			slider
-				.setLimits(1, 12, 1)
-				.setValue(this.plugin.settings.trackWeight)
-				.setDynamicTooltip()
-				.onChange(async (value) => {
-					this.plugin.settings.trackWeight = value;
-					await save();
-				})
+		this.group('tracks');
+		this.text(this.row('settings.tracks.color.name', 'settings.tracks.color.desc'), 'trackColor', {
+			placeholder: DEFAULT_SETTINGS.trackColor,
+			fallback: DEFAULT_SETTINGS.trackColor,
+		});
+		this.slider(this.row('settings.tracks.weight.name'), 'trackWeight', 1, 12, 1);
+		this.slider(this.row('settings.tracks.opacity.name'), 'trackOpacity', 10, 100, 5);
+		this.slider(
+			this.row('settings.tracks.fitMaxZoom.name', 'settings.tracks.fitMaxZoom.desc'),
+			'fitMaxZoom',
+			1,
+			20,
+			1
 		);
-
-		new Setting(containerEl).setName(t('settings.tracks.opacity.name')).addSlider((slider) =>
-			slider
-				.setLimits(10, 100, 5)
-				.setValue(this.plugin.settings.trackOpacity)
-				.setDynamicTooltip()
-				.onChange(async (value) => {
-					this.plugin.settings.trackOpacity = value;
-					await save();
-				})
+		this.slider(
+			this.row('settings.tracks.embedHeight.name', 'settings.tracks.embedHeight.desc'),
+			'embedHeight',
+			160,
+			800,
+			20
 		);
-
-		new Setting(containerEl)
-			.setName(t('settings.tracks.fitMaxZoom.name'))
-			.setDesc(t('settings.tracks.fitMaxZoom.desc'))
-			.addSlider((slider) =>
-				slider
-					.setLimits(1, 20, 1)
-					.setValue(this.plugin.settings.fitMaxZoom)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.fitMaxZoom = value;
-						await save();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName(t('settings.tracks.embedHeight.name'))
-			.setDesc(t('settings.tracks.embedHeight.desc'))
-			.addSlider((slider) =>
-				slider
-					.setLimits(160, 800, 20)
-					.setValue(this.plugin.settings.embedHeight)
-					.setDynamicTooltip()
-					.onChange(async (value) => {
-						this.plugin.settings.embedHeight = value;
-						await save();
-					})
-			);
 	}
 }

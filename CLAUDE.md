@@ -46,7 +46,7 @@ src/
   geometry.ts        bounds, clamping, the style gate     ← pure, tested
   view-options.ts    the two option groups and where they go
   track-cache.ts     parsed tracks, keyed by path, invalidated by mtime
-  layers.ts          MapLibre layer specs, zoom-to-fit control
+  layers.ts          the track layers, zoom-to-fit control, locate-button guard
   i18n.ts            en / zh tables
   constants.ts       source and layer ids, track extensions
   types/obsidian-internals.d.ts   the undocumented surface this leans on
@@ -68,9 +68,15 @@ groups into the list. The native class is never subclassed or edited, so an
 Obsidian update to Maps lands here untouched.
 
 `TrackLayer` wraps methods **on the instance** — `initializeMap`, `destroyMap`,
-`onunload`, `loadConfig`, `switchToTileSet` — plus `markerManager.updateMarkers`
-and `markerManager.createGeoJSONFeatures`. Instance wrappers die with the view,
-and `delete` restores the untouched prototype.
+`onunload`, `loadConfig`, `switchToTileSet`, `showMapContextMenu` — plus
+`markerManager.updateMarkers`, `markerManager.createGeoJSONFeatures` and
+`popupManager.showPopup`. Instance wrappers die with the view, and `delete`
+restores the untouched prototype.
+
+They all go through one `wrap()` helper that remembers how to put each method
+back, so `detach()` is a loop rather than a second list to keep in step with the
+first. Where the native code assigned the method as an own property itself,
+`wrap` restores the saved value instead of deleting.
 
 `updateMarkers` is the seam worth knowing about. The native view calls it once
 the map exists, again on every data change, and again on `styledata` after a new
@@ -141,7 +147,14 @@ once, each correct — and the ⧉ background switcher flips the system live.
 | GCJ-02         | Force it — a proxied or self-hosted 高德 mirror the URL cannot reveal   |
 | BD-09          | Same, for 百度                                                          |
 
-Conversion happens at four places, all of which have to agree:
+### Every place a coordinate crosses the line
+
+Two directions, and both have to be covered. Anything **drawn** is moved into
+tile space; anything **read back** — shown to the reader, copied, or written to a
+file — is moved out of it again. A seam missed in either direction is a bug that
+looks like the map is fine and the data is wrong, or the reverse.
+
+Drawn, so shifted **in**:
 
 - **Markers** — `markerManager.createGeoJSONFeatures` is the single point where
   pin coordinates are minted, so wrapping it covers every pin.
@@ -150,9 +163,35 @@ Conversion happens at four places, all of which have to agree:
 - **The configured `center`** — converted inside the `loadConfig` wrapper, where
   the config object is born. Patching `initializeMap` or `updateCenter` alone
   makes the two fight over the centre. The untouched WGS-84 value is kept on the
-  config as `__amCenterWgs` so a later tile switch can re-derive it.
+  config as `__amCenterWgs`, and the shifted value beside it as `__amCenterOut`,
+  so a later tile switch can re-derive it — and so a write from anywhere else is
+  recognised rather than shifted twice.
+- **Marker popups** — `popupManager.showPopup` is handed the note's own value,
+  not the feature that was drawn, because the native manager keeps the two apart.
+  Left alone, a pin's popup opens a few streets from its own pin.
+- **The device fix** — the built-in locate button (mobile only) feeds
+  `navigator.geolocation` straight to the map. `updatePosition` is the one door
+  it comes through; `guardLocateControl` in `layers.ts` wraps it for both the
+  base views and the inline embeds.
+- **The camera** — the map's centre is in tile space like everything else, so a
+  background switch that changes the system leaves it looking somewhere else.
+  `realignCamera()` carries it across; `fit()` cannot, since it stands down
+  whenever a view pins a `center`.
+
+Read back, so shifted **out**:
+
 - **Auto-fit bounds** — native `getBounds()` still answers in WGS-84, so
   `bounds()` reads the moved features instead.
+- **The map's own right-click menu** — "New note" writes the click into the new
+  note's frontmatter, "Copy coordinates" puts it on the clipboard, and "Set
+  default center point" stores it in the base file, where `loadConfig` would
+  shift it a second time. All three take it from `map.unproject`, which answers
+  in tile space; the `showMapContextMenu` wrapper un-shifts what `unproject`
+  answers for the length of that one synchronous call. Of everything here this is
+  the seam that mattered most — it is the only one that writes to disk.
+
+`markerManager.markers` keeps the untouched note values, which is why "Copy
+coordinates" **on a pin** was already right and needed nothing.
 
 Accuracy: GCJ round-trips to under a nanometre, BD to under 0.2 m; outside China
 both are the identity. `tests/coords.test.ts` holds those figures to account.
@@ -253,6 +292,14 @@ think the result set is empty and wipe the track.
 Each map holds a WebGL context and browsers cap how many can be alive at once, so
 an embed only builds once it scrolls into view.
 
+The native `onload` never runs on such a view — nobody adds it as a child
+component — which is why the embed registers its own `css-change` handler, and
+why the map's right-click menu, bound there with `registerDomEvent`, does not
+exist on an embed and needs no correcting. `initializeMap` does run, so the
+locate button **is** added on mobile, and it gets the same guard the base views
+get. Both halves of that are worth knowing before assuming an embed behaves like
+a base view, in either direction.
+
 Extensions are claimed only if nothing else has them, so a plugin that already
 renders `.gpx` keeps working alongside this one.
 
@@ -290,6 +337,14 @@ All of them cost real debugging time. Read this before "simplifying" any of them
    without the configured centre hearing about it. It is wrapped too, and
    re-derives the centre from the WGS-84 value kept beside it.
 
+7. **The context-menu fix swaps `map.unproject`, not the menu.** Every item in
+   `showMapContextMenu` reads its coordinate off one `unproject` call,
+   synchronously, before the menu is shown — so replacing `unproject` for the
+   length of that call and restoring it in a `finally` reaches all of them at
+   once. Rebuilding the menu would mean re-implementing four native items and
+   losing whatever a future one adds; wrapping `unproject` for good would corrupt
+   every internal use MapLibre makes of it.
+
 ## Testing
 
 `src/coords.ts`, `src/parse.ts`, `src/geometry.ts`, `src/locate.ts`,
@@ -297,9 +352,47 @@ All of them cost real debugging time. Read this before "simplifying" any of them
 90 % coverage in CI. Anything touching the coordinate maths, a parser or the
 locator needs a test in the same PR.
 
-The view wrappers cannot be tested here — they need a live Bases map. Try them in
-a real vault and say in the PR what was tried. They are held honest by the type
-shim and by comments explaining why each wrapper exists.
+The view wrappers need a live Bases map, but that does not put them out of reach:
+the [Obsidian CLI](https://help.obsidian.md/cli) runs arbitrary code inside the
+running app, so they can be driven and measured directly.
+
+```bash
+npm run deploy                                  # or npm run dev, with hot-reload
+obsidian plugin:reload id=advanced-maps
+obsidian eval code="[...app.plugins.plugins['advanced-maps'].layers][0].appliedSystem"
+obsidian dev:errors                             # and dev:console, dev:screenshot
+```
+
+`plugin.layers` is the way in: each `TrackLayer` holds its `view`, and esbuild
+does not mangle property names, so `layer.appliedSystem`, `layer.locate` and the
+private methods are all reachable from `eval`. What is worth asserting on:
+
+- **The wrappers are installed** — `hasOwnProperty` for each wrapped method on
+  the view, its `markerManager` and its `popupManager`.
+- **A conversion is exact, not merely different.** Read the value the native code
+  received and check it against `wgs2gcj` from a standalone build of `coords.ts`
+  (`npx esbuild src/coords.ts --bundle --format=cjs`). "It moved 500 m" is not a
+  pass; "it round-trips to 10⁻⁸ m" is. Both errors look identical on screen.
+- **The seam, by making its output observable.** For the context menu, hand
+  `unproject` a return value whose `constructor` is a recording class — that is
+  the constructor `showMapContextMenu`'s wrapper calls, so it captures exactly
+  what the native menu items closed over, with nothing written to disk.
+- **Restoration** — that the temporarily-swapped method is the original again
+  afterwards.
+
+Two traps. `switchToTileSet` is followed asynchronously by `style.load` →
+`sync()` → `fit()`, so **settle before measuring**: a camera reading taken
+straight after the `await` is pre-`fit` and will look wrong. And `fit()` is the
+last word whenever a view pins neither `center` nor a zoom, so a camera assertion
+belongs on a view that pins one — otherwise it is asserting on `fitBounds`.
+
+The built-in locate control cannot be reached this way: it is registered under
+`Platform.isMobileApp`, which `obsidian dev:mobile on` does not flip. Push a stub
+with `updatePosition` on its prototype into `map._controls` and call
+`onMapCreated` — that exercises `guardLocateControl` for real, and the native
+control's shape is pinned by reading `obsidian-maps/src/map/controls/`.
+
+Say in the PR what was tried and what the numbers were.
 
 ## Translations
 

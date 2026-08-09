@@ -6,15 +6,31 @@ import { Keymap } from 'obsidian';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { TFile } from 'obsidian';
 import { LINE_LAYER, MARKER_LAYER, POINT_LAYER, SRC } from './constants';
-import { knownMode, projectCenter, projectGeometry, resolveSystem, type CoordSystem } from './coords';
-import { clamp, extendBounds, styleReady } from './geometry';
-import { FitControl, lineLayerSpec, pointLayerSpec } from './layers';
+import {
+	knownMode,
+	projectCenter,
+	projectGeometry,
+	resolveSystem,
+	toTileSpace,
+	toWgs84,
+	type CoordSystem,
+} from './coords';
+import { clamp, emptyBounds, extendBounds, styleReady } from './geometry';
+import {
+	addTrackLayers,
+	applyTrackPaint,
+	FitControl,
+	guardLocateControl,
+	removeTrackLayers,
+	type LocateGuard,
+} from './layers';
 import { projectedFeatures } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type {
 	BasesData,
 	BasesEntry,
 	BasesMapView,
+	LngLat,
 	LngLatBounds,
 	MapConfig,
 	MapMouseEvent,
@@ -30,6 +46,23 @@ interface DrawItem {
 
 type TrackFeature = Feature<Geometry, { amColor: string; amIndex: number }>;
 
+/**
+ * Replace one method on an *instance*; the returned function puts it back.
+ *
+ * An own property shadows the prototype, so the wrapper dies with the object
+ * and `delete` restores the untouched method. Where the native code assigned
+ * the method as an own property itself, the saved value goes back instead.
+ */
+function override<T extends object, K extends keyof T>(obj: T, key: K, make: (orig: T[K]) => T[K]): () => void {
+	const orig = obj[key];
+	const hadOwn = Object.prototype.hasOwnProperty.call(obj, key);
+	obj[key] = make(orig);
+	return () => {
+		if (hadOwn) obj[key] = orig;
+		else delete (obj as unknown as Record<string, unknown>)[key as string];
+	};
+}
+
 export class TrackLayer {
 	private items: DrawItem[] = [];
 	private data: FeatureCollection<Geometry, { amColor: string; amIndex: number }> | null = null;
@@ -38,24 +71,24 @@ export class TrackLayer {
 	private detached = false;
 	private fitControl: FitControl | null = null;
 	private markerFeatures: MarkerFeature[] | null = null;
-
-	private origUpdateMarkers!: BasesMapView['markerManager']['updateMarkers'];
-	private origCreateFeatures!: BasesMapView['markerManager']['createGeoJSONFeatures'];
-	private origLoadConfig!: BasesMapView['loadConfig'];
-	private origSwitchToTileSet!: BasesMapView['switchToTileSet'];
-	private origInitializeMap!: BasesMapView['initializeMap'];
-	private origDestroyMap!: BasesMapView['destroyMap'];
-	private origOnunload!: BasesMapView['onunload'];
+	/** How to put back every method wrapped for the life of this layer. */
+	private readonly restorers: Array<() => void> = [];
+	/** Reached past the wrapper by `hover()`, which already holds tile-space coordinates. */
+	private origShowPopup: BasesMapView['popupManager']['showPopup'] | null = null;
+	private locate: LocateGuard | null = null;
+	/** Which space the map is currently drawn in, so a change to it can be noticed. */
+	private appliedSystem: CoordSystem | null = null;
 
 	constructor(
 		private readonly plugin: AdvancedMapsPlugin,
 		private readonly view: BasesMapView
 	) {}
 
+	private wrap<T extends object, K extends keyof T>(obj: T, key: K, make: (orig: T[K]) => T[K]): void {
+		this.restorers.push(override(obj, key, make));
+	}
+
 	/**
-	 * Wrap the methods on the *instance* rather than the prototype: the wrappers
-	 * die with the view, and `delete` puts the untouched prototype method back.
-	 *
 	 * markerManager.updateMarkers is the useful seam. The native view calls it
 	 * after the map exists and after every data change, *and* re-calls it on
 	 * `styledata` once a new style has wiped every source — which is exactly the
@@ -63,23 +96,23 @@ export class TrackLayer {
 	 */
 	attach(): this {
 		const view = this.view;
+		const manager = view.markerManager;
+		const popups = view.popupManager;
 
-		this.origUpdateMarkers = view.markerManager.updateMarkers;
-		view.markerManager.updateMarkers = async (data?: BasesData) => {
-			await this.origUpdateMarkers.call(view.markerManager, data);
+		this.wrap(manager, 'updateMarkers', (orig) => async (data?: BasesData) => {
+			await orig.call(manager, data);
 			try {
 				await this.sync(data);
 			} catch (e) {
 				console.error('Advanced Maps: could not draw tracks', e);
 			}
-		};
+		});
 
 		// Every marker coordinate that reaches the map is minted here — the
 		// native method does nothing but turn parsed entries into Point
 		// features — which makes it the one place the pins have to be moved.
-		this.origCreateFeatures = view.markerManager.createGeoJSONFeatures;
-		view.markerManager.createGeoJSONFeatures = (entries: unknown) => {
-			const features = this.origCreateFeatures.call(view.markerManager, entries);
+		this.wrap(manager, 'createGeoJSONFeatures', (orig) => (entries: unknown) => {
+			const features = orig.call(manager, entries);
 			const system = this.system();
 			const moved =
 				system === 'wgs84'
@@ -92,51 +125,90 @@ export class TrackLayer {
 			// features around; bounds() reads them instead.
 			this.markerFeatures = moved;
 			return moved;
-		};
+		});
+
+		// A marker's popup is anchored at the note's own value rather than at the
+		// feature that was drawn — the native manager keeps what the property
+		// said — so on Chinese tiles it opens a few streets from its own pin.
+		this.wrap(popups, 'showPopup', (orig) => {
+			this.origShowPopup = orig;
+			return (entry, latLng, properties, markerProps, displayName) => {
+				const [lng, lat] = toTileSpace(this.system(), latLng[1], latLng[0]);
+				orig.call(popups, entry, [lat, lng], properties, markerProps, displayName);
+			};
+		});
 
 		// The view reads `center` out of the base file in WGS-84 and hands it
 		// straight to the map. Converting it here, where the config object is
 		// born, means initializeMap and updateCenter both agree — patching
 		// either one alone makes them fight over the centre.
-		this.origLoadConfig = view.loadConfig;
-		view.loadConfig = (tileSetId?: string) => {
-			const config = this.origLoadConfig.call(view, tileSetId);
+		this.wrap(view, 'loadConfig', (orig) => (tileSetId?: string) => {
+			const config = orig.call(view, tileSetId);
 			this.projectConfigCenter(config);
 			return config;
-		};
+		});
 
 		// The background switcher rewrites mapConfig.mapTiles in place instead of
 		// going back through loadConfig, so under "auto" the system can change
 		// without the centre hearing about it. Re-derive it from the value we kept.
-		this.origSwitchToTileSet = view.switchToTileSet;
-		view.switchToTileSet = async (tileSetId: string) => {
-			await this.origSwitchToTileSet.call(view, tileSetId);
+		this.wrap(view, 'switchToTileSet', (orig) => async (tileSetId: string) => {
+			await orig.call(view, tileSetId);
 			this.projectConfigCenter(view.mapConfig);
-		};
+			this.realignCamera();
+			this.locate?.replaceDot();
+		});
 
-		this.origInitializeMap = view.initializeMap;
-		view.initializeMap = async () => {
+		// The map's own right-click menu turns the click into a coordinate with
+		// map.unproject(), which answers in tile space. "New note" writes that
+		// into the note it creates, "Copy coordinates" hands it over as a real
+		// place, and "Set default center point" stores it in the base file for
+		// loadConfig to shift a second time. Rather than rebuild the menu, undo
+		// the shift on what unproject answers for the length of the call — every
+		// item reads its coordinate off it, synchronously, before the menu opens.
+		if (typeof view.showMapContextMenu === 'function') {
+			this.wrap(view, 'showMapContextMenu', (orig) => (ev: MouseEvent) => {
+				const map = view.map;
+				const system = this.system();
+				if (!map || system === 'wgs84' || typeof map.unproject !== 'function') {
+					orig.call(view, ev);
+					return;
+				}
+				const restore = override(map, 'unproject', (native) => (point) => {
+					const lngLat = native.call(map, point);
+					const [lng, lat] = toWgs84(system, lngLat.lng, lngLat.lat);
+					const LngLatCtor = lngLat.constructor as new (lng: number, lat: number) => LngLat;
+					return new LngLatCtor(lng, lat);
+				});
+				try {
+					orig.call(view, ev);
+				} finally {
+					restore();
+				}
+			});
+		}
+
+		this.wrap(view, 'initializeMap', (orig) => async () => {
 			const fresh = !view.map;
-			await this.origInitializeMap.call(view);
+			await orig.call(view);
 			if (fresh && view.map) this.onMapCreated(view.map);
-		};
+		});
 
-		this.origDestroyMap = view.destroyMap;
-		view.destroyMap = () => {
+		this.wrap(view, 'destroyMap', (orig) => () => {
 			this.fitControl = null;
 			this.interactionsBound = false;
 			this.userMoved = false;
 			this.data = null;
 			this.markerFeatures = null;
-			this.origDestroyMap.call(view);
-		};
+			this.appliedSystem = null;
+			this.locate?.restore();
+			this.locate = null;
+			orig.call(view);
+		});
 
-		this.origOnunload = view.onunload;
-		view.onunload = () => {
-			const restore = this.origOnunload;
+		this.wrap(view, 'onunload', (orig) => () => {
 			this.detach();
-			restore.call(view);
-		};
+			orig.call(view);
+		});
 
 		return this;
 	}
@@ -156,15 +228,10 @@ export class TrackLayer {
 		}
 		this.fitControl = null;
 
-		const manager = view.markerManager as unknown as Record<string, unknown>;
-		const instance = view as unknown as Record<string, unknown>;
-		delete manager.updateMarkers;
-		delete manager.createGeoJSONFeatures;
-		delete instance.loadConfig;
-		delete instance.switchToTileSet;
-		delete instance.initializeMap;
-		delete instance.destroyMap;
-		delete instance.onunload;
+		for (const restore of this.restorers.splice(0)) restore();
+		this.origShowPopup = null;
+		this.locate?.restore();
+		this.locate = null;
 
 		this.plugin.layers.delete(this);
 	}
@@ -172,6 +239,8 @@ export class TrackLayer {
 	onMapCreated(map: NonNullable<BasesMapView['map']>): void {
 		this.fitControl = new FitControl(() => this.fit(true));
 		map.addControl(this.fitControl, 'top-right');
+		this.locate ??= guardLocateControl(map, () => this.system());
+		this.appliedSystem = this.system();
 
 		// A new style is a blank slate: every source and layer is gone. The
 		// built-in view puts its markers back, so put the tracks back too rather
@@ -188,6 +257,26 @@ export class TrackLayer {
 		for (const name of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) map.on(name, mark);
 	}
 
+	/**
+	 * Keep the camera pointed at the same real place when the space beneath it
+	 * changes. The map's centre is in tile space like everything else it holds,
+	 * so a switch from Amap to OpenStreetMap leaves it looking a few streets from
+	 * where the reader left it — and a view that pins a `center` never gets
+	 * re-framed by `fit()`, which stands down for exactly that case.
+	 */
+	private realignCamera(): void {
+		const map = this.view.map;
+		const system = this.system();
+		const previous = this.appliedSystem;
+		this.appliedSystem = system;
+		if (!map || previous === null || previous === system || typeof map.setCenter !== 'function') return;
+		const centre = map.getCenter();
+		if (!centre) return;
+		const [lng, lat] = toWgs84(previous, centre.lng, centre.lat);
+		const [tileLng, tileLat] = toTileSpace(system, lng, lat);
+		map.setCenter({ lng: tileLng, lat: tileLat });
+	}
+
 	/* ---- config ---- */
 
 	private num(key: string, fallback: number, min: number, max: number): number {
@@ -200,15 +289,19 @@ export class TrackLayer {
 	/**
 	 * Move a config's `center` into tile space, keeping the WGS-84 value it came
 	 * from so the same config can be re-converted if the system changes later.
+	 *
+	 * The shifted value is kept beside it, which is how a write from anywhere
+	 * else is recognised: "Set default center point" assigns `center` straight
+	 * onto the live config, and that value is WGS-84, not ours to re-derive from.
 	 */
 	private projectConfigCenter(config: MapConfig | undefined): MapConfig | undefined {
 		if (!config) return config;
-		if (config.__amCenterWgs === undefined) {
+		if (config.__amCenterWgs === undefined || config.center !== config.__amCenterOut) {
 			if (!config.center) return config;
 			config.__amCenterWgs = config.center;
 		}
 		try {
-			config.center = projectCenter(config.__amCenterWgs, this.system(config));
+			config.center = config.__amCenterOut = projectCenter(config.__amCenterWgs, this.system(config));
 		} catch (e) {
 			console.warn('Advanced Maps: could not convert the configured centre', e);
 		}
@@ -250,6 +343,9 @@ export class TrackLayer {
 	async reproject(): Promise<void> {
 		const view = this.view;
 		if (this.detached || !view.map) return;
+		this.projectConfigCenter(view.mapConfig);
+		this.realignCamera();
+		this.locate?.replaceDot();
 		if (view.data && view.markerManager) await view.markerManager.updateMarkers(view.data);
 		else await this.sync();
 	}
@@ -329,7 +425,8 @@ export class TrackLayer {
 				source.setData(this.data);
 			} else {
 				map.addSource(SRC, { type: 'geojson', data: this.data });
-				this.addLayers();
+				// Anchor below the markers so a pin sitting on its own track stays on top.
+				addTrackLayers(map, map.getLayer(MARKER_LAYER) ? MARKER_LAYER : undefined);
 			}
 		} catch (e) {
 			// The style was swapped out from under us; style.load will retry.
@@ -341,40 +438,19 @@ export class TrackLayer {
 		this.fit(false);
 	}
 
-	private addLayers(): void {
-		const map = this.view.map;
-		if (!map) return;
-		// Anchor below the markers so a pin sitting on its own track stays on top.
-		const before = map.getLayer(MARKER_LAYER) ? MARKER_LAYER : undefined;
-		map.addLayer(lineLayerSpec(LINE_LAYER, SRC), before);
-		map.addLayer(pointLayerSpec(POINT_LAYER, SRC), before);
-	}
-
 	private removeLayers(): void {
-		const map = this.view.map;
-		if (!map || !map.getStyle) return;
-		try {
-			for (const id of [LINE_LAYER, POINT_LAYER]) if (map.getLayer(id)) map.removeLayer(id);
-			if (map.getSource(SRC)) map.removeSource(SRC);
-		} catch (e) {
-			/* style already torn down */
-		}
+		if (this.view.map) removeTrackLayers(this.view.map);
 	}
 
 	private applyPaint(): void {
 		const map = this.view.map;
 		if (!map) return;
-		const weight = this.num('trackWeight', this.plugin.settings.trackWeight, 1, 24);
-		const opacity = this.num('trackOpacity', this.plugin.settings.trackOpacity, 0, 100) / 100;
-		if (map.getLayer(LINE_LAYER)) {
-			map.setPaintProperty(LINE_LAYER, 'line-width', weight);
-			map.setPaintProperty(LINE_LAYER, 'line-opacity', opacity);
-		}
-		if (map.getLayer(POINT_LAYER)) {
-			map.setPaintProperty(POINT_LAYER, 'circle-radius', Math.max(3, Math.round(weight * 1.1)));
-			map.setPaintProperty(POINT_LAYER, 'circle-stroke-color', this.resolve('var(--background-primary)'));
-			map.setPaintProperty(POINT_LAYER, 'circle-opacity', opacity);
-		}
+		applyTrackPaint(
+			map,
+			this.num('trackWeight', this.plugin.settings.trackWeight, 1, 24),
+			this.num('trackOpacity', this.plugin.settings.trackOpacity, 0, 100) / 100,
+			this.resolve('var(--background-primary)')
+		);
 	}
 
 	/* ---- interaction ---- */
@@ -414,7 +490,12 @@ export class TrackLayer {
 		const view = this.view;
 		if (!item || !view.data || !view.data.properties || !view.mapConfig || !view.config) return;
 		const config = view.config;
-		view.popupManager.showPopup(
+		// Under the cursor is where this one belongs, and the cursor is already in
+		// tile space — so go straight to the native method, past the wrapper that
+		// exists to move the pins' own WGS-84 anchors.
+		const show = this.origShowPopup ?? view.popupManager.showPopup;
+		show.call(
+			view.popupManager,
 			item.entry,
 			[ev.lngLat.lat, ev.lngLat.lng],
 			view.data.properties,
@@ -452,8 +533,7 @@ export class TrackLayer {
 	private bounds(): LngLatBounds | null {
 		const map = this.view.map;
 		if (!map) return null;
-		const LngLatBoundsCtor = map.getBounds().constructor as new () => LngLatBounds;
-		const bounds = new LngLatBoundsCtor();
+		const bounds = emptyBounds(map);
 		let points = 0;
 
 		// Native getBounds() is computed from the untouched WGS-84 entries, so

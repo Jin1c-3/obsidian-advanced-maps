@@ -117,6 +117,8 @@ export interface MapConfig {
 	center?: unknown;
 	/** This plugin's own field: the untouched WGS-84 value `center` came from. */
 	__amCenterWgs?: unknown;
+	/** …and the shifted value handed back, so a foreign write to `center` shows up. */
+	__amCenterOut?: unknown;
 	[key: string]: unknown;
 }
 
@@ -132,6 +134,7 @@ export interface MarkerManager {
 }
 
 export interface PopupManager {
+	/** `latLng` is the note's own WGS-84 value, straight off `markerManager.markers`. */
 	showPopup(
 		entry: BasesEntry,
 		latLng: [number, number],
@@ -160,6 +163,12 @@ export interface BasesMapView {
 	destroyMap(): void;
 	updateMapStyle(): void;
 	hasConfiguredZoom?(): boolean;
+	/**
+	 * Right-click on the map itself: "New note" here, "Copy coordinates", "Set
+	 * default center point". All three read the click through `map.unproject`,
+	 * so all three answer in whatever space the tiles are drawn in.
+	 */
+	showMapContextMenu(ev: MouseEvent): void;
 	onunload(): void;
 	/** Set by this plugin on the stub view an inline embed builds. */
 	__advancedMapsHeadless?: boolean;
@@ -185,6 +194,21 @@ export interface MapControl {
 	onRemove(map?: MapLibreMap): void;
 }
 
+export interface LngLat {
+	lng: number;
+	lat: number;
+}
+
+/**
+ * The built-in "locate user" button, added on mobile only. It is the Maps
+ * plugin's own control rather than MapLibre's GeolocateControl, and
+ * `updatePosition` is the single door a device fix comes through: the dot and
+ * the fly-to that follows are both derived from it.
+ */
+export interface LocateControl {
+	updatePosition(lat: number, lng: number): void;
+}
+
 export interface MapMouseEvent {
 	features?: MarkerFeature[];
 	lngLat: { lng: number; lat: number };
@@ -208,8 +232,14 @@ export interface MapLibreMap {
 	on(type: string, listener: (ev: any) => void): void;
 	on(type: string, layerId: string, listener: (ev: any) => void): void;
 	off(type: string, listener: (ev: any) => void): void;
+	getCenter(): LngLat | null;
+	setCenter(center: LngLat): void;
 	getBounds(): LngLatBounds;
 	fitBounds(bounds: LngLatBounds, options?: { padding?: number; maxZoom?: number; animate?: boolean }): void;
+	/** Pixel back to a coordinate — in tile space, like everything the map holds. */
+	unproject(point: [number, number]): LngLat;
 	getCanvas(): HTMLCanvasElement;
 	resize(): void;
+	/** Where MapLibre keeps the controls it has been handed, the locate one included. */
+	_controls?: unknown[];
 }

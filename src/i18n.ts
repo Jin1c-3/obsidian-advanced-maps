@@ -6,6 +6,8 @@
  * label. Placeholders are `{name}` and are substituted at call time.
  */
 
+import { getLanguage } from 'obsidian';
+
 const en = {
 	/* ---- notices ---- */
 	'notice.mapsRequired': 'Advanced Maps: enable the built-in Maps plugin.',
@@ -32,11 +34,12 @@ const en = {
 	'embed.mapsDisabled': 'the built-in Maps plugin is not enabled',
 
 	/* ---- coordinate systems ---- */
-	'coord.auto': 'Auto — decide from the tile URL',
-	'coord.wgs84': 'WGS-84 — raw GPS (OpenStreetMap, ArcGIS)',
-	'coord.gcj02': 'GCJ-02 — Mars coordinates (Amap, Tencent, Google China)',
-	'coord.bd09': 'BD-09 — Baidu coordinates (Baidu Maps)',
-	'coord.followPlugin': 'Follow the plugin setting',
+	/* Named by provider, not by standard: nobody picks a basemap by its datum. */
+	'coord.auto': 'Auto — follow the basemap',
+	'coord.wgs84': 'WGS-84 — OpenStreetMap, ArcGIS, Tianditu',
+	'coord.gcj02': 'GCJ-02 — Amap, Tencent, Google China',
+	'coord.bd09': 'BD-09 — Baidu',
+	'coord.followPlugin': 'Follow the plugin default',
 
 	/* ---- per-view options ---- */
 	'options.tracks': 'Tracks',
@@ -50,66 +53,67 @@ const en = {
 	'command.openInMap': 'Open in map',
 	'command.fillCoords': 'Fill coordinates from current location',
 
+	/* ---- settings ----
+	 * One line per setting, and one line under each heading. Why a thing works
+	 * the way it does belongs in the README; this pane has room for what it does
+	 * and what happens when it is off. */
+
 	/* ---- settings: location ---- */
 	'settings.locate.heading': 'Location',
 	'settings.locate.intro':
-		"Fills a note's coordinate property from the device's own location, through the same Web geolocation API a " +
-		'browser offers. Unlike the map plugins this one sits beside, it is not restricted to mobile: current Chromium ' +
-		'asks the operating system rather than a Google service, so a desktop with its location service switched on can ' +
-		'answer too. A platform that cannot is asked once and then left alone for the rest of the session.',
+		"Fills a note's coordinate property from the device — on the desktop as well as on mobile, wherever the " +
+		'operating system can answer.',
 	'settings.locate.enable.name': 'Enable location',
 	'settings.locate.enable.desc':
-		'Adds the command, and allows the automatic fill below. Off by default: the first request raises a permission ' +
-		'prompt, and where a note was written is not something to start recording without being asked.',
+		'Enables the command and the automatic fill below. The first request raises a permission prompt.',
 	'settings.locate.auto.name': 'Fill an empty coordinate property',
 	'settings.locate.auto.desc':
-		'When a note is opened, or its properties change, and the coordinate property is present but empty, fill it in. ' +
-		'A property that already holds something is never overwritten. Give your template an empty "{property}:" line and ' +
-		'every note made from it is stamped where it was written.',
+		'Stamps the note you are in when its "{property}" is there but empty — a blank line in a template is the ' +
+		'invitation. A property that already holds something is never overwritten.',
 	'settings.locate.exclude.name': 'Skip paths containing',
 	'settings.locate.exclude.desc':
-		'Comma-separated. A note whose path contains any of these is left alone — templates above all, since opening one ' +
-		'to edit it would otherwise fill in the blank the template exists to provide.',
+		'Comma-separated path fragments. Templates belong here: their blank is the one to leave alone.',
 
 	/* ---- settings: coordinate system ---- */
 	'settings.coord.heading': 'Coordinate system',
 	'settings.coord.intro':
-		'Chinese tile providers do not serve WGS-84: Amap and Tencent use GCJ-02, Baidu uses BD-09, and the offset ' +
-		'runs 300–600 m. Pick the right one and note coordinates and tracks are converted as they are drawn, so they ' +
-		'line up with the tiles. The system belongs to the tile source, so the default reads it off the tile URL — one ' +
-		'vault can hold an Amap base view and an OpenStreetMap inline map at once, each correct, and switching the ' +
-		'background follows along. Nothing on disk is touched; switching back to WGS-84 restores the original positions.',
+		'Chinese basemaps sit 300–600 m away from raw GPS. Matching the system moves pins and tracks as they are ' +
+		'drawn, so they line up with the tiles; nothing on disk changes.',
 	'settings.coord.default.name': 'Default coordinate system',
 	'settings.coord.default.desc':
-		'Every map view can override this under its own view options. This is the default, and what inline ![[track.gpx]] maps use.',
+		'Used by inline ![[track.gpx]] maps, and by every map view that does not set its own.',
 
 	/* ---- settings: open in map ---- */
 	'settings.open.heading': 'Open in map',
 	'settings.open.intro':
-		"Adds an entry to a note's ⋮ menu and to the command palette that pops up the configured base view centred on " +
-		'that note. It only appears on notes that actually have the coordinate property.',
+		"Pops up a base's map view centred on the note you are in, from its ⋮ menu or the command palette. It appears " +
+		'on notes whose coordinate property holds a value.',
 	'settings.open.label.name': 'Menu item label',
-	'settings.open.label.desc': 'Leave blank for the default.',
+	'settings.open.label.desc':
+		'Blank for the default. The ⋮ menu follows at once, the command palette after a reload.',
 	'settings.open.basePath.name': 'Base file path',
-	'settings.open.basePath.desc': 'Which .base file the map view is taken from.',
+	'settings.open.basePath.desc': 'The .base file the map view is taken from.',
 	'settings.open.viewName.name': 'View name',
-	'settings.open.viewName.desc': 'Which view inside that base to pop up. Leave blank to use its first map view.',
+	'settings.open.viewName.desc': 'Which view inside that base. Blank takes its first map view.',
 	'settings.open.coordsProperty.name': 'Coordinate property',
-	'settings.open.coordsProperty.desc': 'The note property holding "latitude,longitude".',
+	'settings.open.coordsProperty.desc':
+		'The property holding "latitude,longitude". Location, below, writes to this one too.',
 	'settings.open.zoom.name': 'Pop-up zoom level',
 
 	/* ---- settings: tracks ---- */
 	'settings.tracks.heading': 'Tracks',
 	'settings.tracks.intro':
-		'Every map view can override line width and opacity under its own view options. These are the defaults, and what inline ![[track.gpx]] maps use.',
+		'How GPX / GeoJSON tracks are drawn. A map view can set its own width, opacity and zoom limit.',
 	'settings.tracks.color.name': 'Default colour',
-	'settings.tracks.color.desc': 'Used when a note has no colour property, or it is empty. A CSS variable works too.',
+	'settings.tracks.color.desc':
+		'For inline maps, and for a track whose note the base gives no colour. A CSS variable works.',
 	'settings.tracks.weight.name': 'Line width',
 	'settings.tracks.opacity.name': 'Line opacity',
-	'settings.tracks.fitMaxZoom.name': 'Auto-fit zoom limit',
-	'settings.tracks.fitMaxZoom.desc': 'How far auto-framing is allowed to zoom in. Can be overridden per view.',
+	/* The same knob as `options.fitMaxZoom`, so it carries the same name. */
+	'settings.tracks.fitMaxZoom.name': 'Max zoom when fitting',
+	'settings.tracks.fitMaxZoom.desc': 'How far auto-framing may zoom in.',
 	'settings.tracks.embedHeight.name': 'Inline map height',
-	'settings.tracks.embedHeight.desc': 'Height in pixels of the map an ![[track.gpx]] embed renders.',
+	'settings.tracks.embedHeight.desc': 'Height in pixels of an inline ![[track.gpx]] map.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -136,11 +140,11 @@ const zh: Record<TranslationKey, string> = {
 	'embed.failed': '无法绘制 {file}：{message}',
 	'embed.mapsDisabled': '内置的 Maps 插件未启用',
 
-	'coord.auto': '自动识别 · 按瓦片地址判断',
-	'coord.wgs84': 'WGS-84 · GPS 原始（OpenStreetMap、ArcGIS）',
-	'coord.gcj02': 'GCJ-02 · 火星坐标（高德、腾讯、Google 中国）',
-	'coord.bd09': 'BD-09 · 百度坐标（百度地图）',
-	'coord.followPlugin': '跟随插件设置',
+	'coord.auto': '自动 · 跟随当前底图',
+	'coord.wgs84': 'OpenStreetMap、天地图、ArcGIS · WGS-84',
+	'coord.gcj02': '高德、腾讯、Google 中国 · GCJ-02 火星坐标',
+	'coord.bd09': '百度地图 · BD-09 百度坐标',
+	'coord.followPlugin': '跟随插件默认设置',
 
 	'options.tracks': '轨迹',
 	'options.lineWidth': '线宽',
@@ -153,57 +157,44 @@ const zh: Record<TranslationKey, string> = {
 	'command.fillCoords': '用当前定位填写坐标',
 
 	'settings.locate.heading': '定位',
-	'settings.locate.intro':
-		'用设备自身的定位填写笔记的坐标属性，走的是浏览器那套 Web geolocation API。' +
-		'和边上那两个地图插件不同，这里不限移动端：新版 Chromium 问的是操作系统（Windows 定位服务、macOS 的 CoreLocation）而不是 Google 的服务，' +
-		'所以开着定位服务的电脑同样能给出结果。给不出的平台只会被问一次，之后本次启动内不再打扰。',
+	'settings.locate.intro': '用设备定位填写笔记的坐标属性。桌面端也可以，只要操作系统能给出位置。',
 	'settings.locate.enable.name': '启用定位',
-	'settings.locate.enable.desc':
-		'启用后会注册命令，下面的自动填写也才生效。默认关闭：第一次请求会弹权限框，而「笔记写于何处」这种事不该不打招呼就开始记录。',
+	'settings.locate.enable.desc': '开启后命令和下面的自动填写才生效。第一次请求会弹出权限询问。',
 	'settings.locate.auto.name': '自动填写空的坐标属性',
 	'settings.locate.auto.desc':
-		'打开笔记、或笔记属性发生变化时，如果坐标属性存在但是空的，就填进去；已经有值的属性永远不会被覆盖。' +
-		'在模板里留一行空的「{property}:」，用它新建的每篇笔记就都会带上写下时的位置。',
+		'当前笔记的「{property}」存在但为空时填入——模板里留一行空的就是在等它。已经有值的属性不会被覆盖。',
 	'settings.locate.exclude.name': '跳过路径包含',
-	'settings.locate.exclude.desc':
-		'逗号分隔。路径里含有其中任意一段的笔记会被跳过 —— 首先是模板本身，否则打开模板改两笔，就会把它专门留出来的那个空位填掉。',
+	'settings.locate.exclude.desc': '逗号分隔的路径片段。模板目录应当写在这里：它留出的空位正是不该被填掉的。',
 
 	'settings.coord.heading': '坐标系',
 	'settings.coord.intro':
-		'国内地图服务商的瓦片不是 WGS-84：高德、腾讯用 GCJ-02，百度用 BD-09，实际偏差 300–600 米。' +
-		'选对之后，笔记坐标和轨迹会在绘制时换算到瓦片所在的坐标系，和底图对齐。' +
-		'坐标系取决于用的是哪家瓦片，所以默认按瓦片地址自动判断——同一个库里，高德底图的视图和 ' +
-		'OpenStreetMap 底图的内联地图各按各的来，切换背景也会跟着变。' +
-		'笔记和 .gpx 文件本身不会被改动，换回 WGS-84 即可还原。',
+		'国内底图与 GPS 原始坐标相差 300–600 米。选对坐标系，标记和轨迹会在绘制时换算过去，与底图对齐；磁盘上的内容不会改动。',
 	'settings.coord.default.name': '默认坐标系',
-	'settings.coord.default.desc':
-		'每个地图视图都可以在视图设置里单独覆盖；这里是默认值，也是内联 ![[track.gpx]] 使用的值。',
+	'settings.coord.default.desc': '内联 ![[track.gpx]] 地图，以及没有单独设置的地图视图都用它。',
 
 	'settings.open.heading': '在地图中打开',
 	'settings.open.intro':
-		'在笔记右上角 ⋮ 菜单（以及命令面板）中添加一个入口，弹窗显示指定 base 的地图视图，' +
-		'并以当前笔记的坐标为中心。只有带坐标属性的笔记才会出现该菜单项。',
+		'从 ⋮ 菜单或命令面板弹窗打开指定 base 的地图视图，并以当前笔记为中心。只对坐标属性有值的笔记出现。',
 	'settings.open.label.name': '菜单项名称',
-	'settings.open.label.desc': '留空则使用默认名称。',
+	'settings.open.label.desc': '留空用默认名称。⋮ 菜单立即生效，命令面板要重载插件。',
 	'settings.open.basePath.name': 'Base 文件路径',
 	'settings.open.basePath.desc': '从哪个 .base 文件取地图视图。',
 	'settings.open.viewName.name': '视图名称',
-	'settings.open.viewName.desc': '该 base 里要弹出的视图名。留空则取它的第一个地图视图。',
+	'settings.open.viewName.desc': '该 base 里的哪个视图。留空取第一个地图视图。',
 	'settings.open.coordsProperty.name': '坐标属性',
-	'settings.open.coordsProperty.desc': '笔记里存放「纬度,经度」的属性名。',
+	'settings.open.coordsProperty.desc': '存放「纬度,经度」的属性名。下面的定位写入的也是它。',
 	'settings.open.zoom.name': '弹窗缩放级别',
 
 	'settings.tracks.heading': '轨迹',
-	'settings.tracks.intro':
-		'每个地图视图都可以在视图设置里单独覆盖线宽和透明度；这里设置的是默认值，也是内联 ![[track.gpx]] 使用的值。',
+	'settings.tracks.intro': 'GPX / GeoJSON 轨迹的画法。线宽、透明度和缩放上限都可以在单个地图视图里另设。',
 	'settings.tracks.color.name': '默认颜色',
-	'settings.tracks.color.desc': '笔记没有配置颜色属性、或属性为空时使用。可以是 CSS 变量。',
+	'settings.tracks.color.desc': '内联地图用它，base 没给笔记指定颜色时也用它。可以是 CSS 变量。',
 	'settings.tracks.weight.name': '线宽',
 	'settings.tracks.opacity.name': '线条透明度',
 	'settings.tracks.fitMaxZoom.name': '自动缩放上限',
-	'settings.tracks.fitMaxZoom.desc': '自动框选数据时允许放大到的最大级别。视图设置里可以单独覆盖。',
+	'settings.tracks.fitMaxZoom.desc': '自动框选时最多放大到的级别。',
 	'settings.tracks.embedHeight.name': '内联地图高度',
-	'settings.tracks.embedHeight.desc': '笔记里 ![[track.gpx]] 渲染出的地图高度（像素）。',
+	'settings.tracks.embedHeight.desc': '内联 ![[track.gpx]] 地图的高度（像素）。',
 };
 
 const LOCALES = { en, zh } as const;
@@ -213,19 +204,16 @@ export type Locale = keyof typeof LOCALES;
 let locale: Locale | null = null;
 
 /**
- * Obsidian keeps the chosen interface language in localStorage; `navigator` is
- * the fallback for a headless test or an install that never set it. Traditional
- * Chinese falls through to the Simplified table — closer than English until
- * someone contributes a `zh-TW` one.
+ * Traditional Chinese falls through to the Simplified table — closer than
+ * English until someone contributes a `zh-TW` one.
  */
 export function detectLocale(): Locale {
 	let tag = '';
 	try {
-		tag = window.localStorage.getItem('language') || '';
+		tag = getLanguage() || '';
 	} catch (e) {
-		/* no localStorage in tests */
+		/* not running inside Obsidian */
 	}
-	if (!tag && typeof navigator !== 'undefined') tag = navigator.language || '';
 	return tag.toLowerCase().startsWith('zh') ? 'zh' : 'en';
 }
 
