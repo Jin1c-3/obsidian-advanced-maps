@@ -22,7 +22,8 @@
  * the tiles, not on the way to disk.
  */
 
-import { t, type TranslationKey } from './i18n';
+import { formatLatLng } from './coords';
+import type { TranslationKey } from './i18n';
 
 /** A position fix. WGS-84, like everything this plugin writes down. */
 export interface Fix {
@@ -33,16 +34,9 @@ export interface Fix {
 	timestamp: number;
 }
 
-/**
- * Six decimals is about 11 cm — well past what any GPS delivers, but it is what
- * the vault already holds, and rounding harder would make every re-stamp look
- * like the note moved.
- */
-export const COORD_DIGITS = 6;
-
-/** The shape stored in frontmatter: "lat,lng", no space, matching what is there. */
-export function formatFix(fix: Fix, digits: number = COORD_DIGITS): string {
-	return `${fix.lat.toFixed(digits)},${fix.lng.toFixed(digits)}`;
+/** The shape stored in frontmatter — see `formatLatLng`, which states it. */
+export function formatFix(fix: Fix): string {
+	return formatLatLng(fix.lat, fix.lng);
 }
 
 /**
@@ -100,8 +94,14 @@ export const GEOLOCATION_OPTIONS: PositionOptions = {
 export interface LocatorHost {
 	/** `null` on a platform with no geolocation at all. */
 	geolocation: Geolocation | null;
-	/** Told once, when the breaker trips, so the silent path can explain itself. */
-	onGiveUp?: (message: string) => void;
+	/**
+	 * Told once, when the breaker trips, so the silent path can explain itself.
+	 *
+	 * Handed the *reason*, not a sentence. Rendering it is the caller's job —
+	 * which is what keeps this module free of any runtime Obsidian import, the
+	 * thing its own header claims and `errorKey` above already assumes.
+	 */
+	onGiveUp?: (reason: TranslationKey) => void;
 }
 
 export class Locator {
@@ -174,6 +174,6 @@ export class Locator {
 		this.lastError = reason;
 		if (!giveUp || this.broken) return;
 		this.broken = true;
-		this.host.onGiveUp?.(t('notice.locate.gaveUp', { reason: t(reason) }));
+		this.host.onGiveUp?.(reason);
 	}
 }

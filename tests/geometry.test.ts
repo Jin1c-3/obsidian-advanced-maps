@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { clamp, extendBounds, styleReady, styleUsable, walkCoords } from '../src/geometry';
+import { boundsOf, clamp, extendBounds, styleReady, styleUsable, trackKnob, walkCoords } from '../src/geometry';
+import { TRACK_KNOBS } from '../src/constants';
 import type { LngLatBounds, MapLibreMap } from '../src/types/obsidian-internals';
 
 /** Stands in for MapLibre's LngLatBounds, which only needs to collect points. */
@@ -13,6 +14,25 @@ function fakeBounds() {
 		isEmpty: () => seen.length === 0,
 	};
 	return { bounds, seen };
+}
+
+/**
+ * `boundsOf` mints its bounds off the map, the way `emptyBounds` does — MapLibre
+ * exports no constructor to import, so a fresh one is built from `getBounds()`'s
+ * own class. This stub supplies that class.
+ */
+function boundsMakingMap() {
+	class FakeBounds implements LngLatBounds {
+		readonly seen: unknown[] = [];
+		extend(value: unknown): LngLatBounds {
+			this.seen.push(value);
+			return this;
+		}
+		isEmpty(): boolean {
+			return this.seen.length === 0;
+		}
+	}
+	return { getBounds: () => new FakeBounds() } as unknown as MapLibreMap;
 }
 
 describe('walkCoords', () => {
@@ -96,6 +116,69 @@ describe('extendBounds', () => {
 		const { bounds } = fakeBounds();
 		expect(extendBounds(bounds, null)).toBe(0);
 		expect(extendBounds(bounds, undefined)).toBe(0);
+	});
+});
+
+describe('boundsOf', () => {
+	const map = boundsMakingMap();
+
+	it('covers every geometry it is given', () => {
+		const bounds = boundsOf(map, [
+			{ type: 'Point', coordinates: [1, 2] },
+			{
+				type: 'LineString',
+				coordinates: [
+					[3, 4],
+					[5, 6],
+				],
+			},
+		]);
+		expect((bounds as unknown as { seen: unknown[] }).seen).toEqual([
+			[1, 2],
+			[3, 4],
+			[5, 6],
+		]);
+	});
+
+	// Null is what tells a caller "nothing to frame" apart from "framed on one
+	// point" — fit() and the embed both bail on it rather than calling fitBounds.
+	it('answers null when there was nothing finite to cover', () => {
+		expect(boundsOf(map, [])).toBeNull();
+		expect(boundsOf(map, [null, undefined])).toBeNull();
+		expect(boundsOf(map, [{ type: 'LineString', coordinates: [] }])).toBeNull();
+	});
+
+	it('starts from a seed bounds, which counts on its own', () => {
+		const seed = fakeBounds();
+		seed.bounds.extend([9, 9]);
+		const bounds = boundsOf(map, [], seed.bounds);
+		expect(bounds).not.toBeNull();
+		expect((bounds as unknown as { seen: unknown[] }).seen).toEqual([seed.bounds]);
+	});
+
+	it('ignores an empty seed rather than counting it as a point', () => {
+		expect(boundsOf(map, [], fakeBounds().bounds)).toBeNull();
+	});
+});
+
+describe('trackKnob', () => {
+	it('gives back a value that is already inside the knob’s bounds', () => {
+		expect(trackKnob('trackWeight', 6)).toBe(6);
+		expect(trackKnob('trackOpacity', 50)).toBe(50);
+	});
+
+	// The sliders stop at `max`, but a base file is YAML somebody can edit by
+	// hand — that is what `hardMax` is for, and why it is not simply `max`.
+	it('honours a hand-edited value past the slider, up to the hard bound', () => {
+		expect(trackKnob('trackWeight', 20)).toBe(20);
+		expect(trackKnob('trackWeight', 999)).toBe(TRACK_KNOBS.trackWeight.hardMax);
+		expect(trackKnob('fitMaxZoom', 0)).toBe(TRACK_KNOBS.fitMaxZoom.hardMin);
+	});
+
+	it('falls back to the knob’s own default when the value is not a number', () => {
+		expect(trackKnob('trackWeight', 'abc')).toBe(TRACK_KNOBS.trackWeight.def);
+		expect(trackKnob('trackOpacity', undefined)).toBe(TRACK_KNOBS.trackOpacity.def);
+		expect(trackKnob('fitMaxZoom', null)).toBe(TRACK_KNOBS.fitMaxZoom.def);
 	});
 });
 

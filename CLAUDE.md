@@ -53,9 +53,9 @@ src/
   geometry.ts        bounds, clamping, the style gate     ← pure, tested
   view-options.ts    the two option groups and where they go
   track-cache.ts     parsed tracks, keyed by path, invalidated by mtime
-  layers.ts          the track layers, zoom-to-fit control, locate-button guard
+  layers.ts          the track layers, drawing, framing, locate-button guard
   i18n.ts            en / zh tables
-  constants.ts       source and layer ids, track extensions
+  constants.ts       source and layer ids, track extensions, the track knobs
   types/obsidian-internals.d.ts   the undocumented surface this leans on
 tests/               vitest, happy-dom, no vault required
 ```
@@ -608,6 +608,31 @@ All of them cost real debugging time. Read this before "simplifying" any of them
    once. Rebuilding the menu would mean re-implementing four native items and
    losing whatever a future one adds; wrapping `unproject` for good would corrupt
    every internal use MapLibre makes of it.
+
+8. **`sync()` skips only the upload, never the framing.** Bases replaces its
+   result set on _any_ vault change while a map view is open — not just changes
+   to notes the base matches — so `sync()` runs far more often than the tracks
+   change. `setData` hands every position to MapLibre's worker and re-tiles the
+   lot, so it is guarded by a signature over the files, their mtimes, their
+   colours and the coordinate system. Everything after it — paint, interactions,
+   `fit()` — still runs every time, deliberately: a row that arrives carrying a
+   pin and no track changes no signature but must still re-frame the map. The
+   guard also requires the source to still exist, because a style swap wipes
+   every source and `style.load` then re-enters with an unchanged signature.
+
+9. **`TRACK_KNOBS` has both a `max` and a `hardMax`, and they are not the same
+   number.** `max` is what the sliders offer; `hardMax` is what a value is
+   clamped to at runtime. A base file is YAML somebody can edit by hand, and a
+   `trackWeight: 20` typed in there is honoured rather than clipped back to the
+   slider's 12. Collapsing the two to one number quietly re-clamps every
+   hand-written base.
+
+10. **`resolveTracks` memoises on the `CachedMetadata` object, not on the path.**
+    That is what makes it self-invalidating — re-indexing a note hands back a new
+    cache object, which is a miss. But which file a `![[track.gpx]]` resolves to
+    can change with the note untouched (creating the attachment it already links
+    to), so the whole memo is dropped on vault create/rename/delete. Keep those
+    three listeners together with it.
 
 ## Testing
 

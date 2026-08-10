@@ -5,7 +5,7 @@
 import { Keymap, Menu } from 'obsidian';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { TFile } from 'obsidian';
-import { LINE_LAYER, MARKER_LAYER, POINT_LAYER, SRC } from './constants';
+import { LINE_LAYER, POINT_LAYER, SRC, type TrackKnob } from './constants';
 import {
 	knownMode,
 	projectCenter,
@@ -15,11 +15,12 @@ import {
 	toWgs84,
 	type CoordSystem,
 } from './coords';
-import { clamp, emptyBounds, extendBounds, styleReady } from './geometry';
+import { boundsOf, styleReady, trackKnob } from './geometry';
 import { getLocale, t } from './i18n';
 import {
-	addTrackLayers,
 	applyTrackPaint,
+	drawTracks,
+	fitTo,
 	FitControl,
 	guardLocateControl,
 	removeTrackLayers,
@@ -103,6 +104,8 @@ export class TrackLayer {
 	private locate: LocateGuard | null = null;
 	/** Which space the map is currently drawn in, so a change to it can be noticed. */
 	private appliedSystem: CoordSystem | null = null;
+	/** The signature of what is currently on the map; null once nothing is. */
+	private drawn: string | null = null;
 
 	constructor(
 		private readonly plugin: AdvancedMapsPlugin,
@@ -123,6 +126,8 @@ export class TrackLayer {
 		const view = this.view;
 		const manager = view.markerManager;
 		const popups = view.popupManager;
+		// What `enhance()` reads to tell an already-wrapped view from a fresh one.
+		view.__advancedMapsLayer = true;
 
 		this.wrap(manager, 'updateMarkers', (orig) => async (data?: BasesData) => {
 			await orig.call(manager, data);
@@ -232,6 +237,7 @@ export class TrackLayer {
 			this.interactionsBound = false;
 			this.userMoved = false;
 			this.data = null;
+			this.drawn = null;
 			this.markerFeatures = null;
 			this.appliedSystem = null;
 			this.locate?.restore();
@@ -339,6 +345,7 @@ export class TrackLayer {
 		this.fitControl = null;
 
 		for (const restore of this.restorers.splice(0)) restore();
+		delete view.__advancedMapsLayer;
 		this.origShowPopup = null;
 		this.locate?.restore();
 		this.locate = null;
@@ -389,11 +396,16 @@ export class TrackLayer {
 
 	/* ---- config ---- */
 
-	private num(key: string, fallback: number, min: number, max: number): number {
+	/**
+	 * One track knob: the view's own value when it states one, otherwise the
+	 * plugin setting. A blank view option means "follow the plugin", which is why
+	 * an empty string falls through rather than clamping to the knob's minimum.
+	 */
+	private knob(key: TrackKnob): number {
 		const view = this.view;
 		const raw = view.config ? view.config.get(key) : undefined;
-		if (raw === undefined || raw === null || raw === '') return fallback;
-		return clamp(raw, min, max, fallback);
+		if (raw === undefined || raw === null || raw === '') return this.plugin.settings[key];
+		return trackKnob(key, raw);
 	}
 
 	/**
@@ -488,8 +500,10 @@ export class TrackLayer {
 		return this.resolve(raw || this.plugin.settings.trackColor);
 	}
 
-	private build(items: DrawItem[]): FeatureCollection<Geometry, { amColor: string; amIndex: number }> {
-		const system = this.system();
+	private build(
+		items: DrawItem[],
+		system: CoordSystem
+	): FeatureCollection<Geometry, { amColor: string; amIndex: number }> {
 		const features: TrackFeature[] = [];
 		items.forEach((item, index) => {
 			for (const trackFile of item.trackFiles) {
@@ -507,42 +521,70 @@ export class TrackLayer {
 		return { type: 'FeatureCollection', features };
 	}
 
+	/**
+	 * Everything the uploaded collection depends on, as one comparable string:
+	 * which files, in which state, in which colour, in which space.
+	 *
+	 * Paint and framing are deliberately *not* in here. They are cheap and they
+	 * run on every sync regardless, so this only has to answer one question —
+	 * "are these the same features as the ones already up?".
+	 */
+	private signature(items: DrawItem[], system: CoordSystem): string {
+		const parts: string[] = [system];
+		for (const item of items) {
+			parts.push(item.color);
+			// mtime, so a track edited in place counts as different even though its
+			// path has not moved.
+			for (const trackFile of item.trackFiles) parts.push(trackFile.path, String(trackFile.stat.mtime));
+		}
+		return parts.join(' ');
+	}
+
 	async sync(data?: BasesData): Promise<void> {
 		const view = this.view;
 		if (this.detached || !view.map) return;
 
 		const items = this.collect(data ?? view.data);
 
-		const pending: TFile[] = [];
+		const pending = new Set<TFile>();
 		for (const item of items) {
 			for (const trackFile of item.trackFiles) {
-				if (!this.plugin.tracks.isFresh(trackFile) && !pending.includes(trackFile)) pending.push(trackFile);
+				if (!this.plugin.tracks.isFresh(trackFile)) pending.add(trackFile);
 			}
 		}
-		if (pending.length > 0) await Promise.all(pending.map((f) => this.plugin.tracks.load(f)));
+		if (pending.size > 0) await Promise.all([...pending].map((f) => this.plugin.tracks.load(f)));
 		if (this.detached || !view.map) return;
 
 		await styleReady(view.map);
 		if (this.detached || !view.map) return;
 
 		const map = view.map;
+		// Always adopted, even when the redraw below is skipped: Bases recreates
+		// its BasesEntry objects on every update and warns against holding the old
+		// ones, and hover() reads an entry straight out of this list.
 		this.items = items;
-		this.data = this.build(items);
 
-		try {
-			const source = map.getSource(SRC);
-			if (source) {
-				source.setData(this.data);
-			} else {
-				map.addSource(SRC, { type: 'geojson', data: this.data });
-				// Anchor below the markers so a pin sitting on its own track stays on top.
-				addTrackLayers(map, map.getLayer(MARKER_LAYER) ? MARKER_LAYER : undefined);
-			}
-		} catch (e) {
-			// The style was swapped out from under us; style.load will retry.
-			console.warn('Advanced Maps: deferring track layers —', e instanceof Error ? e.message : e);
-			return;
+		const system = this.system();
+		this.data = this.build(items, system);
+
+		// `setData` hands every position to MapLibre's worker and re-tiles the
+		// lot, which is the one genuinely expensive step in here — and Bases
+		// replaces its result set on *any* vault change while a map view is open,
+		// not just changes to notes the base matches, so sync() runs far more
+		// often than the tracks themselves change.
+		//
+		// Only the upload is skipped. Paint and framing below are cheap and still
+		// run every time, so a row that arrives carrying a pin and no track still
+		// re-frames the map exactly as it used to. And the source has to still be
+		// there: a style swap — theme, background — wipes every source, then
+		// `style.load` re-enters here with an unchanged signature to put the
+		// tracks back.
+		const signature = this.signature(items, system);
+		if (signature !== this.drawn || !map.getSource(SRC)) {
+			if (!drawTracks(map, this.data)) return;
+			this.drawn = signature;
 		}
+
 		this.applyPaint();
 		this.bindInteractions();
 		this.fit(false);
@@ -557,8 +599,8 @@ export class TrackLayer {
 		if (!map) return;
 		applyTrackPaint(
 			map,
-			this.num('trackWeight', this.plugin.settings.trackWeight, 1, 24),
-			this.num('trackOpacity', this.plugin.settings.trackOpacity, 0, 100) / 100,
+			this.knob('trackWeight'),
+			this.knob('trackOpacity') / 100,
 			this.resolve('var(--background-primary)')
 		);
 	}
@@ -632,34 +674,21 @@ export class TrackLayer {
 		}
 		const bounds = this.bounds();
 		if (!bounds) return;
-		map.fitBounds(bounds, {
-			padding: 24,
-			maxZoom: this.num('fitMaxZoom', this.plugin.settings.fitMaxZoom, 1, 22),
-			animate: false,
-		});
+		fitTo(map, bounds, 24, this.knob('fitMaxZoom'));
 	}
 
 	private bounds(): LngLatBounds | null {
 		const map = this.view.map;
 		if (!map) return null;
-		const bounds = emptyBounds(map);
-		let points = 0;
+		const tracks = (this.data?.features ?? []).map((feature) => feature.geometry);
 
 		// Native getBounds() is computed from the untouched WGS-84 entries, so
 		// once the pins have been moved it frames the wrong place. Use the
 		// features actually on the map whenever we have them.
 		if (this.markerFeatures) {
-			for (const feature of this.markerFeatures) points += extendBounds(bounds, feature.geometry);
-		} else {
-			const markers = this.view.markerManager.getBounds();
-			if (markers && !markers.isEmpty()) {
-				bounds.extend(markers);
-				points++;
-			}
+			const markers = this.markerFeatures.map((feature) => feature.geometry);
+			return boundsOf(map, [...markers, ...tracks]);
 		}
-		for (const feature of this.data?.features ?? []) {
-			points += extendBounds(bounds, feature.geometry);
-		}
-		return points > 0 && !bounds.isEmpty() ? bounds : null;
+		return boundsOf(map, tracks, this.view.markerManager.getBounds());
 	}
 }

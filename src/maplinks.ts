@@ -20,14 +20,13 @@
  * its own, only the shift back onto each provider's native datum.
  */
 
-import { gcj2bd, outOfChina, wgs2gcj } from './coords';
+import { COORD_DIGITS, gcj2bd, outOfChina, wgs2gcj } from './coords';
 
 export const EXTERNAL_MAPS = ['amap', 'baidu', 'tencent', 'google', 'apple', 'osm'] as const;
 export type ExternalMap = (typeof EXTERNAL_MAPS)[number];
 
-/** Six decimals: what every other coordinate this plugin writes is rounded to (see locate.ts). */
-const DIGITS = 6;
-const fmt = (n: number): string => n.toFixed(DIGITS);
+/** The same rounding every other coordinate this plugin writes gets. */
+const fmt = (n: number): string => n.toFixed(COORD_DIGITS);
 
 /**
  * The order to list them in — most likely first for this locale.
@@ -67,54 +66,44 @@ function wgs2bd(lng: number, lat: number): [number, number] {
  *
  * Every shape below is a documented public URI endpoint and none takes an API
  * key, so none of these links can go dead because a key later expires or gets
- * revoked. `label` is optional and, when present, is the only thing that gets
- * `encodeURIComponent`-ed — a note title with a space, an ampersand or Chinese
- * characters has to survive as one opaque query value, not be re-parsed as
- * syntax. When it is absent the corresponding parameter is left out entirely
- * rather than sent empty, which several of these providers treat as an unnamed
- * pin *labelled* "undefined" instead of a plain, unlabelled one.
+ * revoked.
+ *
+ * Coordinate only, no label. The one caller is a right-click on empty map — see
+ * `addExternalMapItems` — where there is no note and so no name to pass, and
+ * inventing one would be worse than none. 高德, 百度 and Apple do each take a
+ * label parameter; if the ROADMAP's "stamp an existing note from the map" ever
+ * lands, that is the point at which to decide *which* name a pin contributes
+ * and to add it back, rather than carrying a guess at the answer until then.
  */
-export function externalMapUrl(app: ExternalMap, lat: number, lng: number, label?: string): string {
-	const name = label === undefined ? undefined : encodeURIComponent(label);
-
+export function externalMapUrl(app: ExternalMap, lat: number, lng: number): string {
 	switch (app) {
 		case 'amap': {
 			// position is longitude-first, matching what readAmap() expects to find
 			// on the way back in.
 			const [gLng, gLat] = wgs2gcj(lng, lat);
-			const namePart = name === undefined ? '' : `&name=${name}`;
-			return `https://uri.amap.com/marker?position=${fmt(gLng)},${fmt(gLat)}${namePart}&src=obsidian&coordinate=gaode`;
+			return `https://uri.amap.com/marker?position=${fmt(gLng)},${fmt(gLat)}&src=obsidian&coordinate=gaode`;
 		}
 
 		case 'baidu': {
-			// location is latitude-first, matching readBaidu(). title and content
-			// are both set from the same label — Baidu's own marker page renders
-			// content in the popup and title as the tab title.
+			// location is latitude-first, matching readBaidu().
 			const [bLng, bLat] = wgs2bd(lng, lat);
-			const labelPart = name === undefined ? '' : `&title=${name}&content=${name}`;
-			return `https://api.map.baidu.com/marker?location=${fmt(bLat)},${fmt(bLng)}${labelPart}&output=html&coord_type=bd09ll`;
+			return `https://api.map.baidu.com/marker?location=${fmt(bLat)},${fmt(bLng)}&output=html&coord_type=bd09ll`;
 		}
 
 		case 'tencent': {
-			// coord: is latitude-first, matching readTencent(). The semicolon
-			// separating coord: from title: is part of 腾讯's own marker syntax, not
-			// something to percent-encode away.
+			// coord: is latitude-first, matching readTencent().
 			const [tLng, tLat] = wgs2gcj(lng, lat);
-			const titlePart = name === undefined ? '' : `;title:${name}`;
-			return `https://apis.map.qq.com/uri/v1/marker?marker=coord:${fmt(tLat)},${fmt(tLng)}${titlePart}`;
+			return `https://apis.map.qq.com/uri/v1/marker?marker=coord:${fmt(tLat)},${fmt(tLng)}`;
 		}
 
 		case 'google': {
-			// The search endpoint's query parameter takes a coordinate only — there
-			// is no separate label field to carry a note title into.
 			const [oLng, oLat] = chinaAwareOut(lat, lng);
 			return `https://www.google.com/maps/search/?api=1&query=${fmt(oLat)},${fmt(oLng)}`;
 		}
 
 		case 'apple': {
 			const [oLng, oLat] = chinaAwareOut(lat, lng);
-			const qPart = name === undefined ? '' : `&q=${name}`;
-			return `https://maps.apple.com/?ll=${fmt(oLat)},${fmt(oLng)}${qPart}`;
+			return `https://maps.apple.com/?ll=${fmt(oLat)},${fmt(oLng)}`;
 		}
 
 		case 'osm': {

@@ -6,6 +6,73 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.5.1]
+
+### Fixed
+
+- Inline maps are torn down when the plugin unloads. Each one holds a WebGL
+  context and browsers keep only about sixteen alive at once, so updating or
+  reloading the plugin with embeds on screen leaked one apiece until the note
+  was closed.
+- A track option left blank in a hand-edited base read as zero rather than as
+  absent, and clamped to the option's minimum instead of falling back to its
+  default.
+
+### Changed
+
+- Redraws skip re-uploading the tracks when nothing about them has changed.
+  Bases replaces its result set on _any_ vault edit while a map view is open,
+  not just edits to notes the base matches, so a base carrying several large
+  tracks was re-serializing every point on every save. Framing and paint still
+  run every time, so nothing about how a map behaves changes.
+- Which track files a note embeds is remembered against that note's metadata
+  instead of being resolved again on every redraw — several hundred link
+  resolutions per redraw on a large base — and is dropped whenever a file is
+  created, renamed or deleted.
+- A track's converted geometry is remembered per coordinate system rather than
+  one system at a time, so a GCJ-02 base view and a BD-09 embed of the same file
+  no longer re-convert each other's work on every redraw.
+- Parsed tracks are dropped from the cache when their file is deleted or
+  renamed, rather than held for the rest of the session.
+- The track option ranges and defaults are stated once rather than in four
+  places, where the copies had already drifted apart.
+
+### Added
+
+- A Simplified Chinese README.
+
+## [1.5.0]
+
+### Added
+
+- **Track statistics.** Distance, ascent and descent, elevation range, elapsed
+  and moving time and average pace, under an inline map, with an elevation
+  profile below them. Ascent ignores drift under 5 m, because raw GPS elevation
+  is noisy enough to turn a flat ride into hundreds of metres of imaginary
+  climb; moving time counts anything above 0.9 km/h, low enough that walking up
+  steps still counts. Whatever a file does not record is left out rather than
+  shown as zero. Both the line and the profile can be switched off.
+- **KML and TCX** join GPX and GeoJSON as track formats.
+- **Open a spot in another map app.** _Open in external map_ on the map's own
+  right-click menu, sending each provider the datum it actually expects.
+
+### Changed
+
+- The repo lints with the same two things the community scorecard scans with,
+  so its findings turn up before a release rather than on a web page after one.
+- Release assets carry GitHub build provenance.
+
+## [1.4.0]
+
+### Added
+
+- **A map of the notes around a note.** One command writes one line into the
+  note — an embed of a view in your own base, filtered to the notes this one
+  links to, the notes that link to it, and itself. The view is added to the base
+  once and referenced afterwards, so a later change to the base reaches every
+  map already inserted. After that the plugin is out of the loop: adding a place
+  is dragging a note into the body.
+
 ## [1.3.0]
 
 ### Added
@@ -72,6 +139,10 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.1.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.5.1...HEAD
+[1.5.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.5.0...1.5.1
+[1.5.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.4.0...1.5.0
+[1.4.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.3.0...1.4.0
+[1.3.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.2.0...1.3.0
 [1.1.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/releases/tag/1.0.0

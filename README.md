@@ -3,6 +3,8 @@
 [![CI](https://github.com/Jin1c-3/obsidian-advanced-maps/actions/workflows/ci.yml/badge.svg)](https://github.com/Jin1c-3/obsidian-advanced-maps/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+**English** · [简体中文](README.zh-CN.md)
+
 Adds to Obsidian's built-in **Maps** view instead of replacing it: GPX, GeoJSON,
 KML and TCX tracks with distance, ascent and an elevation profile; zoom-to-fit;
 Chinese coordinate systems; inline `![[track.gpx]]` maps; an "open in map"

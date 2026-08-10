@@ -13,10 +13,9 @@
 
 import { getLanguage, Notice, SuggestModal, requestUrl } from 'obsidian';
 import type { App } from 'obsidian';
-import { toWgs84 } from './coords';
+import { formatLatLng, toWgs84 } from './coords';
 import { geocodeRequest, GeocodeError, parseGeocode, type GeocodeProvider, type Place } from './geocode';
 import { t } from './i18n';
-import { COORD_DIGITS } from './locate';
 
 /** Long enough to outlast typing, short enough not to feel broken. */
 const QUIET_MS = 450;
@@ -79,7 +78,7 @@ export class PlaceSearchModal extends SuggestModal<Place> {
 
 	onChooseSuggestion(place: Place): void {
 		const [lng, lat] = toWgs84(place.system, place.lng, place.lat);
-		const coords = `${lat.toFixed(COORD_DIGITS)},${lng.toFixed(COORD_DIGITS)}`;
+		const coords = formatLatLng(lat, lng);
 		void Promise.resolve(this.onPick(coords, place)).then(() => {
 			new Notice(t('notice.locate.done', { property: this.property, coords }));
 		});

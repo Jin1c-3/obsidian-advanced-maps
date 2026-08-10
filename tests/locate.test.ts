@@ -46,8 +46,8 @@ describe('formatFix', () => {
 		expect(formatFix(fix(28.6, -0.5))).toBe('28.600000,-0.500000');
 	});
 
-	it('rounds to the requested precision', () => {
-		expect(formatFix(fix(28.6244153, 115.7880914), 4)).toBe('28.6244,115.7881');
+	it('rounds to six decimals — past any GPS, and short of making a re-stamp look like a move', () => {
+		expect(formatFix(fix(28.62441531, 115.78809142))).toBe('28.624415,115.788091');
 	});
 });
 

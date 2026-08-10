@@ -126,44 +126,6 @@ describe('externalMapUrl: 高德 outside China is the identity', () => {
 	});
 });
 
-describe('externalMapUrl: label handling', () => {
-	const label = '断桥 & West Lake';
-
-	it('encodes the label for 高德', () => {
-		const url = new URL(externalMapUrl('amap', WGS[0], WGS[1], label));
-		expect(url.searchParams.get('name')).toBe(label);
-	});
-
-	it('encodes the label for 百度 into both title and content', () => {
-		const url = new URL(externalMapUrl('baidu', WGS[0], WGS[1], label));
-		expect(url.searchParams.get('title')).toBe(label);
-		expect(url.searchParams.get('content')).toBe(label);
-	});
-
-	it('encodes the label for 腾讯, inside the marker parameter', () => {
-		// searchParams.get() decodes on read, so the assertion is on the raw href
-		// — that is where the actual %-encoding (and the correctly *un*-encoded
-		// ";" separating coord: from title:) has to be found.
-		const href = externalMapUrl('tencent', WGS[0], WGS[1], label);
-		expect(href).toContain(`;title:${encodeURIComponent(label)}`);
-		const url = new URL(href);
-		expect(url.searchParams.get('marker')).toContain(`title:${label}`);
-	});
-
-	it('encodes the label for Apple', () => {
-		const url = new URL(externalMapUrl('apple', WGS[0], WGS[1], label));
-		expect(url.searchParams.get('q')).toBe(label);
-	});
-
-	it('omits the name parameter entirely when no label is given, rather than sending it empty', () => {
-		expect(new URL(externalMapUrl('amap', WGS[0], WGS[1])).searchParams.has('name')).toBe(false);
-		expect(new URL(externalMapUrl('baidu', WGS[0], WGS[1])).searchParams.has('title')).toBe(false);
-		expect(new URL(externalMapUrl('baidu', WGS[0], WGS[1])).searchParams.has('content')).toBe(false);
-		expect(new URL(externalMapUrl('tencent', WGS[0], WGS[1])).searchParams.get('marker')).not.toContain('title:');
-		expect(new URL(externalMapUrl('apple', WGS[0], WGS[1])).searchParams.has('q')).toBe(false);
-	});
-});
-
 describe('mapOrder', () => {
 	const sameSix = (order: ExternalMap[]): void => {
 		expect(order).toHaveLength(EXTERNAL_MAPS.length);

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { parseGeoLink, shortLink, toWgs } from '../src/geolink';
-import { wgs2gcj, gcj2bd } from '../src/coords';
+import { parseGeoLink, shortLink, type ParsedPoint } from '../src/geolink';
+import { wgs2gcj, gcj2bd, toWgs84 } from '../src/coords';
+
+/** The same point in WGS-84 — what the modal writes after the reader has run. */
+const toWgs = (p: ParsedPoint): { lat: number; lng: number } => {
+	const [lng, lat] = toWgs84(p.system, p.lng, p.lat);
+	return { lat, lng };
+};
 
 /* 西湖, 断桥. The vault value is WGS-84; the provider links below are what each
  * service would hand out for the same spot, so the parsers can be held to

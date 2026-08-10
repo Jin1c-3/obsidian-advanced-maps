@@ -21,7 +21,7 @@
  */
 
 import { Notice, parseFrontMatterAliases, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
-import type { Editor, TAbstractFile } from 'obsidian';
+import type { CachedMetadata, Editor, TAbstractFile } from 'obsidian';
 import { TRACK_EXTS } from './constants';
 import { TrackEmbed } from './embed';
 import { t } from './i18n';
@@ -43,7 +43,7 @@ import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMaps
 import { TrackCache } from './track-cache';
 import { TrackLayer } from './track-layer';
 import { appendTrackOptions } from './view-options';
-import type { BasesMapView, BasesViewFactory, BasesViewRegistration } from './types/obsidian-internals';
+import type { BasesMapView, BasesViewFactory, BasesViewRegistration, ComponentNode } from './types/obsidian-internals';
 
 export default class AdvancedMapsPlugin extends Plugin {
 	/** Declared on Plugin as `unknown` since 1.13; narrowed here. */
@@ -54,6 +54,8 @@ export default class AdvancedMapsPlugin extends Plugin {
 	readonly embeds = new Set<TrackEmbed>();
 	/** Notes whose blank coordinate property is already being filled in. */
 	private readonly filling = new Set<string>();
+	/** Which track files a note embeds, memoised against the metadata that answered. */
+	private trackLinks = new WeakMap<CachedMetadata, TFile[]>();
 
 	private nativeFactory: BasesViewFactory | null = null;
 	private patched: { factory: BasesViewFactory; options?: BasesViewRegistration['options'] } | null = null;
@@ -64,7 +66,9 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.tracks = new TrackCache(this.app);
 		this.locator = new Locator({
 			geolocation: typeof navigator !== 'undefined' ? (navigator.geolocation ?? null) : null,
-			onGiveUp: (message) => new Notice(message),
+			// The locator names the reason; turning it into a sentence is this side's
+			// job, which is what keeps locate.ts free of a runtime Obsidian import.
+			onGiveUp: (reason) => new Notice(t('notice.locate.gaveUp', { reason: t(reason) })),
 		});
 
 		if (!this.patchMapsView()) {
@@ -93,6 +97,24 @@ export default class AdvancedMapsPlugin extends Plugin {
 			})
 		);
 
+		// A parsed track is held by path, so a file that goes away — or moves —
+		// would otherwise sit in the cache for the rest of the session holding its
+		// geometry and every projection of it. These also drop the embed memo,
+		// because which file a `![[track.gpx]]` resolves to can change without the
+		// *note* being touched at all: creating the attachment a note already
+		// links to is exactly that case.
+		this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => this.forgetTrack(file.path)));
+		// The old path is the one the cache is keyed under; the new one cannot be
+		// stale yet.
+		this.registerEvent(
+			this.app.vault.on('rename', (_file: TAbstractFile, oldPath: string) => this.forgetTrack(oldPath))
+		);
+		this.registerEvent(
+			this.app.vault.on('create', () => {
+				this.trackLinks = new WeakMap();
+			})
+		);
+
 		// Maps re-registers its view whenever it reloads, which drops our wrapper
 		// on the floor. The check is a property lookup, so run it whenever the
 		// workspace settles.
@@ -101,6 +123,11 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	override onunload(): void {
 		this.unpatchMapsView();
+		// Each live embed holds its own MapLibre map, and so its own WebGL context,
+		// of which a browser will keep only about sixteen alive at once. Without
+		// this they survive until their note is closed — so the documented
+		// hot-reload loop, or any update, leaks one per embed still on screen.
+		for (const embed of [...this.embeds]) embed.unload();
 		const registry = this.app.embedRegistry;
 		if (registry && this.ownedExtensions.length > 0) {
 			registry.unregisterExtensions(this.ownedExtensions);
@@ -143,6 +170,12 @@ export default class AdvancedMapsPlugin extends Plugin {
 		return true;
 	}
 
+	/** A track file has gone or moved: drop its parse, and every memo that named it. */
+	private forgetTrack(path: string): void {
+		this.tracks.invalidate(path);
+		this.trackLinks = new WeakMap();
+	}
+
 	/** Attach a TrackLayer to one native map view, whatever its age. */
 	private enhance(view: BasesMapView | null | undefined): TrackLayer | null {
 		if (!view || !view.markerManager) return null;
@@ -150,8 +183,13 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// enhancing it would hand its track over to a layer that thinks the
 		// result set is empty, and promptly wipe it.
 		if (view.__advancedMapsHeadless) return null;
-		// Already ours: attach() leaves own properties behind on the instance.
-		if (Object.prototype.hasOwnProperty.call(view.markerManager, 'updateMarkers')) return null;
+		// Already ours. The flag is set by attach() and cleared by detach(), which
+		// keeps this from depending on *which* method TrackLayer happens to wrap
+		// first — probing for that made moving the seam a silent double-attach on
+		// every layout-change. It lives on the view instance rather than in a Set
+		// here, so a view left wrapped by a previous plugin instance is still
+		// recognised.
+		if (view.__advancedMapsLayer) return null;
 		try {
 			const layer = new TrackLayer(this, view).attach();
 			this.layers.add(layer);
@@ -184,10 +222,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 				this.enhance(candidate);
 				return;
 			}
-			if (Array.isArray(candidate._children)) for (const child of candidate._children) visit(child);
-			// A bases controller keeps its active view outside the child list.
-			if (candidate.controller) visit(candidate.controller);
-			if (candidate.view) visit(candidate.view);
+			const component = node as ComponentNode;
+			if (Array.isArray(component._children)) for (const child of component._children) visit(child);
+			if (component.controller) visit(component.controller);
+			if (component.view) visit(component.view);
 		};
 		this.app.workspace.iterateAllLeaves((leaf) => visit(leaf.view));
 	}
@@ -256,11 +294,21 @@ export default class AdvancedMapsPlugin extends Plugin {
 		if (file.extension !== 'md') return [];
 		const cache = this.app.metadataCache.getFileCache(file);
 		if (!cache || !cache.embeds) return [];
+
+		// Keyed on the cache object rather than the path, so it invalidates itself:
+		// re-indexing a note hands back a *new* CachedMetadata, which is a miss.
+		// Worth the memo because this is per row of the base and Bases replaces its
+		// result set on any vault change — several hundred link resolutions per
+		// redraw, to recompute an answer that only moves when a note does.
+		const memo = this.trackLinks.get(cache);
+		if (memo) return memo;
+
 		const out: TFile[] = [];
 		for (const embed of cache.embeds) {
 			const dest = this.app.metadataCache.getFirstLinkpathDest(embed.link, file.path);
 			if (dest && TRACK_EXTS.has(dest.extension) && !out.includes(dest)) out.push(dest);
 		}
+		this.trackLinks.set(cache, out);
 		return out;
 	}
 
@@ -619,9 +667,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 			return;
 		}
 		const coords = formatFix(fix);
-		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
-			frontmatter[this.settings.coordsProperty] = coords;
-		});
+		await this.writeCoords(file, coords);
 		new Notice(t('notice.locate.done', { property: this.settings.coordsProperty, coords }));
 	}
 

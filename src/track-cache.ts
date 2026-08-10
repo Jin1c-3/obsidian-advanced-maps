@@ -5,7 +5,15 @@ import { projectGeometry, type CoordSystem } from './coords';
 export interface TrackRecord extends ParsedTrack {
 	mtime: number;
 	error?: string;
-	projected?: { system: CoordSystem; features: ParsedTrack['features'] };
+	/**
+	 * Tile-space geometry, one entry per system asked for. A `Map` rather than a
+	 * single slot because two views can be live in two different systems at once
+	 * — a GCJ-02 base view and a BD-09 embed of the same file — and a one-slot
+	 * memo makes those two thrash, re-projecting the whole track on every redraw
+	 * for as long as both are on screen. Bounded at two entries by construction:
+	 * `wgs84` never gets stored, since it is the identity.
+	 */
+	projected?: Map<CoordSystem, ParsedTrack['features']>;
 }
 
 /** Parsed tracks, keyed by path and invalidated by mtime. */
@@ -58,12 +66,14 @@ export class TrackCache {
 export function projectedFeatures(rec: TrackRecord | undefined, system: CoordSystem): ParsedTrack['features'] {
 	if (!rec || !rec.features) return [];
 	if (system === 'wgs84') return rec.features;
-	if (rec.projected && rec.projected.system === system) return rec.projected.features;
+	const memo = (rec.projected ??= new Map<CoordSystem, ParsedTrack['features']>());
+	const hit = memo.get(system);
+	if (hit) return hit;
 	const features = rec.features.map((feature) => ({
 		type: 'Feature' as const,
 		properties: null,
 		geometry: projectGeometry(feature.geometry, system),
 	}));
-	rec.projected = { system, features };
+	memo.set(system, features);
 	return features;
 }

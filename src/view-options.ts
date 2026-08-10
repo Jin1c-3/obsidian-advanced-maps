@@ -1,39 +1,22 @@
+import { TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES } from './coords';
 import { t } from './i18n';
 import type { ViewOptionGroup } from './types/obsidian-internals';
+
+/** The slider for one track knob, with its range read from the one table that states it. */
+function knobSlider(key: TrackKnob, displayName: string) {
+	const { min, max, step, def } = TRACK_KNOBS[key];
+	return { displayName, type: 'slider' as const, key, min, max, step, default: def };
+}
 
 export function trackOptionGroup(): ViewOptionGroup {
 	return {
 		displayName: t('options.tracks'),
 		type: 'group',
 		items: [
-			{
-				displayName: t('options.lineWidth'),
-				type: 'slider',
-				key: 'trackWeight',
-				min: 1,
-				max: 12,
-				step: 1,
-				default: 4,
-			},
-			{
-				displayName: t('options.lineOpacity'),
-				type: 'slider',
-				key: 'trackOpacity',
-				min: 10,
-				max: 100,
-				step: 5,
-				default: 85,
-			},
-			{
-				displayName: t('options.fitMaxZoom'),
-				type: 'slider',
-				key: 'fitMaxZoom',
-				min: 1,
-				max: 20,
-				step: 1,
-				default: 16,
-			},
+			knobSlider('trackWeight', t('options.lineWidth')),
+			knobSlider('trackOpacity', t('options.lineOpacity')),
+			knobSlider('fitMaxZoom', t('options.fitMaxZoom')),
 		],
 	};
 }

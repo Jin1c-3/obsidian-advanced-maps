@@ -1,4 +1,5 @@
 import { PluginSettingTab, type App, type Setting, type SettingDefinition, type SettingDefinitionItem } from 'obsidian';
+import { TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
 import { GEOCODE_PROVIDERS, type GeocodeProvider } from './geocode';
 import { t, type TranslationKey } from './i18n';
@@ -44,9 +45,9 @@ export interface AdvancedMapsSettings {
 export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	coordSystem: 'auto',
 	trackColor: 'var(--bases-map-marker-background)',
-	trackWeight: 4,
-	trackOpacity: 85,
-	fitMaxZoom: 16,
+	trackWeight: TRACK_KNOBS.trackWeight.def,
+	trackOpacity: TRACK_KNOBS.trackOpacity.def,
+	fitMaxZoom: TRACK_KNOBS.fitMaxZoom.def,
 	embedHeight: 320,
 	trackStats: true,
 	elevationProfile: true,
@@ -162,6 +163,12 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		};
 	}
 
+	/** A track knob's slider, taking its range from the table that already states it. */
+	private knob(name: TranslationKey, desc: TranslationKey | undefined, key: TrackKnob) {
+		const { min, max, step } = TRACK_KNOBS[key];
+		return this.slider(name, desc, key, min, max, step);
+	}
+
 	private toggle(
 		name: TranslationKey,
 		desc: TranslationKey,
@@ -234,16 +241,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				this.text('settings.tracks.color.name', 'settings.tracks.color.desc', 'trackColor', {
 					placeholder: DEFAULT_SETTINGS.trackColor,
 				}),
-				this.slider('settings.tracks.weight.name', undefined, 'trackWeight', 1, 12, 1),
-				this.slider('settings.tracks.opacity.name', undefined, 'trackOpacity', 10, 100, 5),
-				this.slider(
-					'settings.tracks.fitMaxZoom.name',
-					'settings.tracks.fitMaxZoom.desc',
-					'fitMaxZoom',
-					1,
-					20,
-					1
-				),
+				this.knob('settings.tracks.weight.name', undefined, 'trackWeight'),
+				this.knob('settings.tracks.opacity.name', undefined, 'trackOpacity'),
+				this.knob('settings.tracks.fitMaxZoom.name', 'settings.tracks.fitMaxZoom.desc', 'fitMaxZoom'),
 				this.slider(
 					'settings.tracks.embedHeight.name',
 					'settings.tracks.embedHeight.desc',

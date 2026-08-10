@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	COORD_MODES,
 	bd2gcj,
+	formatLatLng,
 	gcj2bd,
 	gcj2wgs,
 	knownMode,
@@ -227,5 +228,22 @@ describe('projectCenter', () => {
 
 	it('is the identity for wgs84', () => {
 		expect(projectCenter('39.9,116.4', 'wgs84')).toBe('39.9,116.4');
+	});
+});
+
+describe('formatLatLng', () => {
+	it('writes lat first, comma, no space — the shape the vault already holds', () => {
+		expect(formatLatLng(28.624415, 115.788091)).toBe('28.624415,115.788091');
+	});
+
+	// Fixed width, not "up to six": a re-stamp of the same spot has to compare
+	// equal to the last one rather than look like the note moved.
+	it('pads to six decimals rather than trimming', () => {
+		expect(formatLatLng(28.6, -0.5)).toBe('28.600000,-0.500000');
+		expect(formatLatLng(0, 0)).toBe('0.000000,0.000000');
+	});
+
+	it('rounds anything longer', () => {
+		expect(formatLatLng(28.62441531, 115.78809142)).toBe('28.624415,115.788091');
 	});
 });

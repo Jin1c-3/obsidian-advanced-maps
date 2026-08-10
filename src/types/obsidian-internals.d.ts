@@ -187,8 +187,22 @@ export interface BasesMapView {
 	onunload(): void;
 	/** Set by this plugin on the stub view an inline embed builds. */
 	__advancedMapsHeadless?: boolean;
-	/** Obsidian's Component child list, walked to adopt already-open views. */
+	/** Set by this plugin's TrackLayer.attach(), cleared by detach(). */
+	__advancedMapsLayer?: boolean;
+}
+
+/**
+ * A node in Obsidian's component tree, as `adoptOpenViews` walks it looking for
+ * map views built before the registry was patched.
+ *
+ * Separate from `BasesMapView` because these are properties of *any* component:
+ * declaring them there would say a map view has a `.view`, which it does not,
+ * and this file exists to record what is actually assumed rather than what is
+ * convenient to cast to.
+ */
+export interface ComponentNode {
 	_children?: unknown[];
+	/** A bases controller keeps its active view outside the child list. */
 	controller?: unknown;
 	view?: unknown;
 }

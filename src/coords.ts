@@ -194,6 +194,23 @@ function numberish(value: unknown): number {
 }
 
 /**
+ * Six decimals is about 11 cm — well past what any GPS delivers, but it is what
+ * the vault already holds, and rounding harder would make every re-stamp of the
+ * same spot look like the note had moved.
+ */
+export const COORD_DIGITS = 6;
+
+/**
+ * The shape a coordinate takes whenever this plugin writes one down: "lat,lng",
+ * no space. Stated here, beside `projectCenter` which reads the same shape back,
+ * because four places used to write it out themselves — and a drift in any one
+ * of them shows up as a note that appears to have moved.
+ */
+export function formatLatLng(lat: number, lng: number): string {
+	return `${lat.toFixed(COORD_DIGITS)},${lng.toFixed(COORD_DIGITS)}`;
+}
+
+/**
  * A "lat,lng" string or [lat, lng] pair moved into tile space, given back in
  * the shape it arrived in — the built-in view accepts either and we must not
  * change which one a base file is using.

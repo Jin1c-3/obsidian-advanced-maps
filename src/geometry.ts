@@ -1,4 +1,5 @@
 import type { Geometry } from 'geojson';
+import { TRACK_KNOBS, type TrackKnob } from './constants';
 import type { LngLatBounds, MapLibreMap } from './types/obsidian-internals';
 
 export function walkCoords(coords: unknown, fn: (lng: number, lat: number) => void): void {
@@ -32,10 +33,48 @@ export function extendBounds(bounds: LngLatBounds, geometry: Geometry | null | u
 	return n;
 }
 
+/**
+ * A bounds covering every finite position in `geometries`, or null when there
+ * was nothing to cover — which is what tells a caller "nothing to frame" apart
+ * from "framed on a single point".
+ *
+ * `seed` is an existing bounds to start from, for the one caller that has to
+ * merge the native marker bounds in rather than the features behind them.
+ */
+export function boundsOf(
+	map: MapLibreMap,
+	geometries: Iterable<Geometry | null | undefined>,
+	seed?: LngLatBounds | null
+): LngLatBounds | null {
+	const bounds = emptyBounds(map);
+	let points = 0;
+	if (seed && !seed.isEmpty()) {
+		bounds.extend(seed);
+		points++;
+	}
+	for (const geometry of geometries) points += extendBounds(bounds, geometry);
+	return points > 0 && !bounds.isEmpty() ? bounds : null;
+}
+
 export function clamp(value: unknown, min: number, max: number, fallback: number): number {
 	const n = Number(value);
 	if (!isFinite(n)) return fallback;
 	return Math.min(max, Math.max(min, n));
+}
+
+/**
+ * One track knob's effective value: whatever was configured, held inside the
+ * knob's own bounds and falling back to its own default. The bounds and the
+ * default both come from `TRACK_KNOBS`, so neither is re-typed at a call site.
+ */
+export function trackKnob(key: TrackKnob, value: unknown): number {
+	const { hardMin, hardMax, def } = TRACK_KNOBS[key];
+	// Absent is not zero. `Number(null)` and `Number('')` are both 0 rather than
+	// NaN — the same trap `numParam()` in geolink.ts exists to dodge — so without
+	// this a missing value would clamp to the knob's *minimum* and read as a
+	// deliberate setting, instead of falling back to its default.
+	if (value === null || value === undefined || value === '') return def;
+	return clamp(value, hardMin, hardMax, def);
 }
 
 /**

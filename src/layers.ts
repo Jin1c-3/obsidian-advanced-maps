@@ -1,8 +1,9 @@
 import { setIcon } from 'obsidian';
-import { LINE_LAYER, POINT_LAYER, SRC } from './constants';
+import type { FeatureCollection } from 'geojson';
+import { LINE_LAYER, MARKER_LAYER, POINT_LAYER, SRC } from './constants';
 import { toTileSpace, type CoordSystem } from './coords';
 import { t } from './i18n';
-import type { LocateControl, MapControl, MapLibreMap } from './types/obsidian-internals';
+import type { LngLatBounds, LocateControl, MapControl, MapLibreMap } from './types/obsidian-internals';
 
 /** A zoom-to-fit button, wearing the same markup as the built-in controls. */
 export class FitControl implements MapControl {
@@ -109,10 +110,50 @@ const pointLayerSpec = {
 	},
 };
 
-/** `before` anchors the tracks below the pins, so a pin on its own track stays clickable. */
-export function addTrackLayers(map: MapLibreMap, before?: string): void {
+/**
+ * Both layers, anchored below the pins so a pin sitting on its own track stays
+ * clickable.
+ *
+ * The anchor is probed here rather than passed in, because "tracks go below the
+ * pins" is a property of these two layers rather than of whoever is drawing
+ * them: a second drawer that forgot to pass it would get unclickable pins, and
+ * only on maps that have pins at all — which is the common case in exactly the
+ * vault this plugin was built for. An embed's map carries no marker layer, so
+ * the probe answers `undefined` there on its own.
+ */
+export function addTrackLayers(map: MapLibreMap): void {
+	const before = map.getLayer(MARKER_LAYER) ? MARKER_LAYER : undefined;
 	map.addLayer(lineLayerSpec, before);
 	map.addLayer(pointLayerSpec, before);
+}
+
+/**
+ * Put a collection on the map: update the source if it is already there,
+ * otherwise create it and add both layers.
+ *
+ * Answers false when the style was swapped out from under the caller. That is
+ * not an error — `style.load` fires next and the caller draws again — which is
+ * why it is a return value rather than a throw.
+ */
+export function drawTracks(map: MapLibreMap, data: FeatureCollection): boolean {
+	try {
+		const source = map.getSource(SRC);
+		if (source) {
+			source.setData(data);
+		} else {
+			map.addSource(SRC, { type: 'geojson', data });
+			addTrackLayers(map);
+		}
+		return true;
+	} catch (e) {
+		console.warn('Advanced Maps: deferring track layers —', e instanceof Error ? e.message : e);
+		return false;
+	}
+}
+
+/** `animate: false` because this is a jump to a new subject, not a move around one. */
+export function fitTo(map: MapLibreMap, bounds: LngLatBounds, padding: number, maxZoom: number): void {
+	map.fitBounds(bounds, { padding, maxZoom, animate: false });
 }
 
 export function removeTrackLayers(map: MapLibreMap): void {

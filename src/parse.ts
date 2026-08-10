@@ -15,34 +15,24 @@ export interface ParsedTrack {
 }
 
 /**
- * What a parser folds into a feature's `properties` beyond the bare geometry —
- * there is nowhere else for a timestamp or a name to ride. `ParsedTrack` itself
- * keeps `Record<string, unknown> | null` so this is documentation, not a type
- * every caller has to narrow to.
- */
-export interface TrackProperties {
-	/** A `<Placemark>`'s (or similar) name, when the source states one. */
-	name?: string;
-	/**
-	 * Epoch milliseconds, one per coordinate, aligned 1:1 with the geometry's
-	 * position array. `null` marks a point whose source gave no timestamp, or
-	 * one that did not parse — a hole, not a dropped point, because dropping it
-	 * would desync this array from the coordinates it describes. Present only
-	 * when at least one entry is real; see `buildProperties`.
-	 */
-	times?: (number | null)[];
-}
-
-/**
  * Fold what a reader managed to pick up beyond bare geometry into `properties`
  * — or `null` when there was nothing, which every existing reader (and every
  * caller downstream) already depends on: a feature with nothing extra to say
  * keeps `properties: null` rather than an empty object nobody asked for.
  *
- * Returns `Record<string, unknown>` rather than `TrackProperties` — the shape
- * it builds matches that interface exactly, but `ParsedTrack.features` is
- * typed against the wider `Record`, and an interface with named properties
- * has no index signature for TypeScript to match it against.
+ * Two keys go in, and there is nowhere else for either to ride:
+ *
+ * - `name`, a `<Placemark>`'s (or similar) own, when the source states one.
+ * - `times`, epoch milliseconds one per coordinate, aligned 1:1 with the
+ *   geometry's position array. `null` marks a point whose source gave no
+ *   timestamp, or one that did not parse — a hole rather than a dropped point,
+ *   because dropping it would desync this array from the coordinates it
+ *   describes.
+ *
+ * The return type is the wider `Record<string, unknown>` rather than an
+ * interface naming those two: `ParsedTrack.features` is typed against the
+ * `Record`, and an interface with named properties has no index signature for
+ * TypeScript to match against it.
  */
 function buildProperties(
 	name: string | undefined,

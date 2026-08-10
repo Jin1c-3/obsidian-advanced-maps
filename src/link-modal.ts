@@ -14,10 +14,9 @@
 
 import { Modal, Notice, Setting } from 'obsidian';
 import type { App } from 'obsidian';
-import { COORD_MODES, toWgs84, type CoordSystem } from './coords';
+import { COORD_MODES, formatLatLng, toWgs84, type CoordSystem } from './coords';
 import { parseGeoLink, shortLink, type ParsedPoint } from './geolink';
 import { t } from './i18n';
-import { COORD_DIGITS } from './locate';
 
 /** What the user chose in the dropdown: "as detected", or a forced datum. */
 type Choice = 'detected' | CoordSystem;
@@ -148,7 +147,7 @@ export class LinkModal extends Modal {
 		const p = this.parsed;
 		if (!p) return '';
 		const [lng, lat] = toWgs84(this.system(), p.lng, p.lat);
-		return `${lat.toFixed(COORD_DIGITS)},${lng.toFixed(COORD_DIGITS)}`;
+		return formatLatLng(lat, lng);
 	}
 
 	private async commit(): Promise<void> {

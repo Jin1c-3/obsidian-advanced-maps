@@ -19,7 +19,7 @@
  * coordinate here".
  */
 
-import { outOfChina, toWgs84, type CoordSystem } from './coords';
+import { outOfChina, type CoordSystem } from './coords';
 
 /** Who wrote the text, as far as we can tell. Names the UI can show. */
 export type Provider = 'amap' | 'baidu' | 'tencent' | 'google' | 'apple' | 'osm' | 'geo' | 'dms' | 'plain';
@@ -208,12 +208,18 @@ function readOsm(url: URL): ParsedPoint | null {
 
 /* ---- host routing ---- */
 
+/*
+ * One alternative per *domain*, not per subdomain: `(^|\.)` already matches the
+ * dot, so `(^|\.)baidu\.com$` covers `map.baidu.com` on its own. Spelling the
+ * subdomains out as well changed no answer and read as if they were handled
+ * specially, which is the sort of thing a seventh provider gets copied from.
+ */
 const HOSTS: ReadonlyArray<[RegExp, (url: URL) => ParsedPoint | null]> = [
 	[/(^|\.)amap\.com$|(^|\.)autonavi\.com$|(^|\.)gaode\.com$/i, readAmap],
-	[/(^|\.)map\.baidu\.com$|(^|\.)baidu\.com$/i, readBaidu],
-	[/(^|\.)map\.qq\.com$|(^|\.)apis\.map\.qq\.com$|(^|\.)qq\.com$/i, readTencent],
-	[/(^|\.)google\.[a-z.]+$|(^|\.)google\.com$/i, readGoogle],
-	[/(^|\.)maps\.apple\.com$|(^|\.)apple\.com$/i, readApple],
+	[/(^|\.)baidu\.com$/i, readBaidu],
+	[/(^|\.)qq\.com$/i, readTencent],
+	[/(^|\.)google\.[a-z.]+$/i, readGoogle],
+	[/(^|\.)apple\.com$/i, readApple],
 	[/(^|\.)openstreetmap\.org$|(^|\.)osm\.org$/i, readOsm],
 ];
 
@@ -221,7 +227,7 @@ const HOSTS: ReadonlyArray<[RegExp, (url: URL) => ParsedPoint | null]> = [
 const SHORTENERS: ReadonlyArray<[RegExp, Provider]> = [
 	[/(^|\.)surl\.amap\.com$/i, 'amap'],
 	[/(^|\.)j\.map\.baidu\.com$/i, 'baidu'],
-	[/(^|\.)maps\.app\.goo\.gl$|(^|\.)goo\.gl$/i, 'google'],
+	[/(^|\.)goo\.gl$/i, 'google'],
 	[/(^|\.)url\.cn$/i, 'tencent'],
 ];
 
@@ -317,14 +323,4 @@ export function parseGeoLink(text: string): ParsedPoint | null {
 	if (/\bgeo:/i.test(trimmed)) return readGeoUri(trimmed);
 
 	return readDms(trimmed) ?? readPlain(trimmed);
-}
-
-/**
- * The same point in WGS-84, which is the only datum this plugin writes to disk.
- * Outside China every conversion here is the identity, so this is safe to call
- * unconditionally.
- */
-export function toWgs(p: ParsedPoint): { lat: number; lng: number } {
-	const [lng, lat] = toWgs84(p.system, p.lng, p.lat);
-	return { lat, lng };
 }

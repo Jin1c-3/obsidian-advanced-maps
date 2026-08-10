@@ -10,11 +10,10 @@
 import { Component } from 'obsidian';
 import type { TFile } from 'obsidian';
 import type { FeatureCollection, Geometry } from 'geojson';
-import { SRC } from './constants';
 import { resolveSystem, type CoordSystem } from './coords';
-import { clamp, emptyBounds, extendBounds, styleReady } from './geometry';
+import { boundsOf, styleReady, trackKnob } from './geometry';
 import { t } from './i18n';
-import { addTrackLayers, applyTrackPaint, guardLocateControl, removeTrackLayers, type LocateGuard } from './layers';
+import { applyTrackPaint, drawTracks, fitTo, guardLocateControl, removeTrackLayers, type LocateGuard } from './layers';
 import {
 	elevationProfile,
 	formatDistance,
@@ -79,12 +78,6 @@ export class TrackEmbed extends Component {
 
 	private fail(message: string): void {
 		if (!this.rootEl) return;
-		// Defensive rather than load-bearing on the paths that call fail() today —
-		// every one of them runs before renderStats() ever gets a chance to build a
-		// panel — but "a stats panel cannot outlive its map" has to hold even if a
-		// future failure path is added after that point.
-		this.panelEl?.remove();
-		this.panelEl = null;
 		this.rootEl.empty();
 		this.rootEl.addClass('advanced-maps-error');
 		this.rootEl.setText(t('embed.failed', { file: this.file.name, message }));
@@ -156,7 +149,6 @@ export class TrackEmbed extends Component {
 		if (!view) return;
 		await styleReady(map);
 		if (!this.map || this.dead) return;
-		if (map.getSource(SRC)) return;
 
 		const color = view.markerManager.resolveColor(this.plugin.settings.trackColor);
 		const data: FeatureCollection<Geometry, { amColor: string }> = {
@@ -168,32 +160,27 @@ export class TrackEmbed extends Component {
 			})),
 		};
 
-		try {
-			map.addSource(SRC, { type: 'geojson', data });
-			addTrackLayers(map);
-		} catch (e) {
-			console.warn('Advanced Maps: deferring track layers —', e instanceof Error ? e.message : e);
-			return;
-		}
+		if (!drawTracks(map, data)) return;
 
+		const settings = this.plugin.settings;
 		applyTrackPaint(
 			map,
-			clamp(this.plugin.settings.trackWeight, 1, 24, 4),
-			clamp(this.plugin.settings.trackOpacity, 0, 100, 85) / 100,
+			trackKnob('trackWeight', settings.trackWeight),
+			trackKnob('trackOpacity', settings.trackOpacity) / 100,
 			view.markerManager.resolveColor('var(--background-primary)')
 		);
 
 		if (this.framed) return;
-		const bounds = emptyBounds(map);
-		let points = 0;
-		for (const feature of data.features) points += extendBounds(bounds, feature.geometry);
-		if (points === 0 || bounds.isEmpty()) return;
+		// Tighter than the base view's 24: an inline map is a fraction of a note's
+		// width, and padding that reads as breathing room there reads as a wasted
+		// margin here.
+		const bounds = boundsOf(
+			map,
+			data.features.map((feature) => feature.geometry)
+		);
+		if (!bounds) return;
 		this.framed = true;
-		map.fitBounds(bounds, {
-			padding: 16,
-			maxZoom: clamp(this.plugin.settings.fitMaxZoom, 1, 22, 16),
-			animate: false,
-		});
+		fitTo(map, bounds, 16, trackKnob('fitMaxZoom', settings.fitMaxZoom));
 	}
 
 	/**
