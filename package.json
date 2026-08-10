@@ -1,6 +1,6 @@
 {
   "name": "obsidian-advanced-maps",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Supercharge Obsidian's built-in Maps view: GPX/GeoJSON tracks, zoom-to-fit, Chinese coordinate systems and inline ![[track.gpx]] maps.",
   "main": "main.js",
   "license": "MIT",
