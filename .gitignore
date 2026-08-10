@@ -18,3 +18,4 @@ data.json
 *.log
 .vscode/
 .idea/
+release-notes.md
