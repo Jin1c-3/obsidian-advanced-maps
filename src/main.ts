@@ -593,15 +593,30 @@ export default class AdvancedMapsPlugin extends Plugin {
 		});
 	}
 
+	/**
+	 * The Amap key, out of whichever of the two stores the reader picked.
+	 *
+	 * `getSecret` answers null for a secret renamed or deleted since it was
+	 * named here, which lands on the same empty string an unconfigured key does
+	 * — so `needsKey` below catches it and says so, rather than 高德 rejecting
+	 * the request and the search looking like it found nothing.
+	 */
+	private amapKey(): string {
+		const { amapKeyStore, amapKey, amapSecretId } = this.settings;
+		if (amapKeyStore !== 'secret') return amapKey;
+		return (amapSecretId === '' ? null : this.app.secretStorage.getSecret(amapSecretId)) ?? '';
+	}
+
 	private openSearchModal(file: TFile): void {
-		const { geocodeProvider, amapKey, coordsProperty } = this.settings;
+		const { geocodeProvider, coordsProperty } = this.settings;
+		const key = this.amapKey();
 		// Said up front rather than as a failed search: an empty result list looks
 		// like "no such place", which is the wrong thing to conclude.
-		if (needsKey(geocodeProvider, amapKey)) {
+		if (needsKey(geocodeProvider, key)) {
 			new Notice(t('notice.search.needsKey'));
 			return;
 		}
-		new PlaceSearchModal(this.app, geocodeProvider, amapKey, coordsProperty, (coords) =>
+		new PlaceSearchModal(this.app, geocodeProvider, key, coordsProperty, (coords) =>
 			this.writeCoords(file, coords)
 		).open();
 	}
@@ -717,6 +732,17 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// disk since. The defaults underneath it are what make the result whole.
 		const saved = (await this.loadData()) as Partial<AdvancedMapsSettings> | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+
+		// A key written before there was anywhere else to put it stays where it is.
+		// The default for a fresh install is secret storage, which is the safer of
+		// the two — but applying that default to a key already on disk would move
+		// it into a store that does not sync, and break search on every other
+		// device without saying so. Persisted rather than re-derived on each load,
+		// so that clearing the box later cannot flip the store on the next start.
+		if (saved?.amapKey && !saved.amapKeyStore) {
+			this.settings.amapKeyStore = 'plugin';
+			await this.saveSettings();
+		}
 	}
 
 	async saveSettings(): Promise<void> {

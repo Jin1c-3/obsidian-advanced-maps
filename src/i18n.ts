@@ -104,6 +104,8 @@ const en = {
 	'search.empty': 'No matches.',
 	'search.provider.nominatim': 'OpenStreetMap (Nominatim) — no key, thin on Chinese POIs',
 	'search.provider.amap': 'Amap 高德 — needs a free web-service key',
+	'search.keyStore.secret': 'Secret storage — this device only',
+	'search.keyStore.plugin': 'Plugin settings — synced, in plain text',
 	'notice.search.failed': 'Advanced Maps: the search failed — {reason}',
 	'notice.search.needsKey': 'Advanced Maps: add an Amap web-service key in the plugin settings, or switch provider.',
 
@@ -115,6 +117,11 @@ const en = {
 		'still fetches tiles from whichever background it is set to.',
 	'settings.search.provider.name': 'Search provider',
 	'settings.search.provider.desc': 'Amap knows Chinese places far better; OpenStreetMap needs no signing up.',
+	'settings.search.keyStore.name': 'Where to keep the Amap key',
+	// The two option labels carry the trade-off; this says the one thing they
+	// cannot, which is what happens to the key when the answer changes.
+	'settings.search.keyStore.desc':
+		'Switching to secret storage moves the key across; switching back does not copy it out.',
 	'settings.search.amapKey.name': 'Amap web-service key',
 	'settings.search.amapKey.desc': 'From console.amap.com — a "Web service" key, not a JS API one.',
 
@@ -275,6 +282,8 @@ const zh: Record<TranslationKey, string> = {
 	'search.empty': '没有匹配结果。',
 	'search.provider.nominatim': 'OpenStreetMap（Nominatim）—— 不用申请，但国内 POI 很少',
 	'search.provider.amap': '高德 —— 需要免费的 Web 服务 key',
+	'search.keyStore.secret': '密钥存储 —— 只留在这台设备',
+	'search.keyStore.plugin': '插件设置 —— 跟着同步，明文保存',
 	'notice.search.failed': 'Advanced Maps：搜索失败 —— {reason}',
 	'notice.search.needsKey': 'Advanced Maps：请在插件设置里填高德 Web 服务 key，或者换一个搜索源。',
 
@@ -283,6 +292,8 @@ const zh: Record<TranslationKey, string> = {
 		'搜地名，把查到的坐标写进笔记。这是插件自己发起的唯一一次请求：只有你输入的内容会发给下面选的搜索源，别的都不会。地图本身仍然会向所配置的底图服务请求瓦片。',
 	'settings.search.provider.name': '搜索源',
 	'settings.search.provider.desc': '高德对国内地点熟得多；OpenStreetMap 不用注册。',
+	'settings.search.keyStore.name': '高德 key 存在哪',
+	'settings.search.keyStore.desc': '切到密钥存储会把 key 一并搬过去；切回来不会再抄出来。',
 	'settings.search.amapKey.name': '高德 Web 服务 key',
 	'settings.search.amapKey.desc': '在 console.amap.com 申请，要选「Web 服务」类型，不是 JS API。',
 

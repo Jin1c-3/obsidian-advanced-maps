@@ -27,6 +27,19 @@ import { type CoordSystem } from './coords';
 export const GEOCODE_PROVIDERS = ['nominatim', 'amap'] as const;
 export type GeocodeProvider = (typeof GEOCODE_PROVIDERS)[number];
 
+/**
+ * The two places 高德's key can live, which is a real choice and not a default
+ * anyone can make for somebody else.
+ *
+ * `secret` is Obsidian's own SecretStorage: the key never enters `data.json`,
+ * so it is never synced, backed up or committed — and never leaves the device,
+ * so each one needs its own copy. `plugin` is the settings file, which travels
+ * with everything else in plain text. Privacy or convenience; the settings pane
+ * states both and lets the reader pick.
+ */
+export const KEY_STORES = ['secret', 'plugin'] as const;
+export type KeyStore = (typeof KEY_STORES)[number];
+
 /** One candidate, still in whatever datum its provider answers in. */
 export interface Place {
 	/** What to show first: a POI name, or the leading part of an address. */

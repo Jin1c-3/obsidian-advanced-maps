@@ -1,7 +1,14 @@
-import { PluginSettingTab, type App, type Setting, type SettingDefinition, type SettingDefinitionItem } from 'obsidian';
+import {
+	PluginSettingTab,
+	SecretComponent,
+	type App,
+	type Setting,
+	type SettingDefinition,
+	type SettingDefinitionItem,
+} from 'obsidian';
 import { TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
-import { GEOCODE_PROVIDERS, type GeocodeProvider } from './geocode';
+import { GEOCODE_PROVIDERS, KEY_STORES, type GeocodeProvider, type KeyStore } from './geocode';
 import { t, type TranslationKey } from './i18n';
 import type AdvancedMapsPlugin from './main';
 
@@ -26,7 +33,12 @@ export interface AdvancedMapsSettings {
 	aroundViewName: string;
 	/** Place search — the one feature that leaves the vault. */
 	geocodeProvider: GeocodeProvider;
+	/** Which of the two below is the one that counts. */
+	amapKeyStore: KeyStore;
+	/** The key itself, when it is kept here. Plain text, and synced. */
 	amapKey: string;
+	/** The *name* of a secret, when it is kept in SecretStorage. Never the key. */
+	amapSecretId: string;
 	/** Location — filling `coordsProperty` from the device. */
 	locate: boolean;
 	autoFillCoords: boolean;
@@ -58,7 +70,13 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	menuLabel: '',
 	aroundViewName: '',
 	geocodeProvider: 'nominatim',
+	// The safer of the two is the one nobody had to choose. A key already on
+	// disk from before this setting existed keeps the other one — `loadSettings`
+	// derives that once, because an update does not get to quietly move somebody's
+	// key into a store their other devices cannot read.
+	amapKeyStore: 'secret',
 	amapKey: '',
+	amapSecretId: '',
 	locate: false,
 	autoFillCoords: true,
 	autoFillExclude: 'templates',
@@ -79,6 +97,15 @@ export function isExcluded(path: string, setting: string): boolean {
 }
 
 const BASE_PATH_PLACEHOLDER = 'places.base';
+
+/**
+ * The secret minted when a key is moved out of the settings file.
+ *
+ * `setSecret` throws on anything but lowercase alphanumerics and dashes, and
+ * the name is the reader's to change afterwards — this is only what an
+ * unattended move has to call it.
+ */
+export const AMAP_SECRET_ID = 'advanced-maps-amap';
 
 /** Every settings key, so a definition cannot name one that does not exist. */
 type Key = keyof AdvancedMapsSettings;
@@ -178,11 +205,47 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		return { name: t(name), desc: t(desc, vars), control: { type: 'toggle', key } };
 	}
 
+	/**
+	 * Is this the key row that is currently in effect?
+	 *
+	 * Both are behind the provider that needs a key at all: an empty box under a
+	 * provider that ignores it reads as something left unconfigured.
+	 */
+	private keyRow(store: KeyStore): boolean {
+		const { geocodeProvider, amapKeyStore } = this.plugin.settings;
+		return geocodeProvider === 'amap' && amapKeyStore === store;
+	}
+
+	/**
+	 * Switching to secret storage takes the plain copy with it.
+	 *
+	 * Leaving it behind makes the setting a lie — the key the pane now says is in
+	 * secret storage would still be sitting in `data.json`, syncing. Moving it
+	 * rather than clearing it means nobody loses a key to a dropdown.
+	 *
+	 * Only when no secret is named yet: a reader who named one, switched away and
+	 * switched back means that one, not the plain text left over.
+	 *
+	 * **The other direction is deliberately not the mirror of this.** Going back
+	 * to the settings file does not copy the secret out — writing a key to disk in
+	 * plain text is not something a dropdown should do on the way past. The secret
+	 * is left untouched, so switching back again finds it.
+	 */
+	private async adoptPlainKey(): Promise<void> {
+		const { amapKey, amapSecretId } = this.plugin.settings;
+		if (amapKey === '' || amapSecretId !== '') return;
+		this.app.secretStorage.setSecret(AMAP_SECRET_ID, amapKey);
+		await super.setControlValue('amapSecretId', AMAP_SECRET_ID);
+		await super.setControlValue('amapKey', '');
+	}
+
 	override getSettingDefinitions(): SettingDefinitionItem<Key>[] {
 		const coordModes: Record<string, string> = {};
 		for (const mode of COORD_MODES) coordModes[mode] = t(`coord.${mode}`);
 		const providers: Record<string, string> = {};
 		for (const provider of GEOCODE_PROVIDERS) providers[provider] = t(`search.provider.${provider}`);
+		const keyStores: Record<string, string> = {};
+		for (const store of KEY_STORES) keyStores[store] = t(`search.keyStore.${store}`);
 
 		return [
 			this.group('coord', [
@@ -218,11 +281,39 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					control: { type: 'dropdown', key: 'geocodeProvider', options: providers },
 				},
 				{
+					name: t('settings.search.keyStore.name'),
+					desc: t('settings.search.keyStore.desc'),
+					visible: () => this.plugin.settings.geocodeProvider === 'amap',
+					control: { type: 'dropdown', key: 'amapKeyStore', options: keyStores },
+				},
+				// One row per store, and only ever one of them on screen. Showing both
+				// would leave the reader working out which of two filled boxes is the
+				// one in effect, which is the question the dropdown just answered.
+				{
+					// Both rows say the same thing about the same key — only ever one
+					// of them is on screen, and `visible` takes the other out of the
+					// search index for that render cycle too.
 					name: t('settings.search.amapKey.name'),
 					desc: t('settings.search.amapKey.desc'),
-					// Only shown for the provider that needs it: an empty box under a
-					// provider that ignores it reads as something left unconfigured.
-					visible: () => this.plugin.settings.geocodeProvider === 'amap',
+					visible: () => this.keyRow('secret'),
+					// SecretComponent is not one of the declarative control types —
+					// `SettingControl` has no `secret` — and it needs the `App` its
+					// siblings never see, so this row is drawn rather than declared.
+					// Which also means `setControlValue` is not reached for it unless
+					// this handler goes through it; it does, so the trimming and the
+					// one seam for side effects still apply.
+					render: (setting: Setting) => {
+						setting.addComponent((el) =>
+							new SecretComponent(this.app, el)
+								.setValue(this.plugin.settings.amapSecretId)
+								.onChange((id) => this.setControlValue('amapSecretId', id))
+						);
+					},
+				},
+				{
+					name: t('settings.search.amapKey.name'),
+					desc: t('settings.search.amapKey.desc'),
+					visible: () => this.keyRow('plugin'),
 					control: { type: 'text', key: 'amapKey' },
 				},
 			]),
@@ -281,6 +372,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		if (key === 'geocodeProvider' && !(GEOCODE_PROVIDERS as readonly unknown[]).includes(next)) {
 			next = DEFAULT_SETTINGS.geocodeProvider;
 		}
+		if (key === 'amapKeyStore' && !(KEY_STORES as readonly unknown[]).includes(next)) {
+			next = DEFAULT_SETTINGS.amapKeyStore;
+		}
 		await super.setControlValue(key, next);
 
 		switch (key) {
@@ -288,7 +382,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				this.plugin.reprojectAll();
 				break;
 			case 'geocodeProvider':
-				// The Amap key row states when it is visible; this is what re-asks.
+				// The Amap key rows state when they are visible; this is what re-asks.
+				this.update();
+				break;
+			case 'amapKeyStore':
+				// Move first, re-render second: the secret box is seeded from what it
+				// reads at render, so a move after that one would not show until the
+				// settings window was reopened.
+				if (next === 'secret') await this.adoptPlainKey();
 				this.update();
 				break;
 			case 'locate':

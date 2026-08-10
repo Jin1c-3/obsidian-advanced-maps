@@ -387,6 +387,50 @@ console. `User-Agent` alone goes through and is what Nominatim asks for. Verifie
 live: with both headers the request hung indefinitely; with User-Agent only it
 returned 200 and ten results.
 
+### Where the 高德 key lives, and why that is the reader's call
+
+Two stores, chosen by `amapKeyStore`, because neither one is right for everybody:
+Obsidian's **SecretStorage** keeps the key out of `data.json` — never synced,
+never backed up, never committed, and unreadable by other plugins — at the cost
+of staying on the one device, so every device searches only once its own copy is
+entered. **Plugin settings** is the old behaviour: one entry covers every device,
+in plain text. The settings pane states both costs and does not pick for anyone.
+
+Four things are load-bearing:
+
+- **`amapSecretId` holds a secret's _name_, never a key.** `SecretComponent`
+  writes the name; `app.secretStorage.getSecret(id)` resolves it at the point of
+  use in `amapKey()`. It answers `null` for a secret renamed or deleted since,
+  which lands on the same empty string an unconfigured key does — so `needsKey`
+  catches it and says so, instead of 高德 rejecting the request and the search
+  looking like it found nothing.
+- **The secret row is drawn, not declared.** `SettingControl` has no `secret`
+  member — checked against the shipped `obsidian.d.ts`, not assumed — and
+  `SecretComponent`'s constructor needs the `App` that the declarative controls
+  never see. So it is a `SettingDefinitionRender` calling `setting.addComponent`,
+  and its `onChange` goes through `setControlValue` by hand to keep that the one
+  seam. `render` returns void or a cleanup function, so the chained
+  `addComponent` call cannot be the arrow's body.
+- **Switching to secret storage _moves_ the key; switching back does not copy it
+  out.** The asymmetry is the point. Leaving the plain copy behind would make the
+  setting a lie — the pane would say secret storage while `data.json` still
+  synced the key — and clearing it instead would lose a key to a dropdown. The
+  reverse would write a key to disk in plain text as a side effect of a menu,
+  which is not a thing to do on somebody's behalf. `adoptPlainKey` only mints
+  when no secret is named yet, so a reader who switched away and back gets the
+  one they named. There is **no `deleteSecret`** in the API, which is worth
+  knowing before writing a test that calls `setSecret`: what it creates stays.
+- **The default is `secret`, but not for a key already on disk.** `loadSettings`
+  derives `plugin` once when the loaded data has an `amapKey` and no
+  `amapKeyStore`, and persists it. Applying the new default to an existing key
+  would move it into a store the reader's other devices cannot read and break
+  search there silently; persisting rather than re-deriving stops a later
+  clearing of the box from flipping the store on the next start.
+
+`SecretComponent` is `@since 1.11.1` and `SecretStorage` `@since 1.11.4`, both
+under the 1.13.1 this plugin already requires, and both public — so no entry in
+`types/obsidian-internals.d.ts` and no runtime probe.
+
 ## Location
 
 Fills a note's coordinate property from the device, two ways: automatically when
