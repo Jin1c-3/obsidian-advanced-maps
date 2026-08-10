@@ -125,6 +125,29 @@ where they do not.
   its own behalf, but a map on screen has always fetched tiles from whichever
   background it is configured with.
 
+## [1.2.0]
+
+### Fixed
+
+- Coordinates are converted on the way **out** of the map as well as in. Under
+  GCJ-02 or BD-09 tiles the plugin moved everything it drew into the tile
+  provider's space but nothing on the way back, which left four seams reading
+  the shifted value as though it were a real place. The map's own right-click
+  menu was the one that reached disk: _New note_ wrote it into the note's
+  frontmatter, _Copy coordinates_ put it on the clipboard, and _Set default
+  center point_ stored it in the base file for `loadConfig` to shift a second
+  time. A marker's popup opened a few streets from its own pin, the locate
+  button fed the device fix straight through, and a background switch that
+  changed the coordinate system left the camera looking somewhere else.
+
+### Changed
+
+- The nine instance wrappers go through one `wrap()` helper that remembers how
+  to restore each method, so detaching is a loop rather than a second list to
+  keep in step with the first.
+- The track drawing path is shared between base views and inline embeds. It had
+  been duplicated and had already drifted — embeds never set `circle-opacity`.
+
 ## [1.1.0]
 
 ### Added
@@ -165,5 +188,6 @@ one vault; the behaviour is unchanged, everything around it is new.
 [1.5.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.4.0...1.5.0
 [1.4.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.3.0...1.4.0
 [1.3.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.2.0...1.3.0
+[1.2.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/releases/tag/1.0.0
