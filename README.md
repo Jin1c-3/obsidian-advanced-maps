@@ -234,6 +234,15 @@ that needs no signing up but is thin on mainland places, and a mainland one that
 needs a free web-service key of your own and knows them far better. A source that
 answers in GCJ-02 is converted on the way in, like everything else.
 
+That key can go in either of two places, because neither answer suits everyone.
+**Secret storage** is Obsidian's own: the key never enters the plugin's settings
+file, so it is not synced, backed up or committed — and it stays on the one
+device, so every device you search from needs it entered once. **Plugin
+settings** keeps it with everything else, so one entry covers every device, in
+plain text. New installs start on secret storage; a key you had before this
+existed stays where it was until you move it, and switching carries it across
+rather than clearing it.
+
 This is **the only request the plugin makes on its own behalf**, and only while
 the search box is open: what goes out is what you typed, to the source you
 picked. No telemetry, no note contents, no coordinates you already had.
@@ -278,10 +287,10 @@ pasted short link is **not** resolved for you, precisely because that would mean
 handing it to a third party.
 
 Two things worth knowing if you are deploying this for other people rather than
-using it yourself: a search key is stored in plain text in the plugin's settings
-file and appears in the request URL, and a note's coordinate history can be
-personal information in a way a note's text is not. Both are fine for personal
-use and want a second look for anything else.
+using it yourself: a search key appears in the request URL wherever you keep it
+— secret storage keeps it out of the settings file, not out of the query — and a
+note's coordinate history can be personal information in a way a note's text is
+not. Both are fine for personal use and want a second look for anything else.
 
 ## Attribution
 

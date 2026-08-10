@@ -6,6 +6,26 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.6.0]
+
+### Added
+
+- The Amap search key can be kept in Obsidian's secret storage instead of the
+  plugin's settings file, and which one is a setting rather than a decision made
+  for you. Secret storage keeps the key out of `data.json` — so out of sync,
+  backups and commits — at the cost of staying on the one device, so each device
+  you search from needs it entered once. Plugin settings is the old behaviour:
+  one entry covers every device, in plain text.
+
+### Changed
+
+- New installs default to secret storage. A key already saved stays where it is
+  until you move it: switching stores would otherwise put it somewhere your
+  other devices cannot read and break search there without saying so. Switching
+  to secret storage carries the key across rather than clearing it; switching
+  back does not copy it out, because writing a key to disk in plain text should
+  not be a side effect of changing a dropdown.
+
 ## [1.5.1]
 
 ### Fixed
@@ -139,7 +159,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.5.1...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.6.0...HEAD
+[1.6.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.5.1...1.6.0
 [1.5.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.5.0...1.5.1
 [1.5.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.4.0...1.5.0
 [1.4.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.3.0...1.4.0
