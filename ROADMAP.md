@@ -15,52 +15,141 @@ already installed on the view — and others disproportionately expensive.
 
 The numbers under an inline `![[track.gpx]]` exist now. A track drawn on a
 **base** map view shows none of them, because the surface it would use is the
-note's own popup — and that popup is the native manager's, handed the note's
-property value rather than the feature that was drawn. Adding to it means
-deciding what a popup is for when the note holds several tracks.
+note's own popup — and that popup is the native manager's.
 
-Cheap part: `trackStats` is already a pure function over `rec.features` and the
-cache already holds the parse. Expensive part is entirely the question above.
+The landing place already exists: `hover()` in `track-layer.ts` reuses the
+native popup when the cursor is over a track. So the question is what goes into
+that card, and the card belongs to a **note**, which may carry several tracks.
+Three answers, and the first is the one to try:
+
+- **Whichever track is under the cursor.** Cleanest meaning, and it needs one
+  data change: a track feature's properties are `{ amColor, amIndex }`, and
+  `amIndex` points at the _note_ — the loop that builds them walks
+  `item.trackFiles` and stamps them all with the same index. Per-track numbers
+  need a second index alongside it.
+- **The note's tracks summed.** No data change, and a morning hike plus an
+  afternoon ride add up to a number that describes neither.
+- **A panel of our own on click.** Most freedom, but it leaves the native look
+  behind, which is the thing this plugin is for.
+
+One unknown to probe rather than assume: `PopupManager` declares `showPopup` and
+`hidePopup` and no handle on the element, so appending to the card means finding
+it after `showPopup` returns. Measure it with `obsidian eval` first.
+
+The elevation profile stays inline. A popup is narrow and the SVG needs width.
 
 ## Worth doing
 
 ### Adding a coordinate to an existing note from the map
 
-The map's right-click menu creates a **new** note at the click, and now opens
-the spot in an external map app. Stamping a note that already exists is the
-missing third: it needs a note picker, which is a modal this plugin does not yet
-have — `search-modal.ts` is the closest shape to copy.
+The map's right-click menu creates a **new** note at the click, and opens the
+spot in an external map app. Stamping a note that already exists is the missing
+third: you wrote _楼外楼_ months ago with no coordinate, and you are looking
+straight at where it is.
 
-The menu seam itself is solved and costs nothing to reuse: the native view
-builds its menu with `Menu.forEvent(evt)`, which is Obsidian's public way for
-several contributors to share one menu, so items can be appended after the
-native call returns without patching anything.
+Needs a note picker — a `FuzzySuggestModal`, which this plugin does not have yet
+— and `processFrontMatter`. The coordinate must be un-shifted exactly once; zero
+and two look identical on screen and land the pin ~500 m out.
 
 ### Follow the active note
 
-An open map view panning to, or highlighting, the note being edited. Half the
-plumbing exists in "open in map".
+An open map view panning to the note being edited, so a map in the sidebar keeps
+up with the editor.
+
+**Move the camera, never the query.** Map View does this by rewriting its filter
+to `path:"$PATH$"`; here the filter belongs to Bases and to whoever wrote the
+base, and taking it over would be grabbing the wheel. `file-open` → find the
+entry → `flyTo`, and optionally open its popup. Two things to settle: which view
+follows when several are open (the sidebar one, probably, not the one you are
+working in), and how following and `fit()`'s `userMoved` guard rank.
+
+### Coordinates from a photo's EXIF
+
+A photo embedded in a note usually knows where it was taken. Reading its GPS
+tags would fill the note's coordinate property from a picture already in the
+vault — the thing every travel app calls "check in", arriving from the direction
+this plugin already works in.
+
+It is the shape this repo is best at: a pure binary reader with no dependency,
+`vault.readBinary` for the input, tests in the same PR. Neither Map View nor the
+built-in Maps does it.
+
+### Lighting up where you have been
+
+Filling in the provinces or cities a vault has notes in — the "footprint map"
+every Chinese travel app is built around. MapLibre draws it with one fill layer,
+which is the same seam the tracks already use.
+
+Two parts that are not free: the boundary polygons, which should be a GeoJSON
+file **the reader keeps in their vault** rather than data bundled into the
+plugin; and naming a coordinate, which needs reverse geocoding — both providers
+in `geocode.ts` have an endpoint for it and neither is wired up.
+
+### Import a KML's placemarks as notes
+
+A `.kml` is drawn as a track today. But a Google My Maps export is usually a
+hundred **placemarks** — a saved-restaurants list — and those become circles on
+a map and nothing else: not rows, no properties, nothing a filter or a formula
+can reach. Reading each placemark's name, description and coordinate into a note
+turns them into what the rest of the plugin already works on. `parse.ts` reads
+the file already; what is missing is the writing.
+
+### "Convert to coordinates" in the editor's menu
+
+`geolink.ts` already reads a coordinate out of pasted text, behind a modal. A
+link sitting in a note could go through the same reader from the editor's own
+right-click menu, with no box to open. Cheap, and it is where somebody who just
+pasted a share link actually is.
+
+### Edges between linked notes
+
+Map View draws lines between the markers of notes that link to each other. One
+more GeoJSON source and one more line layer — the shape `layers.ts` already has
+— and the same idea as _a map of the notes around a note_, drawn instead of
+filtered. Worth a guard: it is recomputed on every metadata change, and Map
+View's own documentation warns about thousands of edges.
+
+### Obsidian CLI commands, and a skill
+
+Map View registers `mv-geosearch`, `mv-calc-distance`, `mv-query` and ships a
+Claude skill that uses them for trip planning. The CLI is already how the view
+wrappers here get tested, so registering a few real commands — place search,
+track statistics, a coordinate conversion — is a short step. It is also the only
+honest way to do the "paste a travel guide and get places out" feature those
+apps have: extracting place names from prose is a job for a model, not for a
+regex.
 
 ## Deliberately not
 
-Each of these is a real feature that other map plugins have. They are listed
-here so the question does not keep getting reopened.
+Each of these is a real feature that other map plugins, or the travel apps this
+was compared against, have. They are listed here so the question does not keep
+getting reopened.
 
 - **Route planning.** Needs a routing service and an API key, and the free tiers
   are not usable in every country this plugin's users are in. It is a whole
   product, not a feature.
-- **Offline tile download.** Genuinely the strongest moat of anything on this
-  page, and the most expensive: raster tiles mean intercepting tile requests and
-  owning a store, on a map instance this plugin does not create.
-- **Drawing and editing shapes on the map.** No drawing library is reachable —
-  MapLibre comes from the native view and nothing else is bundled — so it would
-  be hand-rolled from pointer events. The elevation profile under an inline map
-  is hand-rolled SVG for the same reason, and is about the size such a thing can
-  reasonably get before the argument stops holding.
+- **Offline tile download.** Not merely expensive — **out of reach**. MapLibre's
+  `addProtocol` is a module-level export and `transformRequest` is a constructor
+  option, and this plugin has neither the module nor the constructor call: the
+  map is built by the native view. Map View can do this because it owns its
+  Leaflet instance. Nothing short of owning a map changes the answer.
+- **Drawing and editing shapes on the map.** No drawing library is reachable, so
+  it would be hand-rolled from pointer events. The elevation profile under an
+  inline map is hand-rolled SVG for the same reason, and is about the size such
+  a thing can reasonably get before the argument stops holding.
 - **Display rules and a query language.** Bases already has filters, formulas and
   per-note colours and icons, and the map view reads them. Building a second
   system beside it would duplicate the host and undercut the one thing this
   plugin is for: making the built-in view better rather than replacing it.
+- **Presets, and URLs that reopen a saved map.** A saved query, position and
+  basemap is what a **view in a base** already is, and it is one the reader can
+  name, share and edit without this plugin. Storing a second copy of that in
+  plugin settings would be a parallel system with a worse editor.
+- **Itinerary planning, day-by-day timelines, collaborative editing, nearby
+  recommendations.** The travel apps are built around these and they are a
+  different product: a sync service, a content source and a scheduler. A vault
+  of notes with dates in them is already a timeline, and Bases already filters
+  by date.
 - **Several points inside one note.** Inline coordinates in the body, each
   becoming its own pin. The seam looked cheap — `createGeoJSONFeatures` is
   already wrapped — but a synthetic pin's popup opens at the note's own

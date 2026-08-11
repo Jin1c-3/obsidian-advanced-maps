@@ -175,3 +175,24 @@
 .advanced-maps-intro p {
 	margin: 0;
 }
+
+/* One custom map app: a name, a URL and a datum sharing one row, because the
+ * list counts rows — one row is one entry, which is what makes its ✕ and its
+ * drag handle mean what they say. Three boxes plus two affordances is more than
+ * a settings row is built for, so the control side is allowed to wrap and the
+ * URL takes whatever is left. */
+.advanced-maps-map-entry .setting-item-control {
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+
+.advanced-maps-map-entry .setting-item-info {
+	display: none;
+}
+
+.advanced-maps-map-entry input.advanced-maps-map-url {
+	flex: 1 1 16em;
+	min-width: 10em;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}

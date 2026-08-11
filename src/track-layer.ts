@@ -26,7 +26,7 @@ import {
 	removeTrackLayers,
 	type LocateGuard,
 } from './layers';
-import { externalMapUrl, mapOrder, type ExternalMap } from './maplinks';
+import { customMapLabel, customMapUrl, customMaps, enabledBuiltins, externalMapUrl, resolveBuiltins } from './maplinks';
 import { projectedFeatures } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type {
@@ -254,9 +254,9 @@ export class TrackLayer {
 	}
 
 	/**
-	 * "Open in external map" — one item per provider, in the order
-	 * `mapOrder(locale)` prefers, appended to the menu the native handler above
-	 * just built.
+	 * "Open in external map" — one item per map app the reader has left in the
+	 * list, appended to the menu the native handler above just built. Nothing is
+	 * appended when they have emptied it.
 	 *
 	 * `Menu.forEvent` keys its menu off the *event*, not off the caller. Read out
 	 * of the shipped Obsidian build (undocumented, so this was verified rather
@@ -272,7 +272,7 @@ export class TrackLayer {
 	 * ever sees it open. This is `Menu.forEvent`'s documented purpose: several
 	 * contributors adding items to one menu for one event.
 	 *
-	 * The six providers go in a submenu. `MenuItem.setSubmenu` is absent from
+	 * The providers go in a submenu. `MenuItem.setSubmenu` is absent from
 	 * `obsidian.d.ts` but present in the shipped build and used by Obsidian's own
 	 * menus — see the declaration in `types/obsidian-internals.d.ts` for what was
 	 * read out of `obsidian.asar`. Undeclared means unpromised, so it is checked
@@ -298,35 +298,57 @@ export class TrackLayer {
 		// ~500 m from where the reader actually clicked.
 		const [lng, lat] = toWgs84(system, lngLat.lng, lngLat.lat);
 
+		const items = this.externalMapItems(lat, lng);
+		if (items.length === 0) return;
 		const menu = Menu.forEvent(ev);
-		const providers = mapOrder(getLocale());
-		// No label anywhere below: the click is on empty map, not on a note, so
-		// there is no name to hand externalMapUrl — inventing one would be worse
-		// than none.
-		const open = (provider: ExternalMap) => window.open(externalMapUrl(provider, lat, lng), '_blank');
+		const open = (url: string) => window.open(url, '_blank');
 
 		if (canNestMenus()) {
 			menu.addItem((item) => {
 				item.setTitle(t('menu.openExternal')).setIcon('external-link').setSection('external-map');
 				const submenu = item.setSubmenu();
-				for (const provider of providers) {
-					submenu.addItem((child) =>
-						child.setTitle(t(`link.provider.${provider}`)).onClick(() => open(provider))
-					);
+				for (const entry of items) {
+					submenu.addItem((child) => child.setTitle(entry.title).onClick(() => open(entry.url)));
 				}
 			});
 			return;
 		}
 
-		for (const provider of providers) {
+		for (const entry of items) {
 			menu.addItem((item) =>
 				item
-					.setTitle(`${t('menu.openExternal')}: ${t(`link.provider.${provider}`)}`)
+					.setTitle(`${t('menu.openExternal')}: ${entry.title}`)
 					.setIcon('external-link')
 					.setSection('external-map')
-					.onClick(() => open(provider))
+					.onClick(() => open(entry.url))
 			);
 		}
+	}
+
+	/**
+	 * What the menu offers, in the order the reader put it in: the built-ins they
+	 * left switched on, then whatever they added themselves.
+	 *
+	 * No label is passed anywhere below. The click is on empty map, not on a
+	 * note, so there is no name to give — inventing one would be worse than none.
+	 *
+	 * An unusable custom entry — no scheme, a scheme a menu item must not carry,
+	 * or a URL with no `{lat}`/`{lng}` to put the coordinate in — is left out
+	 * rather than opened. `customMapUrl` is the one place that decides, and the
+	 * settings pane says which of the three it is while the reader is still
+	 * typing, because a menu cannot explain the item it is not showing.
+	 */
+	private externalMapItems(lat: number, lng: number): Array<{ title: string; url: string }> {
+		const settings = this.plugin.settings;
+		const items = enabledBuiltins(resolveBuiltins(settings.externalMaps, getLocale())).map((provider) => ({
+			title: t(`link.provider.${provider}`),
+			url: externalMapUrl(provider, lat, lng),
+		}));
+		for (const entry of customMaps(settings.customMaps)) {
+			const url = customMapUrl(entry, lat, lng);
+			if (url !== null) items.push({ title: customMapLabel(entry), url });
+		}
+		return items;
 	}
 
 	detach(): void {

@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { EXTERNAL_MAPS, externalMapUrl, mapOrder, type ExternalMap } from '../src/maplinks';
+import {
+	customMapLabel,
+	customMaps,
+	customMapUrl,
+	customUrlProblem,
+	enabledBuiltins,
+	EXTERNAL_MAPS,
+	externalMapUrl,
+	mapOrder,
+	resolveBuiltins,
+	type CustomMap,
+	type ExternalMap,
+} from '../src/maplinks';
 import { gcj2bd, wgs2gcj } from '../src/coords';
 
 /* 天安门, Beijing. Round-tripped through the same conversions maplinks.ts uses
@@ -142,5 +154,202 @@ describe('mapOrder', () => {
 		const order = mapOrder('en');
 		sameSix(order);
 		expect(order.slice(0, 3)).toEqual(['google', 'apple', 'osm']);
+	});
+});
+
+describe('resolveBuiltins', () => {
+	it('reads nothing saved as the locale order, every provider on', () => {
+		for (const locale of ['en', 'zh'] as const) {
+			const list = resolveBuiltins(undefined, locale);
+			expect(list.map((entry) => entry.id)).toEqual(mapOrder(locale));
+			expect(list.every((entry) => entry.on)).toBe(true);
+		}
+	});
+
+	it('keeps the saved order and the saved flags', () => {
+		const saved = [
+			{ id: 'osm', on: false },
+			{ id: 'amap', on: true },
+		];
+		const list = resolveBuiltins(saved, 'en');
+		expect(list.slice(0, 2)).toEqual(saved);
+		expect(enabledBuiltins(list)).not.toContain('osm');
+	});
+
+	it('appends every provider the saved list does not name, so a later one is not lost', () => {
+		const list = resolveBuiltins([{ id: 'baidu', on: true }], 'zh');
+		expect(list).toHaveLength(EXTERNAL_MAPS.length);
+		expect(list[0].id).toBe('baidu');
+		expect(new Set(list.map((entry) => entry.id))).toEqual(new Set(EXTERNAL_MAPS));
+		// The appended ones arrive on: a provider this version knows about should
+		// be reachable without the reader having to find and enable it.
+		expect(list.slice(1).every((entry) => entry.on)).toBe(true);
+	});
+
+	it('drops an id this version does not know, and takes a duplicate once', () => {
+		const list = resolveBuiltins(
+			[{ id: 'here-maps', on: true }, { id: 'amap', on: false }, { id: 'amap', on: true }, null, 'amap', 7],
+			'en'
+		);
+		expect(list).toHaveLength(EXTERNAL_MAPS.length);
+		expect(list.filter((entry) => entry.id === 'amap')).toHaveLength(1);
+		// The first of the two duplicates is the one that counts.
+		expect(list[0]).toEqual({ id: 'amap', on: false });
+	});
+
+	it('reads a half-written entry as on rather than as off', () => {
+		expect(resolveBuiltins([{ id: 'google' }], 'en')[0]).toEqual({ id: 'google', on: true });
+	});
+
+	it('can leave nothing at all enabled', () => {
+		const off = EXTERNAL_MAPS.map((id) => ({ id, on: false }));
+		expect(enabledBuiltins(resolveBuiltins(off, 'en'))).toEqual([]);
+	});
+});
+
+describe('customUrlProblem', () => {
+	const usable = 'https://example.com/?q={lat},{lng}';
+
+	it('accepts an ordinary https URL carrying both placeholders', () => {
+		expect(customUrlProblem(usable)).toBeNull();
+	});
+
+	it('accepts an app scheme — the case custom entries exist for', () => {
+		expect(customUrlProblem('iosamap://viewMap?lat={lat}&lon={lng}')).toBeNull();
+		expect(customUrlProblem('waze://?ll={lat},{lng}&navigate=yes')).toBeNull();
+		expect(customUrlProblem('geo:{lat},{lng}')).toBeNull();
+	});
+
+	it('refuses a URL with no scheme, which would resolve against Obsidian itself', () => {
+		expect(customUrlProblem('example.com/?q={lat},{lng}')).toBe('scheme');
+		expect(customUrlProblem('/maps?q={lat},{lng}')).toBe('scheme');
+	});
+
+	it('refuses a scheme that runs code or fakes a document, in any casing', () => {
+		expect(customUrlProblem('javascript:alert({lat},{lng})')).toBe('unsafe');
+		expect(customUrlProblem('JaVaScRiPt:alert({lat},{lng})')).toBe('unsafe');
+		expect(customUrlProblem('data:text/html,{lat}{lng}')).toBe('unsafe');
+		expect(customUrlProblem('file:///{lat}/{lng}')).toBe('unsafe');
+	});
+
+	it('refuses a URL missing either placeholder', () => {
+		expect(customUrlProblem('https://example.com/?q={lat}')).toBe('placeholder');
+		expect(customUrlProblem('https://example.com/?q={lng}')).toBe('placeholder');
+		expect(customUrlProblem('https://example.com/')).toBe('placeholder');
+	});
+});
+
+describe('customMapUrl', () => {
+	const entry = (url: string, datum: CustomMap['datum'] = 'wgs84'): CustomMap => ({ name: '', url, datum });
+
+	it('substitutes both placeholders, in whichever order the template puts them', () => {
+		const url = customMapUrl(entry('https://x.test/?lng={lng}&lat={lat}'), WGS[0], WGS[1]);
+		const parsed = new URL(url!);
+		near(Number(parsed.searchParams.get('lat')), WGS[0]);
+		near(Number(parsed.searchParams.get('lng')), WGS[1]);
+	});
+
+	it('substitutes every occurrence, not just the first', () => {
+		const url = customMapUrl(entry('https://x.test/{lat}/{lng}#{lat},{lng}'), WGS[0], WGS[1]);
+		expect(url).not.toContain('{lat}');
+		expect(url).not.toContain('{lng}');
+	});
+
+	it('shifts to GCJ-02 when the entry says so — the exact conversion, not merely a different number', () => {
+		const url = customMapUrl(entry('https://x.test/?p={lng},{lat}', 'gcj02'), WGS[0], WGS[1]);
+		const [lng, lat] = pair(new URL(url!).searchParams.get('p'));
+		near(lng, GCJ[0]);
+		near(lat, GCJ[1]);
+	});
+
+	it('shifts to BD-09 when the entry says so', () => {
+		const url = customMapUrl(entry('https://x.test/?p={lat},{lng}', 'bd09'), WGS[0], WGS[1]);
+		const [lat, lng] = pair(new URL(url!).searchParams.get('p'));
+		near(lat, BD[1]);
+		near(lng, BD[0]);
+	});
+
+	it('leaves a London point alone under wgs84 and gcj02 — the identity, not merely close', () => {
+		for (const datum of ['wgs84', 'gcj02'] as const) {
+			const url = customMapUrl(entry('https://x.test/?p={lat},{lng}', datum), LONDON[0], LONDON[1]);
+			const [lat, lng] = pair(new URL(url!).searchParams.get('p'));
+			near(lat, LONDON[0]);
+			near(lng, LONDON[1]);
+		}
+	});
+
+	it('still shifts a London point under bd09, because BD-09 has no border', () => {
+		// GCJ-02 is the identity outside China and BD-09 is not: Baidu applies its
+		// offset wherever it draws, so the built-in 百度 item and a custom bd09
+		// entry agree on ~600 m in London rather than on nothing.
+		const url = customMapUrl(entry('https://x.test/?p={lat},{lng}', 'bd09'), LONDON[0], LONDON[1]);
+		const [lat, lng] = pair(new URL(url!).searchParams.get('p'));
+		const expected = gcj2bd(...wgs2gcj(LONDON[1], LONDON[0]));
+		near(lat, expected[1]);
+		near(lng, expected[0]);
+		expect(Math.abs(lat - LONDON[0])).toBeGreaterThan(0.001);
+	});
+
+	it('does not encode the braces away — the raw string is what gets substituted', () => {
+		// { and } are in the WHATWG *path* encode set, so a template with the
+		// placeholder in the path — not in a query — is the one a round trip
+		// through new URL() would quietly break.
+		expect(new URL('https://x.test/{lat}/{lng}').pathname).toContain('%7B');
+		const url = customMapUrl(entry('https://x.test/{lat}/{lng}'), WGS[0], WGS[1]);
+		expect(url).not.toContain('%7B');
+		expect(url).toBe(`https://x.test/${WGS[0].toFixed(6)}/${WGS[1].toFixed(6)}`);
+	});
+
+	it('answers null for anything customUrlProblem refuses', () => {
+		expect(customMapUrl(entry('javascript:alert({lat}{lng})'), WGS[0], WGS[1])).toBeNull();
+		expect(customMapUrl(entry('https://x.test/?q={lat}'), WGS[0], WGS[1])).toBeNull();
+		expect(customMapUrl(entry(''), WGS[0], WGS[1])).toBeNull();
+	});
+
+	it('tolerates a URL saved with whitespace around it', () => {
+		expect(customMapUrl(entry('  https://x.test/?q={lat},{lng}  '), WGS[0], WGS[1])).toBe(
+			`https://x.test/?q=${WGS[0].toFixed(6)},${WGS[1].toFixed(6)}`
+		);
+	});
+});
+
+describe('customMapLabel', () => {
+	it('uses the name when there is one', () => {
+		expect(customMapLabel({ name: ' Waze ', url: 'https://waze.com/{lat}{lng}', datum: 'wgs84' })).toBe('Waze');
+	});
+
+	it('falls back to the host, so a nameless entry is still recognisable', () => {
+		expect(customMapLabel({ name: '', url: 'https://ul.waze.com/ul?ll={lat},{lng}', datum: 'wgs84' })).toBe(
+			'ul.waze.com'
+		);
+	});
+
+	it('falls back to the URL itself when there is no host to take', () => {
+		expect(customMapLabel({ name: '', url: 'geo:{lat},{lng}', datum: 'wgs84' })).toBe('geo:{lat},{lng}');
+	});
+});
+
+describe('customMaps', () => {
+	it('reads a saved list back as three known fields', () => {
+		expect(customMaps([{ name: 'Waze', url: 'waze://?ll={lat},{lng}', datum: 'gcj02' }])).toEqual([
+			{ name: 'Waze', url: 'waze://?ll={lat},{lng}', datum: 'gcj02' },
+		]);
+	});
+
+	it('falls back to WGS-84 for a datum this version does not offer', () => {
+		expect(customMaps([{ name: 'x', url: 'https://x.test/{lat}{lng}', datum: 'cgcs2000' }])[0].datum).toBe('wgs84');
+	});
+
+	it('fills in a missing field rather than dropping the entry', () => {
+		expect(customMaps([{ url: 'https://x.test/{lat}{lng}' }])).toEqual([
+			{ name: '', url: 'https://x.test/{lat}{lng}', datum: 'wgs84' },
+		]);
+	});
+
+	it('answers an empty list for anything that is not one', () => {
+		expect(customMaps(undefined)).toEqual([]);
+		expect(customMaps(null)).toEqual([]);
+		expect(customMaps('waze')).toEqual([]);
+		expect(customMaps([null, 'waze', 7])).toEqual([]);
 	});
 });

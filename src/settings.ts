@@ -9,7 +9,16 @@ import {
 import { TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
 import { GEOCODE_PROVIDERS, KEY_STORES, type GeocodeProvider, type KeyStore } from './geocode';
-import { t, type TranslationKey } from './i18n';
+import { getLocale, t, type TranslationKey } from './i18n';
+import {
+	CUSTOM_DATUMS,
+	customMaps,
+	customUrlProblem,
+	resolveBuiltins,
+	type BuiltinMap,
+	type CustomDatum,
+	type CustomMap,
+} from './maplinks';
 import type AdvancedMapsPlugin from './main';
 
 export interface AdvancedMapsSettings {
@@ -31,6 +40,12 @@ export interface AdvancedMapsSettings {
 	menuLabel: string;
 	/** The view added to the base for "a map of the notes around this one". */
 	aroundViewName: string;
+	/* "Open in external map", on the map's own right-click menu. Both start
+	 * empty, and empty means something in each: no arrangement of the built-ins
+	 * is the locale's own order with all six on, and no custom entries is the
+	 * ordinary case. See `resolveBuiltins` for why the six are not written out. */
+	externalMaps: BuiltinMap[];
+	customMaps: CustomMap[];
 	/** Place search — the one feature that leaves the vault. */
 	geocodeProvider: GeocodeProvider;
 	/** Which of the two below is the one that counts. */
@@ -69,6 +84,8 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	openZoom: 15,
 	menuLabel: '',
 	aroundViewName: '',
+	externalMaps: [],
+	customMaps: [],
 	geocodeProvider: 'nominatim',
 	// The safer of the two is the one nobody had to choose. A key already on
 	// disk from before this setting existed keeps the other one — `loadSettings`
@@ -111,6 +128,51 @@ export const AMAP_SECRET_ID = 'advanced-maps-amap';
 type Key = keyof AdvancedMapsSettings;
 
 /**
+ * A row inside one of the two lists names its entry by index —
+ * `customMaps.2.url` rather than a settings key of its own.
+ *
+ * That is what keeps a list declarative like everything else in this tab: the
+ * framework reads and writes through `getControlValue`/`setControlValue`, and
+ * those two are where the path is understood. Drawing the rows by hand instead
+ * would take them out of the settings search and put a second write path beside
+ * the one seam.
+ */
+type EntryKey = `externalMaps.${number}.on` | `customMaps.${number}.${'name' | 'url' | 'datum'}`;
+type ControlKey = Key | EntryKey;
+
+type EntryPath =
+	| { list: 'externalMaps'; index: number; field: 'on' }
+	| { list: 'customMaps'; index: number; field: 'name' | 'url' | 'datum' };
+
+const ENTRY_KEY = /^(externalMaps|customMaps)\.(\d+)\.(on|name|url|datum)$/;
+
+/** The reverse of an `EntryKey`, and null for every ordinary settings key. */
+function entryPath(key: string): EntryPath | null {
+	const parts = ENTRY_KEY.exec(key);
+	if (!parts) return null;
+	const index = Number(parts[2]);
+	if (parts[1] === 'externalMaps') {
+		return parts[3] === 'on' ? { list: 'externalMaps', index, field: 'on' } : null;
+	}
+	if (parts[3] === 'on') return null;
+	return { list: 'customMaps', index, field: parts[3] as 'name' | 'url' | 'datum' };
+}
+
+/** One entry picked up and put down at another index. */
+function moved<T>(list: T[], from: number, to: number): T[] {
+	if (from === to || from < 0 || from >= list.length) return list;
+	const next = list.slice();
+	const [item] = next.splice(from, 1);
+	next.splice(Math.max(0, Math.min(to, next.length)), 0, item);
+	return next;
+}
+
+/** A datum a stored entry names, checked against the ones this version has. */
+function knownDatum(value: unknown): CustomDatum {
+	return (CUSTOM_DATUMS as readonly unknown[]).includes(value) ? (value as CustomDatum) : 'wgs84';
+}
+
+/**
  * Settings are **declared**, not drawn.
  *
  * Obsidian 1.13 renders a tab from `getSettingDefinitions()` and — the reason
@@ -142,7 +204,10 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 * row written as `{ name: '', desc }` renders nothing at all. Measured, not
 	 * assumed. `searchable: false` because it is context, not a setting to find.
 	 */
-	private group(key: 'coord' | 'open' | 'search' | 'locate' | 'tracks', items: SettingDefinition<Key>[]) {
+	private group(
+		key: 'coord' | 'open' | 'external' | 'search' | 'locate' | 'tracks',
+		items: SettingDefinition<ControlKey>[]
+	) {
 		const intro = t(`settings.${key}.intro`);
 		return {
 			type: 'group' as const,
@@ -165,9 +230,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	private text(
 		name: TranslationKey,
 		desc: TranslationKey | undefined,
-		key: Key,
+		key: ControlKey,
 		opts: { placeholder?: string; vars?: Record<string, string> } = {}
-	): SettingDefinition<Key> {
+	): SettingDefinition<ControlKey> {
 		return {
 			name: t(name),
 			desc: desc ? t(desc, opts.vars) : undefined,
@@ -239,7 +304,82 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		await super.setControlValue('amapKey', '');
 	}
 
-	override getSettingDefinitions(): SettingDefinitionItem<Key>[] {
+	/** The six built-ins as the reader has them; the list draws this, and a write starts from it. */
+	private builtins(): BuiltinMap[] {
+		return resolveBuiltins(this.plugin.settings.externalMaps, getLocale());
+	}
+
+	private customs(): CustomMap[] {
+		return customMaps(this.plugin.settings.customMaps);
+	}
+
+	/**
+	 * A whole list replaced — an entry added, deleted or moved.
+	 *
+	 * These three change how many rows there are, or which row is which, so the
+	 * pane has to be re-asked. Editing a *field* deliberately does not: a text
+	 * control writes on every keystroke, and a re-render mid-word would take the
+	 * focus with it.
+	 */
+	private async writeList(key: 'externalMaps' | 'customMaps', next: BuiltinMap[] | CustomMap[]): Promise<void> {
+		await this.setControlValue(key, next);
+		this.update();
+	}
+
+	/**
+	 * One custom entry: its name, its URL and the datum that URL expects, on one
+	 * row. The ✕ and the drag handle beside them are the list's own, added to
+	 * every row that is not a page.
+	 *
+	 * Drawn rather than declared, which is the one place in this tab that is true
+	 * and is not a preference: three fields have to share a row so that one row
+	 * means one entry, and `onDelete(index)`/`onReorder(from, to)` count rows.
+	 * Three declared rows per entry would trade a working delete for a tidier
+	 * definition.
+	 *
+	 * Every write still goes through `setControlValue`, so the trimming, the datum
+	 * check and the one write seam all still apply.
+	 */
+	private customRow(setting: Setting, entry: CustomMap, index: number): void {
+		setting.settingEl.addClass('advanced-maps-map-entry');
+		const say = (url: string) => {
+			// Empty is a row still being filled in, not a wrong one.
+			const problem = url.trim() === '' ? null : customUrlProblem(url);
+			setting.setErrorMessage(problem === null ? null : t(`settings.external.error.${problem}`));
+		};
+
+		setting.addText((text) =>
+			text
+				.setPlaceholder(t('settings.external.custom.name.name'))
+				.setValue(entry.name)
+				.onChange((value) => void this.setControlValue(`customMaps.${index}.name`, value))
+		);
+		setting.addText((text) => {
+			text.setPlaceholder(t('settings.external.custom.url.placeholder'))
+				.setValue(entry.url)
+				.onChange((value) => {
+					// Said while the reader is still looking at the box: an unusable
+					// entry is left out of the menu, and a menu cannot explain the item
+					// it is not showing.
+					say(value);
+					void this.setControlValue(`customMaps.${index}.url`, value);
+				});
+			text.inputEl.addClass('advanced-maps-map-url');
+			text.inputEl.setAttribute('aria-label', t('settings.external.custom.url.desc'));
+		});
+		setting.addDropdown((dropdown) => {
+			for (const datum of CUSTOM_DATUMS) dropdown.addOption(datum, t(`datum.${datum}`));
+			dropdown
+				.setValue(entry.datum)
+				.onChange((value) => void this.setControlValue(`customMaps.${index}.datum`, value));
+			dropdown.selectEl.setAttribute('aria-label', t('settings.external.custom.datum.desc'));
+		});
+		// A URL saved by an older version, or left half-written, states itself on
+		// arrival rather than waiting to be typed in again.
+		say(entry.url);
+	}
+
+	override getSettingDefinitions(): SettingDefinitionItem<ControlKey>[] {
 		const coordModes: Record<string, string> = {};
 		for (const mode of COORD_MODES) coordModes[mode] = t(`coord.${mode}`);
 		const providers: Record<string, string> = {};
@@ -273,6 +413,55 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					placeholder: t('command.openInMap'),
 				}),
 			]),
+
+			this.group('external', []),
+			// Two lists rather than one: the built-ins are a fixed set to arrange,
+			// the custom ones a collection to add to, and `type: 'list'` gives each
+			// exactly the affordances it needs — drag handles for both, a delete and
+			// an add for the second only. A built-in is switched off, never removed:
+			// there would be no way back to it.
+			{
+				type: 'list',
+				heading: t('settings.external.builtin.heading'),
+				items: this.builtins().map((builtin, index) => ({
+					name: t(`link.provider.${builtin.id}`),
+					control: { type: 'toggle' as const, key: `externalMaps.${index}.on` as ControlKey },
+				})),
+				onReorder: (from: number, to: number) => {
+					void this.writeList('externalMaps', moved(this.builtins(), from, to));
+				},
+			},
+			{
+				type: 'list',
+				heading: t('settings.external.custom.heading'),
+				emptyState: t('settings.external.custom.empty'),
+				items: this.customs().map((entry, index) => ({
+					// Nameless on purpose: the three boxes say what they are, and the row
+					// has to stay an *ordinary* setting row. A `type: 'page'` row is the
+					// one shape a list gives no delete button and no drag handle to —
+					// `n6` returns at `setNavigable` before either is added, and the
+					// keyboard delete looks the row up in `group.settings`, which a page
+					// never joins. Measured against a real pane, not read off the types.
+					name: '',
+					searchable: false,
+					render: (setting: Setting) => this.customRow(setting, entry, index),
+				})),
+				addItem: {
+					name: t('settings.external.custom.add'),
+					action: () => {
+						void this.writeList('customMaps', [...this.customs(), { name: '', url: '', datum: 'wgs84' }]);
+					},
+				},
+				onDelete: (index: number) => {
+					void this.writeList(
+						'customMaps',
+						this.customs().filter((_, at) => at !== index)
+					);
+				},
+				onReorder: (from: number, to: number) => {
+					void this.writeList('customMaps', moved(this.customs(), from, to));
+				},
+			},
 
 			this.group('search', [
 				{
@@ -357,7 +546,41 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 * `menuLabel`, `aroundViewName` and `viewName` all use their own emptiness as
 	 * an answer, so they are stored empty and resolved at the point of use.
 	 */
+	/** A list row reads its value out of the entry its key names. */
+	override getControlValue(key: string): unknown {
+		const path = entryPath(key);
+		if (!path) return super.getControlValue(key);
+		if (path.list === 'externalMaps') return this.builtins()[path.index]?.on ?? true;
+		const entry = this.customs()[path.index];
+		return entry ? entry[path.field] : '';
+	}
+
+	/** …and writes it back into a copy of the whole list, which is what is stored. */
+	private async writeEntry(path: EntryPath, value: unknown): Promise<void> {
+		if (path.list === 'externalMaps') {
+			const list = this.builtins();
+			const entry = list[path.index];
+			if (!entry) return;
+			list[path.index] = { ...entry, on: value === true };
+			await this.setControlValue('externalMaps', list);
+			return;
+		}
+		const list = this.customs();
+		const entry = list[path.index];
+		if (!entry) return;
+		const updated = { ...entry };
+		if (path.field === 'datum') updated.datum = knownDatum(value);
+		else updated[path.field] = typeof value === 'string' ? value.trim() : '';
+		list[path.index] = updated;
+		await this.setControlValue('customMaps', list);
+	}
+
 	override async setControlValue(key: string, value: unknown): Promise<void> {
+		const path = entryPath(key);
+		if (path) {
+			await this.writeEntry(path, value);
+			return;
+		}
 		let next = value;
 		if (typeof next === 'string') {
 			next = next.trim();
@@ -375,6 +598,11 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		if (key === 'amapKeyStore' && !(KEY_STORES as readonly unknown[]).includes(next)) {
 			next = DEFAULT_SETTINGS.amapKeyStore;
 		}
+		// Both lists go back through the same readers that made them whole on the
+		// way out, so what lands in data.json is what the next version will read —
+		// an unknown provider or datum cannot be stored by going through here.
+		if (key === 'externalMaps') next = resolveBuiltins(next, getLocale());
+		if (key === 'customMaps') next = customMaps(next);
 		await super.setControlValue(key, next);
 
 		switch (key) {

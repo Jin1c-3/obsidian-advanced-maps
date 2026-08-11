@@ -6,6 +6,17 @@ where they do not.
 
 ## [Unreleased]
 
+### Added
+
+- The map's _Open in external map_ menu is now yours to arrange. The six
+  built-in apps can be reordered and switched off individually — switch all six
+  off and nothing is added to the menu — and you can add your own entries: a
+  name, a URL with `{lat}` and `{lng}` in it, and the coordinate system that URL
+  expects. App schemes such as `waze://` or `iosamap://` work alongside web
+  addresses. The coordinate system is stated rather than guessed, because that
+  is the one thing a URL template cannot carry and the one that puts a pin in
+  the wrong street when it is wrong.
+
 ## [1.6.0]
 
 ### Added

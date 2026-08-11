@@ -109,6 +109,33 @@ const en = {
 	'notice.search.failed': 'Advanced Maps: the search failed — {reason}',
 	'notice.search.needsKey': 'Advanced Maps: add an Amap web-service key in the plugin settings, or switch provider.',
 
+	/* ---- settings: external maps ---- */
+	'settings.external.heading': 'Open in external map',
+	'settings.external.intro':
+		'What the map offers when you right-click a spot on it. Order the built-in apps, switch off the ones you ' +
+		'never reach for, and add any other app that takes a coordinate in a URL.',
+	'settings.external.builtin.heading': 'Built-in',
+	'settings.external.custom.heading': 'Your own',
+	'settings.external.custom.empty': 'Nothing added. The six above are the ones that need no setting up.',
+	'settings.external.custom.add': 'Add a map app',
+	/* The three boxes on a custom entry's row carry their own labels as
+	 * placeholders — a row is one entry, so the fields share it. */
+	'settings.external.custom.name.name': 'Name',
+	'settings.external.custom.url.placeholder': 'https://…{lat}…{lng}',
+	'settings.external.custom.url.desc':
+		'{lat} and {lng} are replaced with the coordinate — put them in whichever order the app wants. An app ' +
+		'scheme such as waze:// or iosamap:// works too, on the device that has it.',
+	'settings.external.custom.datum.desc':
+		'Which system that URL expects. Guessing wrong lands the pin a few streets away rather than failing.',
+	/* Short forms: these sit in a dropdown beside two text boxes, where the
+	 * provider lists the coordinate-system setting spells out do not fit. */
+	'datum.wgs84': 'WGS-84',
+	'datum.gcj02': 'GCJ-02',
+	'datum.bd09': 'BD-09',
+	'settings.external.error.scheme': 'Needs to start with a scheme, like https:// or waze://.',
+	'settings.external.error.unsafe': 'That scheme cannot be opened from a menu.',
+	'settings.external.error.placeholder': 'Needs both {lat} and {lng} in it.',
+
 	/* ---- settings: place search ---- */
 	'settings.search.heading': 'Place search',
 	'settings.search.intro':
@@ -286,6 +313,25 @@ const zh: Record<TranslationKey, string> = {
 	'search.keyStore.plugin': '插件设置 —— 跟着同步，明文保存',
 	'notice.search.failed': 'Advanced Maps：搜索失败 —— {reason}',
 	'notice.search.needsKey': 'Advanced Maps：请在插件设置里填高德 Web 服务 key，或者换一个搜索源。',
+
+	'settings.external.heading': '用外部地图打开',
+	'settings.external.intro':
+		'在地图上右键一个位置时给出的选项。可以给内置的几个排序、把用不上的关掉，也可以自己添加任何能用 URL 接收坐标的地图应用。',
+	'settings.external.builtin.heading': '内置',
+	'settings.external.custom.heading': '自定义',
+	'settings.external.custom.empty': '还没有添加。上面那六个不用配置就能用。',
+	'settings.external.custom.add': '添加地图应用',
+	'settings.external.custom.name.name': '名称',
+	'settings.external.custom.url.placeholder': 'https://…{lat}…{lng}',
+	'settings.external.custom.url.desc':
+		'{lat} 和 {lng} 会被替换成坐标，先后顺序按目标应用的要求写。也可以用 waze:// 、iosamap:// 这类应用协议，在装了该应用的设备上有效。',
+	'settings.external.custom.datum.desc': '这个 URL 期待的坐标系。选错不会报错，只会把标记落到隔几条街的地方。',
+	'datum.wgs84': 'WGS-84',
+	'datum.gcj02': 'GCJ-02 火星坐标',
+	'datum.bd09': 'BD-09 百度坐标',
+	'settings.external.error.scheme': '需要以协议开头，例如 https:// 或 waze:// 。',
+	'settings.external.error.unsafe': '这个协议不能从菜单里打开。',
+	'settings.external.error.placeholder': '需要同时包含 {lat} 和 {lng} 。',
 
 	'settings.search.heading': '地点搜索',
 	'settings.search.intro':

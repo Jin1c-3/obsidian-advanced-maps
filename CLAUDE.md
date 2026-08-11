@@ -604,6 +604,67 @@ Two things in the menu wiring are worth keeping:
   OpenStreetMap URL carried `gcj2wgs` of it to 0.05 m — against a local GCJ
   offset of 525.3 m, which is what either mistake would have cost.
 
+### The two lists behind that menu
+
+What the menu offers is a setting: the six built-ins can be reordered and
+switched off, and a reader can add their own entries. Four things are
+load-bearing.
+
+- **A custom entry states its datum; it cannot be templated.** `{lat}`/`{lng}`
+  substitution covers axis order, which is the only _shape_ difference between
+  providers. It cannot cover the conversion, which is the difference that
+  matters — and the host cannot be read for it either, since a self-hosted 高德
+  mirror looks like any other domain. So `CustomMap` carries `wgs84 | gcj02 |
+bd09` and `shiftTo` applies it, exactly as `externalMapUrl` does for the six.
+- **Substitution is on the raw string, never through `new URL()`.** `{` and `}`
+  are in the WHATWG _path_ percent-encode set, so a round trip turns
+  `https://x/{lat}/{lng}` into `%7Blat%7D` and leaves nothing to substitute. A
+  placeholder in the _query_ survives untouched, which is what makes this worth
+  writing down — half the templates would have kept working.
+- **Schemes are a deny list, not an allow list.** The value reaches
+  `window.open`, so `javascript:`, `data:`, `vbscript:`, `blob:` and `file:` are
+  refused. Narrowing it to `http`/`https` instead would refuse `iosamap://`,
+  `waze://` and `comgooglemaps://` — which is the case a custom entry exists for
+  on a phone.
+- **Empty means "follow the locale", so the six are not written out.**
+  `resolveBuiltins(stored, locale)` derives the default order at the point of
+  use; persisting it on first render would freeze one locale's order into
+  `data.json`, and a reader who later switches Obsidian to Chinese would get an
+  English menu with no setting on screen admitting to it. The same function
+  drops an unknown id, takes a duplicate once, and appends a provider a later
+  version adds — so the stored list stays whole across versions.
+
+`type: 'list'` supplies the affordances — a ✕ per row, a drag handle, a `+` in
+the header — and each row's control names its entry by index
+(`customMaps.2.url`), with `getControlValue`/`setControlValue` understanding the
+path. That keeps `setControlValue` the one write seam for list rows too.
+`update()` re-renders a list from a fresh `getSettingDefinitions()`, and is
+called only for add, delete and reorder — never for a field edit, because a text
+control writes on every keystroke and a re-render mid-word takes the focus with
+it.
+
+**A `type: 'page'` row inside a list can neither be deleted nor dragged.** This
+one cost a shipped bug: an entry as a navigable sub-page looks like the tidy
+answer — three labelled fields, declarative controls, a `validate` hook — and it
+renders a row with nothing but a chevron. Read out of `obsidian.asar`
+afterwards, `n6` returns at `setNavigable(…)` for a page **before** the branch
+that appends the delete button and the drag handle, and the keyboard delete
+(`onDeleteItem`, which is Delete/Backspace on a focused row and is the only
+delete `onDelete` ever wires) looks the row up in `group.settings`, which a page
+never joins. So a custom entry is **one ordinary row carrying three components**
+— drawn, not declared, which is the one place in this tab where that is forced
+rather than preferred: one row has to be one entry, because `onDelete(index)`
+and `onReorder(from, to)` count rows.
+
+Two smaller things fell out of the same reading. Row identity is
+`K2(def, i)`: `page:<name>`, else `ctrl:<control.key>`, else `name:<name>`, else
+`item#<i>` — so two untitled pages collided on `page:未命名` and Obsidian logged
+`duplicate setting key`, while a nameless `render` row keys on its index and
+cannot. And `Setting.setErrorMessage` is public, which is what a drawn row uses
+to say why a URL is unusable — stated on arrival too, not only while typing,
+since a URL saved by an older version is exactly the one nobody is about to
+retype.
+
 `MenuItem.setSubmenu` is undeclared in `obsidian.d.ts` but present in the shipped
 build and used by Obsidian's own menus, so it is declared in
 `types/obsidian-internals.d.ts` and probed for at runtime, with six flat items as

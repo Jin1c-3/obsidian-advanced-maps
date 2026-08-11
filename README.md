@@ -121,6 +121,33 @@ whole difficulty — the same six links built naively land in the wrong place in
 three different ways, none of them visible until you are standing in the wrong
 street.
 
+The six are yours to arrange, under **Open in external map** in settings. Drag
+them into the order you actually reach for, and switch off the ones you never
+do — a menu is a finite thing, and five apps you do not have installed are five
+lines to read past. Switch all six off and nothing is added to the map's menu at
+all.
+
+**Your own** is the list below it, and it starts empty. An entry is a name, a
+URL and the coordinate system that URL expects:
+
+| Field             | What goes in it                                                   |
+| ----------------- | ----------------------------------------------------------------- |
+| Name              | What the menu item says                                           |
+| URL               | `{lat}` and `{lng}` where the numbers go, in whichever order      |
+| Coordinate system | WGS-84, GCJ-02 or BD-09 — whichever that URL expects to be handed |
+
+```
+https://ul.waze.com/ul?ll={lat},{lng}&navigate=yes      WGS-84
+https://www.bing.com/maps?cp={lat}~{lng}&lvl=16          WGS-84
+om://map?v=1&ll={lat},{lng}                              WGS-84
+```
+
+An app scheme works as well as a web address — `waze://`, `iosamap://`,
+`comgooglemaps://` — on the device that has the app. The coordinate system is
+the field worth pausing on: it is stated rather than guessed, because a mirror
+of a Chinese provider looks like an ordinary host and getting it wrong does not
+fail, it just puts the pin a few streets away.
+
 ### One base, reused everywhere
 
 The two features below are worth understanding together, because they share one
