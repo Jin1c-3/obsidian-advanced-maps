@@ -6,6 +6,8 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.7.0]
+
 ### Added
 
 - The map's _Open in external map_ menu is now yours to arrange. The six
@@ -193,7 +195,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.6.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.7.0...HEAD
+[1.7.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.6.0...1.7.0
 [1.6.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.5.1...1.6.0
 [1.5.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.5.0...1.5.1
 [1.5.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.4.0...1.5.0
