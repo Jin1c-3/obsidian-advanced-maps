@@ -5,6 +5,7 @@ import {
 	findView,
 	LINKED_FROM_NOTE,
 	LINKS_TO_NOTE,
+	mapViewNames,
 	pickMapView,
 	pointerFilter,
 	THIS_NOTE,
@@ -131,6 +132,34 @@ describe('findView', () => {
 		expect(findView(BASE, 'map')?.type).toBe('map');
 		expect(findView(BASE, 'nope')).toBeUndefined();
 		expect(findView({}, 'map')).toBeUndefined();
+	});
+});
+
+describe('mapViewNames', () => {
+	it('names the map views, in the order the base holds them', () => {
+		expect(mapViewNames(BASE)).toEqual(['map', 'second map']);
+	});
+
+	it('leaves out every view the setting could not name', () => {
+		// A table would be found by `pickMapView`, which matches on the name alone,
+		// and then opened as the map it is not. A nameless view cannot be referred
+		// to at all — not by this setting and not by an `![[base#view]]` embed.
+		expect(
+			mapViewNames({
+				views: [
+					{ type: 'table', name: 'events' },
+					{ type: 'map' },
+					{ type: 'map', name: '' },
+					{ type: 'cards', name: 'gallery' },
+					{ type: 'map', name: 'places' },
+				],
+			})
+		).toEqual(['places']);
+	});
+
+	it('answers nothing for a base with no views at all', () => {
+		expect(mapViewNames({})).toEqual([]);
+		expect(mapViewNames({ views: [] })).toEqual([]);
 	});
 });
 

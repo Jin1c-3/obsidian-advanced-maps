@@ -956,7 +956,8 @@ renders from definitions, so every setting is reachable from the search box at
 the top of the settings window; a tab that paints itself is invisible to it. The
 plugin already requires 1.13.1, so there was no older path to keep.
 
-Three things were measured rather than assumed, because none are in the docs:
+Four things were measured rather than assumed, and the last one contradicts the
+doc comment:
 
 - **A definition with neither a `control` nor a `render` never reaches the DOM.**
   The one-line intro under each heading was written as `{ name: '', desc }` first
@@ -969,12 +970,82 @@ Three things were measured rather than assumed, because none are in the docs:
 - **Re-opening the tab without closing the window leaves the previous render in
   the DOM.** A stale copy of a row is why the Amap key looked visible when it was
   not. Measure from a closed settings window.
+- **`getSettingDefinitions()` is _not_ called on every display**, whatever its
+  doc comment says. It runs when the tab is added and on `update()`, which stores
+  the result as `settingItems`; the pane renders from those, and its DOM is kept
+  and re-attached. Measured by wrapping all five of `display`, `hide`, `update`,
+  `getSettingDefinitions` and `refreshDomState` on a live tab and switching away
+  and back: `hide` fires on the way out, and **nothing at all** fires on the way
+  back — not even `display`. Anything that has to be fresh when the reader looks
+  at it therefore has to be refreshed on the way _out_, or by an `update()` from
+  wherever the underlying state changed.
 
 `setControlValue` is the one seam for everything that used to live in an
 `onChange`: it trims, applies the two fallbacks that a cleared field has, checks
 the two dropdown values against their own lists, and then does the side effects —
 `reprojectAll`, `resetLocator`, `refreshTracks`, and `update()` for the Amap key
 row that states its own visibility.
+
+### The base and its view are picked, not typed
+
+**The base file** is a `type: 'file'` control with
+`filter: (file) => file.extension === 'base'`, which renders a combobox with a
+chevron and a ✕ rather than a text box. Measured on a 395-file vault: the picker
+offered exactly the one `.base` in it, selecting wrote `basePath` as the full
+path with extension, and the ✕ wrote `''` — a string, not null, which is already
+what "not configured" means to `openInMap`.
+
+**The view** is an ordinary `dropdown` whose options are that base's map views.
+Which is the awkward one, because a base is a **file**: reading it is
+asynchronous and `getSettingDefinitions()` is not. So the read is started from
+there, `views` stays null until it lands, and the render carrying the answer is
+the `update()` afterwards. Five things hold it together:
+
+- **Null is "no answer"; the empty list is "no map views".** Collapsing the two
+  is the bug this shipped with for exactly one build, and it is worth reading the
+  screenshot for: a phone, a base holding a view called 地图, and a pane saying
+  该 base 里没有「地图」这个视图. A file that was not there answered `[]`, `[]`
+  said the base holds no map view, and a stored name against a base holding none
+  is a name the base does not have. Everything downstream was working correctly
+  on a wrong input.
+- **A read at plugin load waits for `onLayoutReady`.** That is where the null
+  came from: `addSettingTab` builds the definitions once, during load, and the
+  vault's file list is not necessarily populated yet — on a desktop it is, on a
+  phone it is not. The wait costs a microtask on a vault that has been open for a
+  while, and it is the difference between reading the base and reading nothing.
+- **A read with no answer is not cached.** `viewsPath` is dropped again, so the
+  next `update()` or `hide()` asks afresh rather than living with the miss until
+  the plugin reloads.
+- **`viewsPath` is set before the read, not after.** It marks a read as in
+  flight, so a second render does not start another, and a read whose base was
+  swapped while it was in the air recognises itself as stale and stands down.
+- **The re-render is skipped when the options come back identical**, compared as
+  the options rather than the names — a name can stay while its label changes.
+- **A name the base does not have is offered anyway, and labelled.** A dropdown
+  whose value is not among its options renders as the first one, so dropping a
+  stale name would show "the first map view" while the setting says otherwise.
+  Only against a base that was actually read, per the first point. The label
+  quotes the name (`该 base 里没有「地图」这个视图`) as `notice.viewNotFound`
+  already does: a view is usually named after what it shows, so unquoted it reads
+  as a statement about the base rather than about the name.
+- **The list is re-read in `hide()`**, because of the lifecycle fact above —
+  nothing fires when the pane is shown, so the moment to notice a view renamed in
+  Bases is the moment the pane goes away, with nobody watching it re-render.
+
+Only map views are offered: `pickMapView` matches a configured name against
+_every_ view, so a table named there is found and then opened as the map it is
+not. `mapViewNames` in `map-block.ts` is the pure half of that, and is tested.
+
+Both rows go through `setControlValue`, so the one write seam still holds.
+Measured on the real base with the settings window **open** — `update()` on a
+closed one recomputes the definitions and paints nothing, which is enough to make
+a reproduction look like it passed. Recording rather than writing: picking a view
+sent `viewName` as its name and the blank option sent `''`; an empty `basePath`
+left the row `disabled`; writing `basePath` re-asked exactly once; a stubbed
+rename flagged the stored name and a base with no map views at all flagged it
+too; and `getFileByPath` stubbed to null — the phone, reproduced — left the name
+plain and unflagged, cached nothing, and came back with the full list on the very
+next `update()`.
 
 ## Translations
 

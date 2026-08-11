@@ -6,6 +6,21 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.9.0]
+
+### Changed
+
+- **The base file and its view are picked from a list, not typed.** **Base file
+  path** offers the `.base` files in your vault, with a ✕ to clear it; **View
+  name** offers that base's map views, with _The first map view_ where blank
+  used to be. Nothing about what is stored has changed, so an existing setup
+  keeps working untouched — a path typed correctly and a view named correctly
+  simply appear as the entries they already were.
+- A view named in settings that the base does not hold is now offered anyway and
+  said to be missing, instead of leaving a dropdown that reads as blank while
+  the setting says otherwise. Rename a view in Bases and the row tells you,
+  rather than the map failing to open later.
+
 ## [1.8.0]
 
 ### Added
@@ -220,7 +235,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.8.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.9.0...HEAD
+[1.9.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.8.0...1.9.0
 [1.8.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.7.0...1.8.0
 [1.7.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.6.0...1.7.0
 [1.6.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.5.1...1.6.0

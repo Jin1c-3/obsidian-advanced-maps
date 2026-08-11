@@ -196,6 +196,15 @@ const en = {
 		'The .base file the map view is taken from — for this, the pop-up and the inserted map alike.',
 	'settings.open.viewName.name': 'View name',
 	'settings.open.viewName.desc': 'Which view inside that base. Blank takes its first map view.',
+	'open.view.first': 'The first map view',
+	/* A view named in settings that the base does not have — renamed since, or
+	 * left behind by a change of base. Said rather than dropped: a dropdown with
+	 * no matching option shows the first one, which would read as "blank".
+	 *
+	 * The name is quoted, as it is in `notice.viewNotFound`, because a view is
+	 * usually named after what it shows: unquoted, a view called "map" reads as
+	 * "map — no such view in this base", which sounds like the base has no map. */
+	'open.view.missing': '"{view}" — no such view in this base',
 	'settings.open.openIn.name': 'Open in',
 	'settings.open.openIn.desc':
 		'A tab opens the base file itself, so anything you change on the map is kept. A pop-up embeds the same view ' +
@@ -382,6 +391,8 @@ const zh: Record<TranslationKey, string> = {
 	'settings.open.basePath.desc': '从哪个 .base 文件取地图视图。这里、弹窗和插入的地图取的是同一个。',
 	'settings.open.viewName.name': '视图名称',
 	'settings.open.viewName.desc': '该 base 里的哪个视图。留空取第一个地图视图。',
+	'open.view.first': '第一个地图视图',
+	'open.view.missing': '该 base 里没有「{view}」这个视图',
 	'settings.open.openIn.name': '打开方式',
 	'settings.open.openIn.desc':
 		'标签页打开的是 base 文件本身，在地图上改的东西都会存下来。弹窗嵌入的是同一个视图，不动你的布局，' +

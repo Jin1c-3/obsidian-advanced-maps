@@ -1,4 +1,5 @@
 import {
+	parseYaml,
 	PluginSettingTab,
 	SecretComponent,
 	type App,
@@ -10,6 +11,7 @@ import { TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
 import { GEOCODE_PROVIDERS, KEY_STORES, type GeocodeProvider, type KeyStore } from './geocode';
 import { getLocale, t, type TranslationKey } from './i18n';
+import { mapViewNames, type BaseSpec } from './map-block';
 import {
 	CUSTOM_DATUMS,
 	customMaps,
@@ -211,11 +213,139 @@ function knownDatum(value: unknown): CustomDatum {
  * and `update()` re-asks.
  */
 export class AdvancedMapsSettingTab extends PluginSettingTab {
+	/**
+	 * The map views the configured base holds, and the base they came out of.
+	 *
+	 * A base is a file, so reading one is asynchronous and
+	 * `getSettingDefinitions()` is not. The read is started from there and the
+	 * render that has the answer is the one `update()` makes afterwards; until
+	 * then `views` is null.
+	 *
+	 * **Null is "no answer", and the empty list is "no map views".** Keeping those
+	 * two apart is what stops a base that could not be read — not there yet, or
+	 * mid-edit — from being reported as a base that does not hold the view named
+	 * in settings.
+	 *
+	 * `viewsPath` is set *before* the read rather than after, so a second render
+	 * arriving while the first read is still in the air does not start another —
+	 * and so a read whose base has been swapped since can recognise itself as
+	 * stale and stand down.
+	 */
+	private views: string[] | null = null;
+	private viewsPath: string | null = null;
+
 	constructor(
 		app: App,
 		private readonly plugin: AdvancedMapsPlugin
 	) {
 		super(app, plugin);
+	}
+
+	/**
+	 * Read the base again on the way out, for the next visit.
+	 *
+	 * A view can be renamed in Bases between two visits to this pane, and the
+	 * list is only right for as long as nobody has. The natural place to re-read
+	 * would be on the way *in* — except that nothing on the tab is called when it
+	 * is shown again. Measured on a running 1.13, by wrapping all five of
+	 * `display`, `hide`, `update`, `getSettingDefinitions` and `refreshDomState`
+	 * and switching tabs: `hide` fires on the way out and **nothing at all** fires
+	 * on the way back. A declarative pane renders from the `settingItems` that
+	 * `update()` stored, and its DOM is kept and re-attached, so `getSettingDefinitions()`
+	 * runs when the tab is added and on `update()` — not on every display, whatever
+	 * the doc comment says.
+	 *
+	 * So this is the seam: re-read while the pane is off screen, and the
+	 * `update()` it may cause happens with nobody watching it re-render.
+	 */
+	override hide(): void {
+		this.viewsPath = null;
+		void this.loadViews();
+		super.hide();
+	}
+
+	/**
+	 * The map views in a base — or **null**, which is "no answer", not "none".
+	 *
+	 * The difference is the whole of a bug this shipped with for one build. A file
+	 * that is not there answered the empty list, which is indistinguishable from a
+	 * base that genuinely holds no map view, and the view named in settings was
+	 * then flagged as one the base does not have. On a phone that is what the
+	 * reader saw: 地图 is in that base, and the pane said it was not.
+	 *
+	 * A base halfway through a hand edit is not this pane's to report on either —
+	 * `loadBase` says so with a notice, at the point where it matters.
+	 */
+	private async readViews(path: string): Promise<string[] | null> {
+		const file = path === '' ? null : this.app.vault.getFileByPath(path);
+		if (!file) return null;
+		try {
+			return mapViewNames((parseYaml(await this.app.vault.cachedRead(file)) as BaseSpec) ?? {});
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * Read the configured base's views, and re-render once they are in.
+	 *
+	 * Returns at once whenever the list already belongs to the configured base,
+	 * which is what keeps the `update()` below from re-entering itself — the
+	 * render it causes calls this again, and that call is the one that returns.
+	 */
+	private async loadViews(): Promise<void> {
+		const path = this.plugin.settings.basePath;
+		if (path === this.viewsPath) return;
+		// What is on screen right now, which is what the answer is worth comparing
+		// against — the options themselves rather than the names, since a name can
+		// stay and its label change.
+		const before = JSON.stringify(this.viewOptions());
+		this.viewsPath = path;
+		this.views = null;
+		// The vault's file list is not necessarily populated while plugins load,
+		// and this read starts there — `addSettingTab` builds the definitions once.
+		// Measured on a phone: the base was not found, the empty list was cached as
+		// the answer, and the pane then said the base had no view by that name.
+		// `onLayoutReady` fires at once when the layout is already up, so this costs
+		// a microtask on a vault that has been open for a while.
+		await new Promise<void>((resolve) => {
+			this.app.workspace.onLayoutReady(resolve);
+		});
+		const views = await this.readViews(path);
+		// Hidden, or pointed at another base, while the read was in the air.
+		if (this.viewsPath !== path) return;
+		this.views = views;
+		// No answer is not an answer to keep: forgetting which base it was for is
+		// what makes the next `update()` or `hide()` ask again.
+		if (views === null) this.viewsPath = null;
+		// Nothing on screen would change, and a re-render mid-keystroke elsewhere
+		// in the pane would take the focus with it.
+		if (JSON.stringify(this.viewOptions()) === before) return;
+		this.update();
+	}
+
+	/**
+	 * What the view dropdown offers: blank, the base's map views, and — when it
+	 * comes to that — the name in settings that the base does not have.
+	 *
+	 * That last one is the case worth writing down. A dropdown whose value is not
+	 * among its options renders as the first option, so dropping a stale name
+	 * would show "the first map view" while the setting says something else
+	 * entirely. It is offered and labelled instead, so the pane keeps saying what
+	 * is stored.
+	 *
+	 * Only against a base that was actually read, though — `views` null covers
+	 * both "not yet" and "could not be", and neither is grounds for telling
+	 * somebody their view is missing.
+	 */
+	private viewOptions(): Record<string, string> {
+		const options: Record<string, string> = { '': t('open.view.first') };
+		for (const name of this.views ?? []) options[name] = name;
+		const chosen = this.plugin.settings.viewName;
+		if (chosen !== '' && !(chosen in options)) {
+			options[chosen] = this.views === null ? chosen : t('open.view.missing', { view: chosen });
+		}
+		return options;
 	}
 
 	/**
@@ -403,6 +533,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	override getSettingDefinitions(): SettingDefinitionItem<ControlKey>[] {
+		// Started here because this is the one thing called on every render of the
+		// pane; it stands down at once unless the base has changed under it.
+		void this.loadViews();
 		const coordModes: Record<string, string> = {};
 		for (const mode of COORD_MODES) coordModes[mode] = t(`coord.${mode}`);
 		const providers: Record<string, string> = {};
@@ -422,10 +555,34 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			]),
 
 			this.group('open', [
-				this.text('settings.open.basePath.name', 'settings.open.basePath.desc', 'basePath', {
-					placeholder: BASE_PATH_PLACEHOLDER,
-				}),
-				this.text('settings.open.viewName.name', 'settings.open.viewName.desc', 'viewName'),
+				{
+					name: t('settings.open.basePath.name'),
+					desc: t('settings.open.basePath.desc'),
+					// Picked out of the vault rather than typed. The only file this can
+					// name is a `.base`, and `filter` is what says so — a path typed by
+					// hand is one misremembered folder away from `notice.baseNotFound`,
+					// and nothing on screen would say which half was wrong. What is
+					// stored is unchanged: the full path, extension and all, which is
+					// what `getFileByPath` is handed.
+					control: {
+						type: 'file',
+						key: 'basePath',
+						placeholder: BASE_PATH_PLACEHOLDER,
+						filter: (file) => file.extension === 'base',
+					},
+				},
+				{
+					name: t('settings.open.viewName.name'),
+					desc: t('settings.open.viewName.desc'),
+					control: {
+						type: 'dropdown',
+						key: 'viewName',
+						options: this.viewOptions(),
+						// Nothing to choose from, and a list of one blank line reads as
+						// something broken rather than as something not set up yet.
+						disabled: () => this.plugin.settings.basePath === '',
+					},
+				},
 				{
 					name: t('settings.open.openIn.name'),
 					desc: t('settings.open.openIn.desc'),
@@ -642,6 +799,11 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		switch (key) {
 			case 'coordSystem':
 				this.plugin.reprojectAll();
+				break;
+			case 'basePath':
+				// Another base has other views. This re-renders with what is known
+				// now — the list itself is read after, and re-renders again.
+				this.update();
 				break;
 			case 'geocodeProvider':
 				// The Amap key rows state when they are visible; this is what re-asks.

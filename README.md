@@ -156,8 +156,9 @@ The two features below are worth understanding together, because they share one
 idea: **you keep a single `.base` file, and every map in the vault is that base
 seen through a different filter.**
 
-Point **Base path** at it once, in settings. From then on that base is the
-answer to all three questions a map has to settle:
+Pick it once under **Base file path** in settings — the box lists the `.base`
+files in your vault, so there is no path to remember or type. From then on that
+base is the answer to all three questions a map has to settle:
 
 | Question                     | Where the answer lives                                             |
 | ---------------------------- | ------------------------------------------------------------------ |
@@ -173,14 +174,16 @@ a copy of your base — they reference it. A note that shows a map holds one lin
 and no configuration, which is also what lets those maps survive being edited,
 moved or synced by something else.
 
-Several unrelated sets of places? A base each is fine — **Base path** just names
-the one the commands use.
+Several unrelated sets of places? A base each is fine — **Base file path** just
+names the one the commands use.
 
 ### Open in map
 
 Notes carrying the coordinate property (`coords` by default) get an _Open in map_
-entry on their ⋮ menu and in the command palette. Leave **View name** blank to
-use that base's first map view. It is your base, with your filters, colours and
+entry on their ⋮ menu and in the command palette. **View name** lists that base's
+map views; leaving it on _The first map view_ takes whichever comes first, which
+is what you want until a base holds more than one. It is your base, with your
+filters, colours and
 icons — the camera is moved to that note and its popup opened. Nothing about the
 base is copied or rewritten.
 
@@ -235,7 +238,7 @@ entry, anything carrying a link back — arrives without being edited at all. Th
 note you are in joins as soon as it has a coordinate of its own and drops out
 again if you clear it, so you never have to link a note to itself.
 
-It reads the same **Base path** and **View name** as _Open in map_, and the added
+It reads the same **Base file path** and **View name** as _Open in map_, and the added
 view is copied from that map view, so the markers keep your coordinate property,
 icons and colours. Its centre and zoom are left free, so it frames whatever you
 have collected so far.

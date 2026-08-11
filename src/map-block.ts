@@ -88,6 +88,25 @@ export function findView(base: BaseSpec, name: string): BaseView | undefined {
 }
 
 /**
+ * Every map view a base holds, by name — what the settings dropdown offers.
+ *
+ * Map views only, because that is the whole of what the setting picks: a table
+ * named there would be found by `pickMapView`, which matches on the name alone,
+ * and then opened as the map it is not. A view with no name cannot be referred
+ * to at all, by this setting or by an `![[base#view]]` embed, so it is left out
+ * rather than offered as a blank line.
+ */
+export function mapViewNames(base: BaseSpec): string[] {
+	const names: string[] = [];
+	for (const view of base.views ?? []) {
+		if (view && view.type === 'map' && typeof view.name === 'string' && view.name !== '') {
+			names.push(view.name);
+		}
+	}
+	return names;
+}
+
+/**
  * Narrow a view down to the notes around the host, without discarding what it
  * already filtered on. A view can hold a bare expression, an `and`, an `or` or a
  * `not`, so only the `and` case can be appended to — everything else is nested
