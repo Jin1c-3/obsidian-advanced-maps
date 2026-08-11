@@ -175,11 +175,18 @@ describe('withAroundView', () => {
 
 describe('embedLink', () => {
 	it('writes the embed with the view as the fragment', () => {
-		expect(embedLink('moments.base', 'Around')).toBe('![[moments.base#Around]]\n');
+		expect(embedLink('moments.base', 'Around')).toBe('![[moments.base#Around]]');
 	});
 
 	// fileToLinktext may answer with a path when two bases share a basename.
 	it('takes the linktext as given', () => {
-		expect(embedLink('trips/places.base', '周围')).toBe('![[trips/places.base#周围]]\n');
+		expect(embedLink('trips/places.base', '周围')).toBe('![[trips/places.base#周围]]');
+	});
+
+	// `![[x.base#]]` resolves to nothing; the bare form opens the base's own
+	// first view, which is what a blank view name means everywhere else here.
+	it('leaves the fragment off rather than writing an empty one', () => {
+		expect(embedLink('moments.base')).toBe('![[moments.base]]');
+		expect(embedLink('moments.base', '')).toBe('![[moments.base]]');
 	});
 });

@@ -17,6 +17,7 @@ const en = {
 	'notice.viewNotFound': '{path} has no view named "{view}"',
 	'notice.noMapView': '{path} has no map view',
 	'notice.noCoords': '"{file}" has no {property}',
+	'notice.badCoords': '{property} of "{file}" is not a coordinate: {value}',
 	'notice.around.added': 'Added the "{view}" view to {path}',
 	'notice.around.writeFailed': 'Could not add the view to {path}: {error}',
 
@@ -185,20 +186,32 @@ const en = {
 	/* ---- settings: open in map ---- */
 	'settings.open.heading': 'Open in map',
 	'settings.open.intro':
-		"Pops up a base's map view centred on the note you are in, from its ⋮ menu or the command palette. It appears " +
-		'on notes whose coordinate property holds a value.',
+		"Opens a base's map view on the note you are in, from its ⋮ menu or the command palette. It appears on notes " +
+		'whose coordinate property holds a value.',
 	'settings.open.label.name': 'Menu item label',
 	'settings.open.label.desc':
 		'Blank for the default. The ⋮ menu follows at once, the command palette after a reload.',
 	'settings.open.basePath.name': 'Base file path',
 	'settings.open.basePath.desc':
-		'The .base file the map view is taken from — for the pop-up and the inserted map alike.',
+		'The .base file the map view is taken from — for this, the pop-up and the inserted map alike.',
 	'settings.open.viewName.name': 'View name',
 	'settings.open.viewName.desc': 'Which view inside that base. Blank takes its first map view.',
+	'settings.open.openIn.name': 'Open in',
+	'settings.open.openIn.desc':
+		'A tab opens the base file itself, so anything you change on the map is kept. A pop-up embeds the same view ' +
+		'and leaves your layout alone, but an embedded base has nowhere to write a change back to, so nothing you ' +
+		'change inside it survives closing it.',
+	'open.target.tab': 'A tab, reusing one already showing that base',
+	'open.target.modal': 'A pop-up',
 	'settings.open.coordsProperty.name': 'Coordinate property',
 	'settings.open.coordsProperty.desc':
 		'The property holding "latitude,longitude". Location, below, writes to this one too.',
-	'settings.open.zoom.name': 'Pop-up zoom level',
+	'settings.open.zoom.name': 'Zoom level',
+	'settings.open.zoom.desc': 'How close the map lands when it opens on a note. Following keeps the zoom you set.',
+	'settings.open.follow.name': 'Follow the active note',
+	'settings.open.follow.desc':
+		'A map open in a sidebar pans to the note you switch to, and opens its popup. Only sidebar maps follow — one ' +
+		'in the main area is a thing you are reading. The query is never touched, only the camera.',
 	'settings.open.aroundView.name': '"Around this note" view name',
 	'settings.open.aroundView.desc':
 		'The view added to that base for maps of the notes around a note. Renaming it here does not repoint maps ' +
@@ -236,6 +249,7 @@ const zh: Record<TranslationKey, string> = {
 	'notice.viewNotFound': '{path} 里没有「{view}」视图',
 	'notice.noMapView': '{path} 里没有地图视图',
 	'notice.noCoords': '「{file}」没有 {property}',
+	'notice.badCoords': '「{file}」的 {property} 不是坐标：{value}',
 	'notice.around.added': '已在 {path} 中添加「{view}」视图',
 	'notice.around.writeFailed': '无法向 {path} 添加视图：{error}',
 
@@ -361,16 +375,27 @@ const zh: Record<TranslationKey, string> = {
 
 	'settings.open.heading': '在地图中打开',
 	'settings.open.intro':
-		'从 ⋮ 菜单或命令面板弹窗打开指定 base 的地图视图，并以当前笔记为中心。只对坐标属性有值的笔记出现。',
+		'从 ⋮ 菜单或命令面板打开指定 base 的地图视图，并把镜头移到当前笔记上。只对坐标属性有值的笔记出现。',
 	'settings.open.label.name': '菜单项名称',
 	'settings.open.label.desc': '留空用默认名称。⋮ 菜单立即生效，命令面板要重载插件。',
 	'settings.open.basePath.name': 'Base 文件路径',
-	'settings.open.basePath.desc': '从哪个 .base 文件取地图视图。弹窗和插入的地图取的是同一个。',
+	'settings.open.basePath.desc': '从哪个 .base 文件取地图视图。这里、弹窗和插入的地图取的是同一个。',
 	'settings.open.viewName.name': '视图名称',
 	'settings.open.viewName.desc': '该 base 里的哪个视图。留空取第一个地图视图。',
+	'settings.open.openIn.name': '打开方式',
+	'settings.open.openIn.desc':
+		'标签页打开的是 base 文件本身，在地图上改的东西都会存下来。弹窗嵌入的是同一个视图，不动你的布局，' +
+		'但嵌入的 base 没有地方回写视图设置——在里面改的东西关掉就没了。',
+	'open.target.tab': '标签页（已打开该 base 的就复用）',
+	'open.target.modal': '弹窗',
 	'settings.open.coordsProperty.name': '坐标属性',
 	'settings.open.coordsProperty.desc': '存放「纬度,经度」的属性名。下面的定位写入的也是它。',
-	'settings.open.zoom.name': '弹窗缩放级别',
+	'settings.open.zoom.name': '缩放级别',
+	'settings.open.zoom.desc': '打开到某篇笔记时放大到的级别。跟随时不动缩放，保持你自己调的。',
+	'settings.open.follow.name': '跟随当前笔记',
+	'settings.open.follow.desc':
+		'侧边栏里打开的地图会跟着切换的笔记移动，并弹出它的气泡。只有侧边栏的地图会跟——主区域那张是你正在看的东西。' +
+		'只动镜头，不动查询条件。',
 	'settings.open.aroundView.name': '「周围」视图名称',
 	'settings.open.aroundView.desc':
 		'为「本篇相关笔记的地图」在该 base 中添加的视图。在这里改名不会改已经插入的地图——它们的链接指向旧名字。',

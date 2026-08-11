@@ -9,7 +9,8 @@
  *   · a zoom-to-fit control, and auto-framing that includes the tracks
  *   · GCJ-02 / BD-09 alignment for Chinese tile providers
  *   · inline maps for ![[track.gpx]] embeds
- *   · an "open in map" pop-up on a note's ⋮ menu
+ *   · "open in map" on a note's ⋮ menu, and a sidebar map that follows the note
+ *     being edited — both of them one camera move over the reader's own base
  *   · filling a note's blank coordinate property from the device's location,
  *     on the desktop as well as on mobile
  *
@@ -20,9 +21,10 @@
  * Maps lands here untouched.
  */
 
-import { Notice, parseFrontMatterAliases, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
-import type { CachedMetadata, Editor, TAbstractFile } from 'obsidian';
-import { TRACK_EXTS } from './constants';
+import { FileView, Notice, parseFrontMatterAliases, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
+import type { CachedMetadata, Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
+import { FOCUS_RETRY_MS, FOCUS_TRIES, TRACK_EXTS } from './constants';
+import { formatLatLng, parseLatLng } from './coords';
 import { TrackEmbed } from './embed';
 import { t } from './i18n';
 import { needsKey } from './geocode';
@@ -41,7 +43,7 @@ import { MapModal } from './modal';
 import { PlaceSearchModal } from './search-modal';
 import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMapsSettings } from './settings';
 import { TrackCache } from './track-cache';
-import { TrackLayer } from './track-layer';
+import { TrackLayer, type FocusTarget } from './track-layer';
 import { appendTrackOptions } from './view-options';
 import type { BasesMapView, BasesViewFactory, BasesViewRegistration, ComponentNode } from './types/obsidian-internals';
 
@@ -87,6 +89,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.registerLinkPaste();
 		this.registerPlaceSearch();
 		this.registerLocate();
+		// Its own listener rather than a line inside the one the locator already
+		// has on `file-open`: that one is about writing to the note, this one is
+		// about moving a camera, and neither should be able to break the other.
+		this.registerEvent(this.app.workspace.on('file-open', (file) => this.followActiveNote(file)));
 		this.addSettingTab(new AdvancedMapsSettingTab(this.app, this));
 
 		this.registerEvent(
@@ -424,34 +430,171 @@ export default class AdvancedMapsPlugin extends Plugin {
 		return { base, view, file: baseFile };
 	}
 
+	/**
+	 * Open the base's map on this note.
+	 *
+	 * Neither half of this writes anything. The base is *referenced* — opened as
+	 * itself in a leaf, or embedded in the pop-up — rather than copied with a
+	 * `center` spliced into it, which is what the first version of this did and
+	 * what froze every pop-up at the base as it stood when the map was written.
+	 * Where the note is, is a camera position, and a camera position belongs to
+	 * the camera.
+	 */
 	private async openMapForFile(file: TFile): Promise<void> {
 		const found = this.readCoords(file);
 		if (!found) {
 			new Notice(t('notice.noCoords', { file: file.basename, property: this.settings.coordsProperty }));
 			return;
 		}
-		const coords = String(found.raw);
+		const pair = parseLatLng(found.raw);
+		if (!pair) {
+			// A property with something in it that is not a place: a name typed in
+			// by hand, a half-finished edit. Worth saying, because the ⋮ item is
+			// there — `readCoords` only asks whether the property is empty.
+			new Notice(
+				t('notice.badCoords', {
+					file: file.basename,
+					property: this.settings.coordsProperty,
+					value: String(found.raw),
+				})
+			);
+			return;
+		}
 
 		const loaded = await this.loadBase();
 		if (!loaded) return;
-		const { base, view } = loaded;
 
-		const mapHeight = Math.max(200, Math.min(800, Math.round(window.innerHeight * 0.7)));
-		// An explicit centre needs an explicit zoom, otherwise auto-fit frames the
-		// whole data set instead of the note you opened.
-		const spec = stringifyYaml({
-			...base,
-			views: [{ ...view, center: coords, defaultZoom: this.settings.openZoom, mapHeight }],
-		});
+		// An explicit zoom, because this is a jump to a subject rather than a look
+		// around one. Following, which is the same move made automatically, passes
+		// none and keeps whatever zoom the reader chose.
+		const target: FocusTarget = { lat: pair[0], lng: pair[1], zoom: this.settings.openZoom, file };
+		if (this.settings.openIn === 'modal') this.openMapModal(loaded, file, found.frontmatter, target);
+		else await this.openMapLeaf(loaded, target);
+	}
 
+	/**
+	 * The pop-up: one embed line, and then the camera.
+	 *
+	 * The heading is what the modal has instead of a popup on the map — it opens
+	 * before the base has loaded, so it is the one thing that can say which note
+	 * this is a map of straight away.
+	 */
+	private openMapModal(
+		loaded: { view: BaseView; file: TFile },
+		note: TFile,
+		frontmatter: Record<string, unknown>,
+		target: FocusTarget
+	): void {
+		// fileToLinktext, so the embed is written the way Obsidian writes links —
+		// shortest unambiguous form, and correct when two bases share a basename.
+		const linktext = this.app.metadataCache.fileToLinktext(loaded.file, note.path);
 		// Obsidian's own parser, so `aliases: a, b` reads the way it does elsewhere.
 		// `place` is whatever the note put there, so it only gets to be the label
 		// when it is something a reader would recognise as one.
-		const place = found.frontmatter.place;
+		const place = frontmatter.place;
 		const label =
-			parseFrontMatterAliases(found.frontmatter)?.[0] ??
-			(typeof place === 'string' || typeof place === 'number' ? String(place) : file.basename);
-		new MapModal(this.app, file, spec, `${label} · ${coords}`).open();
+			parseFrontMatterAliases(frontmatter)?.[0] ??
+			(typeof place === 'string' || typeof place === 'number' ? String(place) : note.basename);
+		const coords = formatLatLng(target.lat, target.lng);
+		const modal = new MapModal(this.app, note.path, embedLink(linktext, loaded.view.name), `${label} · ${coords}`);
+		modal.open();
+		this.focusIn(modal.contentEl, target);
+	}
+
+	/**
+	 * The base file itself, in a leaf — its toolbar, its other views, and the one
+	 * thing neither the pop-up nor an embed has: a config that writes back to disk
+	 * when the reader changes something on the map.
+	 *
+	 * A leaf already showing that base is reused rather than added to. Pressing
+	 * this on one note after another is then a single map that keeps moving, which
+	 * is exactly what "follow the active note" does without being asked.
+	 */
+	private async openMapLeaf(loaded: { view: BaseView; file: TFile }, target: FocusTarget): Promise<void> {
+		const leaf = this.baseLeaf(loaded.file) ?? this.app.workspace.getLeaf('tab');
+		// The view name goes through the leaf's state, which is how Bases itself
+		// records which view a tab is on — read off a running Obsidian rather than
+		// guessed: `{ type: 'bases', state: { file, viewName } }`.
+		const state = loaded.view.name ? { viewName: loaded.view.name } : undefined;
+		await leaf.openFile(loaded.file, { active: true, state });
+		await this.app.workspace.revealLeaf(leaf);
+		this.focusIn(leaf.view.containerEl, target);
+	}
+
+	/** A leaf already showing this base, wherever it is — a tab, a split, a sidebar. */
+	private baseLeaf(file: TFile): WorkspaceLeaf | null {
+		let found: WorkspaceLeaf | null = null;
+		this.app.workspace.iterateAllLeaves((leaf) => {
+			if (found) return;
+			const view = leaf.view;
+			if (view instanceof FileView && view.getViewType() === 'bases' && view.file === file) found = leaf;
+		});
+		return found;
+	}
+
+	/* ---- pointing a map at a note ---- */
+
+	/** The layers drawing inside one element: a modal's body, or a leaf. */
+	private layersIn(container: HTMLElement): TrackLayer[] {
+		return [...this.layers].filter((layer) => {
+			const el = layer.view.containerEl;
+			return !!el && container.contains(el);
+		});
+	}
+
+	/**
+	 * Point whatever map is inside `container` at a place, however soon it turns
+	 * up.
+	 *
+	 * A base opened in a leaf already has its TrackLayer by the time `openFile`
+	 * resolves — measured — and `focus()` covers its map arriving a beat after
+	 * that. An embedded base is the one that has to be waited for: it is built
+	 * when the embed loads and there is no promise to await for it. So this asks
+	 * again, for as long as the container is on screen and no longer.
+	 */
+	focusIn(container: HTMLElement, target: FocusTarget): void {
+		let tries = 0;
+		const timer = window.setInterval(() => {
+			const layers = container.isConnected ? this.layersIn(container) : [];
+			if (layers.length === 0 && container.isConnected && ++tries <= FOCUS_TRIES) return;
+			window.clearInterval(timer);
+			for (const layer of layers) layer.focus(target);
+		}, FOCUS_RETRY_MS);
+		// Registered as well as cleared above, so a pop-up closed mid-wait — or the
+		// plugin being disabled — does not leave it ticking.
+		this.registerInterval(timer);
+	}
+
+	/**
+	 * A map in a sidebar keeping up with the note being edited.
+	 *
+	 * **The camera moves, never the query.** The filter belongs to Bases and to
+	 * whoever wrote the base; rewriting it to name one note — which is how the
+	 * other map plugin does this — takes the wheel off them.
+	 *
+	 * Only sidebar maps follow, and the zoom is left alone. A map in the main area
+	 * is something being read or arranged, and moving it because a note was
+	 * clicked in the file explorer is the same overreach one step smaller.
+	 */
+	private followActiveNote(file: TAbstractFile | null): void {
+		if (!this.settings.followActiveNote) return;
+		if (!(file instanceof TFile)) return;
+		const found = this.readCoords(file);
+		const pair = found ? parseLatLng(found.raw) : null;
+		if (!pair) return;
+		const target: FocusTarget = { lat: pair[0], lng: pair[1], animate: true, file };
+		for (const layer of this.sidebarLayers()) layer.focus(target);
+	}
+
+	/** The layers drawing outside the main area, which are the only ones that follow. */
+	private sidebarLayers(): TrackLayer[] {
+		const { workspace } = this.app;
+		const out: TrackLayer[] = [];
+		workspace.iterateAllLeaves((leaf) => {
+			if (leaf.getRoot() === workspace.rootSplit) return;
+			out.push(...this.layersIn(leaf.view.containerEl));
+		});
+		return out;
 	}
 
 	/* ---- a map of the notes around this one ---- */
@@ -513,7 +656,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// fileToLinktext, so the link is written the way Obsidian writes links —
 		// shortest unambiguous form, and correct when two bases share a basename.
 		const linktext = this.app.metadataCache.fileToLinktext(loaded.file, note.path);
-		editor.replaceSelection(embedLink(linktext, name));
+		editor.replaceSelection(embedLink(linktext, name) + '\n');
 	}
 
 	/**

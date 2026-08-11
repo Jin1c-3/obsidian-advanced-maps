@@ -125,7 +125,15 @@ export function withAroundView(base: BaseSpec, source: BaseView, name: string, f
 	return { ...base, views: [...(base.views ?? []), aroundView(source, name, filter)] };
 }
 
-/** The embed as it lands in the note. The fragment names the view. */
-export function embedLink(linktext: string, viewName: string): string {
-	return `![[${linktext}#${viewName}]]\n`;
+/**
+ * The embed as it lands in the note — and, without the newline, as the "open in
+ * map" pop-up renders the base rather than copying it.
+ *
+ * The fragment names the view. A blank name is the one case where it is left
+ * off: `![[x.base#]]` resolves to nothing at all, where `![[x.base]]` opens the
+ * base's own first view, which is what "no view name configured" means
+ * everywhere else here.
+ */
+export function embedLink(linktext: string, viewName?: string): string {
+	return viewName ? `![[${linktext}#${viewName}]]` : `![[${linktext}]]`;
 }

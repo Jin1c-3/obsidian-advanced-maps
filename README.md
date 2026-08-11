@@ -7,10 +7,11 @@
 
 Adds to Obsidian's built-in **Maps** view instead of replacing it: GPX, GeoJSON,
 KML and TCX tracks with distance, ascent and an elevation profile; zoom-to-fit;
-Chinese coordinate systems; inline `![[track.gpx]]` maps; an "open in map"
-pop-up; a one-line map of the notes around a note; and three ways to fill in a
-note's coordinates — paste a share link, search for the place, or take it from
-where you are, on the desktop too.
+Chinese coordinate systems; inline `![[track.gpx]]` maps; "open in map" on a
+note's ⋮ menu and a sidebar map that follows the note you are in; a one-line map
+of the notes around a note; and three ways to fill in a note's coordinates —
+paste a share link, search for the place, or take it from where you are, on the
+desktop too.
 
 Everything the built-in view already does — markers, icons, colours, tiles,
 popups, the right-click menu — stays the built-in view doing it. No Leaflet, no
@@ -27,7 +28,8 @@ vendored map library, no runtime dependencies at all.
 | Mainland Chinese basemaps don't serve WGS-84, so every pin floats several streets — up to a kilometre — off.      | Converts coordinates on the way to the map and back on the way out. Nothing on disk changes; your notes stay WGS-84.      |
 | The map opens on the whole world, or on wherever the config happens to point.                                     | Auto-frames markers _and_ tracks, and gets out of the way once you pan. A ⛶ button re-frames on demand.                   |
 | `![[track.gpx]]` in a note renders as a link.                                                                     | Renders it as a real map, inline.                                                                                         |
-| You want to see one note on the map without hunting for it in a base.                                             | An "open in map" entry on the note's ⋮ menu pops up your base's map view, centred on that note.                           |
+| You want to see one note on the map without hunting for it in a base.                                             | An "open in map" entry on the note's ⋮ menu opens your base's map view on that note, and opens its popup.                 |
+| A map in the sidebar and the note you are editing drift apart.                                                    | It follows: the camera moves to whichever note you switch to. The base's query is never touched.                          |
 | A trip note is about six places, and a note holds one coordinate.                                                 | One line embeds a map of the notes around it — linked, linking back, and itself. Drag a note in and it appears.           |
 | Somebody sends you a map share link and you have to dig the numbers out — in the right order, in the right datum. | Paste it. The coordinate is read and written as WGS-84, whatever the link was in.                                         |
 | You know the name of the place but not where it is.                                                               | Search for it and pick it off the list.                                                                                   |
@@ -163,8 +165,9 @@ answer to all three questions a map has to settle:
 | What does a pin look like?   | The base's formulas, through **Marker icon** and **Marker colour** |
 | Where is the coordinate?     | The map view's **Coordinates** property                            |
 
-So you tune the look once and every map follows: the pop-up from a note's ⋮
-menu, and every _Around_ map embedded anywhere in the vault. Add a formula for a
+So you tune the look once and every map follows: the one a note's ⋮ menu opens,
+the one a sidebar follows you with, and every _Around_ map embedded anywhere in
+the vault. Add a formula for a
 new icon and it appears on all of them, retroactively, because none of them carry
 a copy of your base — they reference it. A note that shows a map holds one line
 and no configuration, which is also what lets those maps survive being edited,
@@ -177,8 +180,32 @@ the one the commands use.
 
 Notes carrying the coordinate property (`coords` by default) get an _Open in map_
 entry on their ⋮ menu and in the command palette. Leave **View name** blank to
-use that base's first map view. The pop-up is your base, with your filters,
-colours and icons — just centred on that note.
+use that base's first map view. It is your base, with your filters, colours and
+icons — the camera is moved to that note and its popup opened. Nothing about the
+base is copied or rewritten.
+
+![A base's map view opened on one note: the camera on 楼外楼, its own pin and popup, the other places of that base still around it](docs/open-in-map.png)
+
+**Open in** picks where it appears:
+
+- **A tab** (the default) opens the base file itself, reusing a tab already
+  showing it rather than piling up new ones, so pressing this on one note after
+  another is a single map that keeps moving. Because it is the real file, a
+  change you make on the map — _Set default center point_, a background switch —
+  is kept.
+- **A pop-up** leaves your layout alone and embeds the same view. The cost is
+  stated rather than left to be found out: an embedded base has nowhere to write
+  a view option back to, so nothing you change inside the pop-up survives closing
+  it.
+
+### Follow the active note
+
+**Follow the active note** makes a map open in a **sidebar** pan to whichever
+note you switch to, and open its popup. Maps in the main area never follow — one
+of those is something you are reading, not a viewfinder. Your zoom is left as you
+set it, and the base's query is never touched: only the camera moves.
+
+![A note open in the editor and the same base's map in the sidebar, panned to that note's coordinate with its popup open](docs/follow-active-note.png)
 
 ### A map of the notes around a note
 

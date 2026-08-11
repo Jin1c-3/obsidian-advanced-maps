@@ -7,6 +7,7 @@ import {
 	gcj2wgs,
 	knownMode,
 	outOfChina,
+	parseLatLng,
 	projectCenter,
 	projectGeometry,
 	resolveSystem,
@@ -203,6 +204,36 @@ describe('projectGeometry', () => {
 
 	it('leaves empty coordinate lists alone', () => {
 		expect(projectGeometry({ type: 'LineString', coordinates: [] }, 'gcj02').coordinates).toEqual([]);
+	});
+});
+
+describe('parseLatLng', () => {
+	it('reads the shape a note holds, and the two a base file may', () => {
+		expect(parseLatLng('30.281019,120.119698')).toEqual([30.281019, 120.119698]);
+		expect(parseLatLng('30.281019, 120.119698')).toEqual([30.281019, 120.119698]);
+		expect(parseLatLng('[30.281019, 120.119698]')).toEqual([30.281019, 120.119698]);
+		expect(parseLatLng([30.281019, 120.119698])).toEqual([30.281019, 120.119698]);
+		expect(parseLatLng(['30.281019', '120.119698'])).toEqual([30.281019, 120.119698]);
+	});
+
+	/* Null rather than a pair with a NaN in it: every caller here goes on to hand
+	 * the numbers to MapLibre, where a NaN is a map that shows nothing and says
+	 * nothing about why. */
+	it('answers null for anything that is not a pair of numbers', () => {
+		expect(parseLatLng(undefined)).toBeNull();
+		expect(parseLatLng(null)).toBeNull();
+		expect(parseLatLng('')).toBeNull();
+		expect(parseLatLng('somewhere')).toBeNull();
+		expect(parseLatLng('30.28')).toBeNull();
+		expect(parseLatLng('a,b')).toBeNull();
+		expect(parseLatLng([30.28])).toBeNull();
+		expect(parseLatLng({ lat: 30.28, lng: 120.11 })).toBeNull();
+	});
+
+	/* `String({})` is "[object Object]", which parseFloat happens to answer NaN
+	 * for — by luck rather than by having checked. numberish() is what checks. */
+	it('does not read numbers out of an object it was handed inside a list', () => {
+		expect(parseLatLng([{}, {}])).toBeNull();
 	});
 });
 

@@ -10,6 +10,19 @@ export const POINT_LAYER = 'advanced-maps-track-points';
 export const MARKER_LAYER = 'marker-pins';
 
 /**
+ * How long to keep looking for the map a pop-up was opened to point at.
+ *
+ * A base opened in a leaf hands its TrackLayer back before `openFile` even
+ * resolves, but an embedded base is built when the embed decides to load, and
+ * there is no promise to await for that. Three seconds is far past what it takes
+ * on a cold vault and is bounded rather than indefinite, because the thing being
+ * waited for may never arrive at all — an embed of a base with no map view in it
+ * never builds a map.
+ */
+export const FOCUS_RETRY_MS = 100;
+export const FOCUS_TRIES = 30;
+
+/**
  * The three track knobs, each stated once.
  *
  * `def` is the value `DEFAULT_SETTINGS` starts at and a blank view option falls

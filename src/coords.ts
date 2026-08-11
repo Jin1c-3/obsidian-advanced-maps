@@ -211,27 +211,40 @@ export function formatLatLng(lat: number, lng: number): string {
 }
 
 /**
+ * The two numbers behind a coordinate, whichever of its shapes it arrived in:
+ * `"30.28,120.11"`, `"[30.28, 120.11]"` or `[30.28, 120.11]`. Latitude first,
+ * as everything that writes one here does.
+ *
+ * Null for anything that is not a pair of finite numbers — an empty property, a
+ * place name somebody typed in by hand, a one-element list. Stated once because
+ * two callers read the same shape for opposite reasons: `projectCenter` moves a
+ * base file's centre into tile space, and `focus()` points a camera at a note.
+ */
+export function parseLatLng(value: unknown): [number, number] | null {
+	let lat: number;
+	let lng: number;
+	if (Array.isArray(value)) {
+		lat = numberish(value[0]);
+		lng = numberish(value[1]);
+	} else {
+		if (typeof value !== 'string' && typeof value !== 'number') return null;
+		const parts = String(value).replace(/[[\]]/g, '').split(',');
+		if (parts.length < 2) return null;
+		lat = parseFloat(parts[0]);
+		lng = parseFloat(parts[1]);
+	}
+	return isFinite(lat) && isFinite(lng) ? [lat, lng] : null;
+}
+
+/**
  * A "lat,lng" string or [lat, lng] pair moved into tile space, given back in
  * the shape it arrived in — the built-in view accepts either and we must not
  * change which one a base file is using.
  */
 export function projectCenter(value: unknown, system: CoordSystem): unknown {
 	if (system === 'wgs84' || value === null || value === undefined) return value;
-	let lat: number;
-	let lng: number;
-	const wasArray = Array.isArray(value);
-	if (wasArray) {
-		const pair = value as unknown[];
-		lat = numberish(pair[0]);
-		lng = numberish(pair[1]);
-	} else {
-		if (typeof value !== 'string' && typeof value !== 'number') return value;
-		const parts = String(value).replace(/[[\]]/g, '').split(',');
-		if (parts.length < 2) return value;
-		lat = parseFloat(parts[0]);
-		lng = parseFloat(parts[1]);
-	}
-	if (!isFinite(lat) || !isFinite(lng)) return value;
-	const moved = toTileSpace(system, lng, lat);
-	return wasArray ? [moved[1], moved[0]] : `${moved[1]},${moved[0]}`;
+	const pair = parseLatLng(value);
+	if (!pair) return value;
+	const moved = toTileSpace(system, pair[1], pair[0]);
+	return Array.isArray(value) ? [moved[1], moved[0]] : `${moved[1]},${moved[0]}`;
 }

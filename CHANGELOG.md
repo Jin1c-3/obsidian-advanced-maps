@@ -6,6 +6,31 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.8.0]
+
+### Added
+
+- **Follow the active note.** A map open in a sidebar pans to whichever note you
+  switch to and opens its popup. Maps in the main area never follow — one of
+  those is something you are reading. Your zoom is left as you set it, and the
+  base's query is never touched: only the camera moves. Off by default.
+- **Open in** decides where _Open in map_ opens: a tab, or the pop-up it has
+  always used.
+
+### Changed
+
+- **_Open in map_ now opens your base rather than a copy of it**, and defaults to
+  a tab — reusing one already showing that base, so pressing it on one note after
+  another is a single map that keeps moving. The map is moved to the note and its
+  popup opened; nothing is written anywhere. This is what makes a change you make
+  on the map stick: the old pop-up rendered a **copy** of the base, so _Set
+  default center point_ and anything else you changed there was silently
+  discarded, and the copy was frozen at the moment it opened — a formula or
+  colour rule you had changed since was not in it.
+- The pop-up, for anyone who prefers it, now embeds the base instead of copying
+  it, so it is never out of date. Its edits still go nowhere, because an embedded
+  base has nowhere to write them back to; the setting says so.
+
 ## [1.7.0]
 
 ### Added
@@ -195,7 +220,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.7.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.8.0...HEAD
+[1.8.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.7.0...1.8.0
 [1.7.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.6.0...1.7.0
 [1.6.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.5.1...1.6.0
 [1.5.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.5.0...1.5.1

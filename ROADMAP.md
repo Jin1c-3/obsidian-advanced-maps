@@ -51,18 +51,6 @@ Needs a note picker — a `FuzzySuggestModal`, which this plugin does not have y
 — and `processFrontMatter`. The coordinate must be un-shifted exactly once; zero
 and two look identical on screen and land the pin ~500 m out.
 
-### Follow the active note
-
-An open map view panning to the note being edited, so a map in the sidebar keeps
-up with the editor.
-
-**Move the camera, never the query.** Map View does this by rewriting its filter
-to `path:"$PATH$"`; here the filter belongs to Bases and to whoever wrote the
-base, and taking it over would be grabbing the wheel. `file-open` → find the
-entry → `flyTo`, and optionally open its popup. Two things to settle: which view
-follows when several are open (the sidebar one, probably, not the one you are
-working in), and how following and `fit()`'s `userMoved` guard rank.
-
 ### Coordinates from a photo's EXIF
 
 A photo embedded in a note usually knows where it was taken. Reading its GPS

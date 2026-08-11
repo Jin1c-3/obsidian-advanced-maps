@@ -21,6 +21,19 @@ import {
 } from './maplinks';
 import type AdvancedMapsPlugin from './main';
 
+/**
+ * Where "open in map" opens.
+ *
+ * `tab` is the base file itself — its toolbar, its other views, and a config
+ * that writes back to disk when something on the map is changed. `modal` is a
+ * pop-up that embeds the same view: it disturbs nothing, and nothing changed
+ * inside it is kept, because neither an embedded base nor a code block has
+ * anywhere to write a view option back to. Measured, not assumed — see the
+ * settings text, which says so rather than letting it be found out.
+ */
+export const OPEN_TARGETS = ['tab', 'modal'] as const;
+export type OpenTarget = (typeof OPEN_TARGETS)[number];
+
 export interface AdvancedMapsSettings {
 	/** Default coordinate mode; a view option can override it. */
 	coordSystem: CoordMode;
@@ -32,12 +45,16 @@ export interface AdvancedMapsSettings {
 	/** The numbers under an inline map, and the chart under those. */
 	trackStats: boolean;
 	elevationProfile: boolean;
-	/** "Open in map" — the pop-up launched from a note's ⋮ menu. */
+	/** "Open in map" — the map launched from a note's ⋮ menu. */
 	basePath: string;
 	viewName: string;
 	coordsProperty: string;
 	openZoom: number;
 	menuLabel: string;
+	/** Whether that map is the base file itself, or a pop-up embedding it. */
+	openIn: OpenTarget;
+	/** Whether a map open in a sidebar keeps up with the note being edited. */
+	followActiveNote: boolean;
 	/** The view added to the base for "a map of the notes around this one". */
 	aroundViewName: string;
 	/* "Open in external map", on the map's own right-click menu. Both start
@@ -83,6 +100,12 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	coordsProperty: 'coords',
 	openZoom: 15,
 	menuLabel: '',
+	// The base itself, because it is the only one of the two whose edits are
+	// kept. A reader who would rather not have a tab appear can say so.
+	openIn: 'tab',
+	// Off: a camera that moves on its own is a surprise, and this one moves
+	// because of something happening in another pane entirely.
+	followActiveNote: false,
 	aroundViewName: '',
 	externalMaps: [],
 	customMaps: [],
@@ -386,6 +409,8 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		for (const provider of GEOCODE_PROVIDERS) providers[provider] = t(`search.provider.${provider}`);
 		const keyStores: Record<string, string> = {};
 		for (const store of KEY_STORES) keyStores[store] = t(`search.keyStore.${store}`);
+		const openTargets: Record<string, string> = {};
+		for (const target of OPEN_TARGETS) openTargets[target] = t(`open.target.${target}`);
 
 		return [
 			this.group('coord', [
@@ -401,10 +426,16 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					placeholder: BASE_PATH_PLACEHOLDER,
 				}),
 				this.text('settings.open.viewName.name', 'settings.open.viewName.desc', 'viewName'),
+				{
+					name: t('settings.open.openIn.name'),
+					desc: t('settings.open.openIn.desc'),
+					control: { type: 'dropdown', key: 'openIn', options: openTargets },
+				},
 				this.text('settings.open.coordsProperty.name', 'settings.open.coordsProperty.desc', 'coordsProperty', {
 					placeholder: DEFAULT_SETTINGS.coordsProperty,
 				}),
-				this.slider('settings.open.zoom.name', undefined, 'openZoom', 1, 18, 1),
+				this.slider('settings.open.zoom.name', 'settings.open.zoom.desc', 'openZoom', 1, 18, 1),
+				this.toggle('settings.open.follow.name', 'settings.open.follow.desc', 'followActiveNote'),
 				this.text('settings.open.aroundView.name', 'settings.open.aroundView.desc', 'aroundViewName', {
 					placeholder: t('view.around'),
 				}),
@@ -597,6 +628,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		}
 		if (key === 'amapKeyStore' && !(KEY_STORES as readonly unknown[]).includes(next)) {
 			next = DEFAULT_SETTINGS.amapKeyStore;
+		}
+		if (key === 'openIn' && !(OPEN_TARGETS as readonly unknown[]).includes(next)) {
+			next = DEFAULT_SETTINGS.openIn;
 		}
 		// Both lists go back through the same readers that made them whole on the
 		// way out, so what lands in data.json is what the next version will read —

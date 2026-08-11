@@ -39,7 +39,7 @@ src/
   map-block.ts       the "Around" view and its embed line   ← pure, tested
   track-layer.ts     everything added to one native map view
   embed.ts           inline ![[track.gpx]]
-  modal.ts           the "open in map" pop-up
+  modal.ts           the pop-up form of "open in map"
   settings.ts        settings tab and defaults
   locate.ts          device location, and when to stop asking ← tested
   geolink.ts         coordinates out of a pasted map link ← pure, tested
@@ -203,18 +203,130 @@ coordinates" **on a pin** was already right and needed nothing.
 Accuracy: GCJ round-trips to under a nanometre, BD to under 0.2 m; outside China
 both are the identity. `tests/coords.test.ts` holds those figures to account.
 
-## "Open in map"
+## "Open in map", and following the active note
 
-Renders the base as a ` ```base ` block rather than constructing a view directly
-— that is what carries the base's filters, formulas and properties across. Build
-the view spec by hand and you lose the icons, the colours and the scope. The spec
-overrides `center`, `defaultZoom` and `mapHeight` only, and sets both `center`
-and `defaultZoom` because an explicit centre without an explicit zoom just gets
-auto-fit back to the whole data set.
+Both are the same move: **point a camera at a note**. Neither copies the base,
+neither writes anything, and the whole of it is `TrackLayer.focus()` plus two
+callers.
+
+The first shape of "open in map" did copy: `parseYaml` → splice `center`,
+`defaultZoom` and `mapHeight` into the view → `stringifyYaml` → render as a
+` ```base ` block. It worked, and it was wrong twice over. A copy freezes the
+base's formulas at the moment the pop-up opened — the same lesson written down
+under "a map of the notes around a note" — and **nothing changed inside it goes
+anywhere**: measured, `config.set('defaultZoom', 7)` in that pop-up neither
+throws nor reaches disk. The value changes in memory, the file does not move.
+
+So the base is referenced instead, and where it is opened is a setting:
+
+- **`openIn: 'tab'`** (the default) opens the base file itself, preferring a leaf
+  that already shows it. The view is selected through the leaf's own state —
+  `{ type: 'bases', state: { file, viewName } }`, read off a running Obsidian —
+  and this is the only one of the two whose edits are kept, because a file view
+  writes its config back to the file. Measured both ways: the same `config.set`
+  that vanishes from a pop-up rewrites `moments.base` from a tab.
+- **`openIn: 'modal'`** renders one line, `![[moments.base#地图]]`, through
+  `MarkdownRenderer`. An embedded base is a reference, so nothing is frozen — but
+  it has nowhere to write a view option back to either, so its edits are lost
+  exactly as the code block's were. The settings text says so rather than leaving
+  it to be discovered.
+
+The pop-up cannot override `mapHeight` any more, since that would mean writing to
+the base. `applyMapHeight` sets it inline on the map element from the view's own
+config, so the one `!important` in `styles.css` is what gives the pop-up its
+height.
 
 The ⋮ menu item and the command only appear on markdown notes that actually hold
 the coordinate property. Changing the label updates the ⋮ menu immediately; the
 command palette entry picks up the new name after a plugin reload.
+
+### `focus()`, and the three things that take the camera back
+
+`TrackLayer.focus({ lat, lng, zoom?, animate?, file? })` takes WGS-84 — the space
+the note is written in — converts into tile space (same rule as everywhere else;
+on 高德 tiles a missed conversion is 500 m and looks fine), and moves the camera:
+`flyTo` for a map already on screen, `jumpTo` for one that has just been built.
+
+Pointing it is the easy half. **Keeping it there** is three separate fights, and
+two of them were only found on a phone:
+
+1. **`fit()`, on the next sync** — and Bases syncs on _any_ vault change while a
+   map is open. `held`, the last target, is what stands it down. `fit(true)` from
+   the ⛶ control still wins, because that is what `force` means.
+2. **The configured centre**, applied while the map is built. Handled by telling
+   the view its camera is under outside control, through the
+   `setEphemeralState({ center, zoom })` seam Obsidian's own back/forward restore
+   uses: `initializeMap` then builds the map with `pendingMapState` in place of
+   the configured centre.
+3. **The view's own `load` handler**, which frames every marker with
+   `fitBounds(bounds, { padding: 20 })` — **animated**, since it passes no
+   `animate: false`.
+
+The third is the one that made a map open on the right note and then glide out to
+the whole vault a few seconds later, on mobile only. Two facts collide:
+
+- **`pendingMapState` is one-shot.** The native data path is
+  `await markerManager.updateMarkers(data)` and then, if a pending state is
+  there, apply it and `this.pendingMapState = null`. So the guard that both the
+  `load` handler and `applyConfigToMap` consult dies at the first data update.
+  (`obsidian-maps/src/map-view.ts` — the consume at ~302, the `load` handler at
+  ~228. Read the checked-out source rather than the minified `main.js`.)
+- **`load` and that first data update are a race.** Measured on the desktop:
+  `load` at 1.07 s, the consume at 1.91 s — the handler stands down and nothing
+  is wrong. On a phone the tiles, glyphs and sprites are slower, `load` lands
+  after the consume, and the handler frames everything instead.
+
+So the fix is not to guard harder but to **put the camera back**: a `load`
+listener registered in `onMapCreated` — after the native one, so it runs in the
+same dispatch — re-aims at `held` unless the reader has since moved the map
+themselves. The animation the native handler started is cancelled by the new
+camera command rather than watched out.
+
+Reproduce it on a desktop without a phone: open a map on a note, then
+`view.pendingMapState = null; map.fire('load')`. Before the fix that lands on the
+whole data set; after it the camera does not move.
+
+Two timing facts, both measured rather than assumed:
+
+- A base opened in a leaf **has its TrackLayer before `openFile` resolves, but
+  not its map** — `view.map` is still null at that point and exists ~300 ms
+  later. Hence `pendingFocus`, applied in `onMapCreated`: the target is held as
+  WGS-84 because converting it early would mean converting it against a
+  `mapConfig` that does not exist yet.
+- An **embedded** base arrives whenever the embed decides to load, and there is
+  nothing to await. `focusIn(container, target)` therefore retries — bounded by
+  `FOCUS_TRIES`, and stopping the moment the container leaves the DOM.
+
+The popup is opened by handing `popupManager.showPopup` the note's own **WGS-84**
+value, because the wrapper on `showPopup` is what moves it into tile space; a
+converted one would be moved twice. A view has its map before it has its rows, so
+a target whose row is not there yet is kept for the end of the next `sync()` —
+once, then dropped, so a card cannot open by itself minutes later on a map that
+has since moved.
+
+### Following
+
+`file-open` → the note's coordinate → `focus()` on every layer drawing in a
+**sidebar**. Three decisions:
+
+- **The camera moves, never the query.** Map View does this by rewriting its
+  filter to `path:"$PATH$"`; here the filter belongs to Bases and to whoever
+  wrote the base.
+- **Sidebar only.** A map in the main area is something being read or arranged.
+  `leaf.getRoot() !== workspace.rootSplit` is the test.
+- **The zoom is left alone** — no `zoom` in the target, so MapLibre keeps it.
+  Measured: 3.1187 in, 3.1187 out. Zoom to where you want to sit and following
+  stays there; "open in map" passes `openZoom` because that is a jump to a
+  subject rather than a look around one.
+
+Measured live, on a real 292-note base: on WGS-84 tiles the camera lands on
+`30.281019,120.119698` exactly; on 高德 tiles it lands on
+`30.278740152713375,120.12447989117803`, which is `wgs2gcj` of the same point to
+the last digit — 525 m away, the size of the error either a missing or a doubled
+conversion would have made. A `sync()`, a `reproject()` and a late `load` all
+leave both unchanged, with `userMoved` still false — and `fit(true)` from the ⛶
+control still frames everything, which is the line between "the reader asked" and
+"something re-framed underneath them".
 
 ## A map of the notes around a note
 
@@ -782,7 +894,18 @@ private methods are all reachable from `eval`. What is worth asserting on:
 - **Restoration** — that the temporarily-swapped method is the original again
   afterwards.
 
-Two traps. `switchToTileSet` is followed asynchronously by `style.load` →
+Three traps. **Repeated `plugin:reload` can leave a view nobody owns.** Bases
+reuses its map view objects, and `__advancedMapsLayer` lives on the view — so a
+view enhanced by an instance that went away without detaching keeps the flag,
+`enhance()` skips it as "already ours" forever, and `plugin.layers` stays empty
+while everything on screen looks fine. It is self-sustaining: with no layer to
+detach, disabling the plugin cannot clear it either. The symptom is a feature
+that measures as doing nothing at all. `obsidian reload` — the whole window —
+clears it; a `delete view.__advancedMapsLayer` followed by `adoptOpenViews()`
+does too, if you want to see it recover. Measure a camera feature from a freshly
+reloaded window.
+
+`switchToTileSet` is followed asynchronously by `style.load` →
 `sync()` → `fit()`, so **settle before measuring**: a camera reading taken
 straight after the `await` is pre-`fit` and will look wrong. And `fit()` is the
 last word whenever a view pins neither `center` nor a zoom, so a camera assertion

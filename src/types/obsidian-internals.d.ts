@@ -184,6 +184,22 @@ export interface BasesMapView {
 	 * so all three answer in whatever space the tiles are drawn in.
 	 */
 	showMapContextMenu(ev: MouseEvent): void;
+	/**
+	 * Where the camera should be, kept apart from where the base file says it
+	 * should be. Obsidian's own back/forward restore is what this exists for, and
+	 * the shape is `{ center: { lng, lat }, zoom }` — **tile space**, since it is
+	 * handed to MapLibre unconverted.
+	 *
+	 * Read out of the Maps source rather than assumed, because three behaviours
+	 * hang off it: `initializeMap` builds the map with it in place of the
+	 * configured centre, the map's own `load` handler stands down while it is set,
+	 * and so does `applyConfigToMap`. `pendingMapState` below is where it lands.
+	 *
+	 * **It is one-shot** — the data path applies it and sets it to null — so it
+	 * holds a camera in place only until the first data update. `TrackLayer.held`
+	 * is what holds it after that; see the `focus()` notes in CLAUDE.md.
+	 */
+	setEphemeralState?(state: { center?: { lng: number; lat: number }; zoom?: number } | null): void;
 	onunload(): void;
 	/** Set by this plugin on the stub view an inline embed builds. */
 	__advancedMapsHeadless?: boolean;
@@ -263,6 +279,11 @@ export interface MapLibreMap {
 	off(type: string, listener: (ev: any) => void): void;
 	getCenter(): LngLat | null;
 	setCenter(center: LngLat): void;
+	getZoom?(): number;
+	/** A move around the map the reader can follow with their eyes. */
+	flyTo?(options: { center?: [number, number]; zoom?: number }): void;
+	/** …and the same move made instantly, for a map that has only just appeared. */
+	jumpTo?(options: { center?: [number, number]; zoom?: number }): void;
 	getBounds(): LngLatBounds;
 	fitBounds(bounds: LngLatBounds, options?: { padding?: number; maxZoom?: number; animate?: boolean }): void;
 	/** Pixel back to a coordinate — in tile space, like everything the map holds. */

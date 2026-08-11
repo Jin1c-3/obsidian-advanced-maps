@@ -47,6 +47,22 @@ interface DrawItem {
 	color: string;
 }
 
+/**
+ * Where a map is asked to point, in WGS-84 — the space the note is written in.
+ * Moving it into whatever space the tiles are drawn in is `focus()`'s job, and
+ * doing it anywhere else is how a pin ends up 500 m from its own street.
+ */
+export interface FocusTarget {
+	lat: number;
+	lng: number;
+	/** Left out to keep the zoom the reader chose, which is what following wants. */
+	zoom?: number;
+	/** A move across a map already on screen is worth watching; a map just built is not. */
+	animate?: boolean;
+	/** Whose popup to open on arrival, when that note is one of this view's own rows. */
+	file?: TFile;
+}
+
 type TrackFeature = Feature<Geometry, { amColor: string; amIndex: number }>;
 
 /**
@@ -106,10 +122,17 @@ export class TrackLayer {
 	private appliedSystem: CoordSystem | null = null;
 	/** The signature of what is currently on the map; null once nothing is. */
 	private drawn: string | null = null;
+	/** Where to point the camera, held until there is a camera to point. */
+	private pendingFocus: FocusTarget | null = null;
+	/** …and where it was pointed, held for as long as this map lives. */
+	private held: FocusTarget | null = null;
+	/** …and whose popup to open, held until the row it belongs to arrives. */
+	private pendingPopup: FocusTarget | null = null;
 
 	constructor(
 		private readonly plugin: AdvancedMapsPlugin,
-		private readonly view: BasesMapView
+		/** Public so the plugin can find the layer that draws inside a given element. */
+		readonly view: BasesMapView
 	) {}
 
 	private wrap<T extends object, K extends keyof T>(obj: T, key: K, make: (orig: T[K]) => T[K]): void {
@@ -240,6 +263,9 @@ export class TrackLayer {
 			this.drawn = null;
 			this.markerFeatures = null;
 			this.appliedSystem = null;
+			this.pendingFocus = null;
+			this.pendingPopup = null;
+			this.held = null;
 			this.locate?.restore();
 			this.locate = null;
 			orig.call(view);
@@ -388,12 +414,113 @@ export class TrackLayer {
 			this.sync().catch((e) => console.error('Advanced Maps: could not redraw tracks', e));
 		});
 
+		// The built-in view frames every marker when the map finishes loading,
+		// *animated*, unless it has a pending camera state at that moment — and
+		// that state is one-shot: the data path applies it and sets it to null. So
+		// whether the map has finished loading before or after the first data
+		// update decides whether a map opened on one note stays on it. Desktop
+		// wins that race and mobile loses it, which is exactly how it was found.
+		//
+		// Registered here, after the native handler, so it runs in the same
+		// dispatch and puts the camera back before a frame is drawn — the started
+		// animation is cancelled by the new camera command rather than watched.
+		map.on('load', () => {
+			if (this.held && !this.userMoved) this.aim(this.held, false);
+		});
+
 		// Once the reader takes the wheel, stop re-framing the map underneath
 		// them. Programmatic moves carry no originalEvent, so they do not count.
 		const mark = (ev?: { originalEvent?: unknown }) => {
 			if (ev && ev.originalEvent) this.userMoved = true;
 		};
 		for (const name of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) map.on(name, mark);
+
+		// Asked for before there was a map to ask — "open in map" gets its layer
+		// back from the leaf a beat before the view builds its map, measured.
+		const pending = this.pendingFocus;
+		if (pending) {
+			this.pendingFocus = null;
+			this.focus(pending);
+		}
+	}
+
+	/* ---- pointing the camera ---- */
+
+	/**
+	 * Point this map at one place: the note "open in map" was run on, or the note
+	 * that just became active.
+	 *
+	 * Keeping it there is the part that took measuring. Three things would
+	 * otherwise take the camera back:
+	 *
+	 * - `fit()`, on the next sync — and Bases syncs on *any* vault change while a
+	 *   map is open. `held` is what stands it down, and the ⛶ control still wins
+	 *   because that is what `force` means.
+	 * - The view's own `load` handler, which frames every marker. See
+	 *   `onMapCreated`.
+	 * - The configured centre, applied when the map is built.
+	 *
+	 * The last of those is handled by telling the view its camera is under outside
+	 * control, through the `setEphemeralState` seam Obsidian's own back/forward
+	 * restore uses. Worth knowing before relying on it: **it is one-shot**. The
+	 * native data path applies `pendingMapState` once the markers are up and then
+	 * sets it to null, so it cannot be the only thing holding a camera in place —
+	 * which is what `held` is for.
+	 */
+	focus(target: FocusTarget): void {
+		if (this.detached) return;
+		// No map yet, and no `mapConfig` either — so there is nothing to convert
+		// against. Hold the WGS-84 target and let onMapCreated ask again.
+		if (!this.view.map) {
+			this.pendingFocus = target;
+			return;
+		}
+		this.held = target;
+		this.aim(target, target.animate === true);
+		this.pendingPopup = this.showNotePopup(target) ? null : target;
+	}
+
+	/** The camera move itself, which is also what a later re-frame is undone with. */
+	private aim(target: FocusTarget, animate: boolean): void {
+		const view = this.view;
+		const map = view.map;
+		if (!map) return;
+		const [lng, lat] = toTileSpace(this.system(), target.lng, target.lat);
+		view.setEphemeralState?.({ center: { lng, lat }, zoom: target.zoom });
+		const move = { center: [lng, lat] as [number, number], zoom: target.zoom };
+		if (animate && typeof map.flyTo === 'function') map.flyTo(move);
+		else if (typeof map.jumpTo === 'function') map.jumpTo(move);
+		else map.setCenter({ lng, lat });
+	}
+
+	/**
+	 * Open the note's own popup where the camera landed, so a map that moves says
+	 * what it moved for.
+	 *
+	 * Only for a note the view holds a row for. One the base filters out has no
+	 * pin of its own, and a card floating over empty map would name a place that
+	 * is not on it. A view that has only just been built has its map before it has
+	 * its rows, which is what the pending slot above is for — answering false here
+	 * means "ask again once the data lands", once.
+	 */
+	private showNotePopup(target: FocusTarget): boolean {
+		const file = target.file;
+		if (!file) return true;
+		const view = this.view;
+		if (!view.data || !view.data.properties || !view.mapConfig || !view.config) return false;
+		const entry = view.data.data.find((row) => row.file === file);
+		if (!entry) return false;
+		const config = view.config;
+		// The note's own WGS-84 value. The wrapper on showPopup is what moves a
+		// popup into tile space; handing it a converted one moves it twice.
+		view.popupManager.showPopup(
+			entry,
+			[target.lat, target.lng],
+			view.data.properties,
+			view.markerManager.getMarkerDrivenProps(view.mapConfig),
+			(prop) => config.getDisplayName(prop)
+		);
+		return true;
 	}
 
 	/**
@@ -610,6 +737,13 @@ export class TrackLayer {
 		this.applyPaint();
 		this.bindInteractions();
 		this.fit(false);
+
+		// The rows a focus was waiting for. Cleared whether or not the note turned
+		// out to be one of them, so a card cannot open by itself minutes later on
+		// a map the reader has since moved somewhere else.
+		const waiting = this.pendingPopup;
+		this.pendingPopup = null;
+		if (waiting) this.showNotePopup(waiting);
 	}
 
 	private removeLayers(): void {
@@ -690,6 +824,10 @@ export class TrackLayer {
 		if (!map) return;
 		if (!force) {
 			if (this.userMoved) return;
+			// Pointed at a note deliberately, by "open in map" or by following.
+			// `pendingMapState` below says the same thing while it lasts, which is
+			// only until the first data update consumes it.
+			if (this.held) return;
 			if (view.pendingMapState) return;
 			if (view.mapConfig && view.mapConfig.center) return;
 			if (typeof view.hasConfiguredZoom === 'function' && view.hasConfiguredZoom()) return;

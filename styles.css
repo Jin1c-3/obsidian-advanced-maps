@@ -114,6 +114,15 @@
 	max-width: none;
 }
 
+/* The pop-up embeds the base rather than copying it, which means it can no
+ * longer overwrite `mapHeight` on the way in — and an embedded map view writes
+ * its height inline, from `applyMapHeight`, on every config apply. So this is
+ * the one rule in the sheet that has to outrank an inline style: a pop-up takes
+ * the height the window can spare, not the height a base view was written for. */
+.advanced-maps-modal .bases-map {
+	height: min(70vh, 800px) !important;
+}
+
 /* ---- "set coordinates from a link" ---- */
 
 .advanced-maps-link-modal {
