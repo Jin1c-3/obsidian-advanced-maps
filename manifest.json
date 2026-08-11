@@ -1,7 +1,7 @@
 {
 	"id": "advanced-maps",
 	"name": "Advanced Maps",
-	"version": "1.6.0",
+	"version": "1.7.0",
 	"minAppVersion": "1.13.1",
 	"description": "Supercharge the built-in Maps view: GPX/GeoJSON tracks drawn from note embeds, zoom-to-fit, GCJ-02/BD-09 tile alignment, inline rendering for ![[track.gpx]], and coordinates from a pasted map link, a place search or your device.",
 	"author": "Jin1c-3",
