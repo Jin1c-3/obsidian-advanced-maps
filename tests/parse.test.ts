@@ -47,6 +47,11 @@ describe('parseGpx', () => {
 		expect(types.filter((t) => t === 'LineString')).toHaveLength(3);
 		expect(types.filter((t) => t === 'Point')).toHaveLength(1);
 		expect(waypoints).toBe(1);
+		// GPX_EVERYTHING's <wpt> carries <name>Bund</name> — the waypoint's own
+		// name, threaded through the same buildProperties() a KML placemark's
+		// name already goes through.
+		const point = features.find((f) => f.geometry.type === 'Point');
+		expect(point?.properties).toEqual({ name: 'Bund' });
 	});
 
 	it('drops a segment that cannot make a line', () => {
@@ -54,6 +59,9 @@ describe('parseGpx', () => {
 		const { features } = parseGpx(single);
 		expect(features).toHaveLength(1);
 		expect(features[0].geometry.type).toBe('Point');
+		// This <wpt> has no <name>, so the established null-properties contract
+		// holds — not {} and not { name: undefined }.
+		expect(features[0].properties).toBeNull();
 	});
 
 	it('ignores points with unusable coordinates', () => {

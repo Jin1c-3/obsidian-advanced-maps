@@ -75,6 +75,7 @@ const en = {
 	'command.fillCoords': 'Fill coordinates from current location',
 	'command.fillFromLink': 'Set coordinates from a map link',
 	'command.searchPlace': 'Search for a place and set coordinates',
+	'command.reverseGeocode': 'Fill place name from coordinates',
 
 	/* ---- "set coordinates from a link" ---- */
 	'link.title': 'Set coordinates from a map link',
@@ -110,6 +111,10 @@ const en = {
 	'notice.search.failed': 'Advanced Maps: the search failed — {reason}',
 	'notice.search.needsKey': 'Advanced Maps: add an Amap web-service key in the plugin settings, or switch provider.',
 
+	/* ---- reverse geocoding ---- */
+	'notice.reverseGeocode.failed': 'Advanced Maps: could not look up a place name — {reason}',
+	'notice.reverseGeocode.done': '{property}: {value}',
+
 	/* ---- settings: external maps ---- */
 	'settings.external.heading': 'Open in external map',
 	'settings.external.intro':
@@ -140,9 +145,10 @@ const en = {
 	/* ---- settings: place search ---- */
 	'settings.search.heading': 'Place search',
 	'settings.search.intro':
-		'Looks a place name up and writes the coordinate it comes back with. This is the only request the plugin ' +
-		'makes on its own behalf — what you type goes to the source below, and nothing else does. A map on screen ' +
-		'still fetches tiles from whichever background it is set to.',
+		'Looks a place name up and writes the coordinate it comes back with — and, the other way round, turns a ' +
+		"note's coordinate into a place name. These are the only two requests the plugin makes on its own behalf, " +
+		'both to the source below; nothing else does. A map on screen still fetches tiles from whichever background ' +
+		'it is set to.',
 	'settings.search.provider.name': 'Search provider',
 	'settings.search.provider.desc': 'Amap knows Chinese places far better; OpenStreetMap needs no signing up.',
 	'settings.search.keyStore.name': 'Where to keep the Amap key',
@@ -215,6 +221,8 @@ const en = {
 	'settings.open.coordsProperty.name': 'Coordinate property',
 	'settings.open.coordsProperty.desc':
 		'The property holding "latitude,longitude". Location, below, writes to this one too.',
+	'settings.open.placeProperty.name': 'Place property',
+	'settings.open.placeProperty.desc': 'The property "Fill place name from coordinates" writes its result into.',
 	'settings.open.zoom.name': 'Zoom level',
 	'settings.open.zoom.desc': 'How close the map lands when it opens on a note. Following keeps the zoom you set.',
 	'settings.open.follow.name': 'Follow the active note',
@@ -246,6 +254,10 @@ const en = {
 		'and what is missing is left out rather than shown as zero.',
 	'settings.tracks.profile.name': 'Show the elevation profile',
 	'settings.tracks.profile.desc': 'A small chart under the statistics, for files that record elevation.',
+	'settings.tracks.markers.name': 'Show track markers',
+	'settings.tracks.markers.desc':
+		'A start and an end pin on every track, direction arrows along it, and — on inline maps — a waypoint’s ' +
+		'own name on hover.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -305,6 +317,7 @@ const zh: Record<TranslationKey, string> = {
 	'command.fillCoords': '用当前定位填写坐标',
 	'command.fillFromLink': '从地图链接填写坐标',
 	'command.searchPlace': '搜索地点并填写坐标',
+	'command.reverseGeocode': '从坐标填写地名',
 
 	'link.title': '从地图链接填写坐标',
 	'link.intro':
@@ -337,6 +350,9 @@ const zh: Record<TranslationKey, string> = {
 	'notice.search.failed': 'Advanced Maps：搜索失败 —— {reason}',
 	'notice.search.needsKey': 'Advanced Maps：请在插件设置里填高德 Web 服务 key，或者换一个搜索源。',
 
+	'notice.reverseGeocode.failed': 'Advanced Maps：查找地名失败——{reason}',
+	'notice.reverseGeocode.done': '{property}：{value}',
+
 	'settings.external.heading': '用外部地图打开',
 	'settings.external.intro':
 		'在地图上右键一个位置时给出的选项。可以给内置的几个排序、把用不上的关掉，也可以自己添加任何能用 URL 接收坐标的地图应用。',
@@ -358,7 +374,7 @@ const zh: Record<TranslationKey, string> = {
 
 	'settings.search.heading': '地点搜索',
 	'settings.search.intro':
-		'搜地名，把查到的坐标写进笔记。这是插件自己发起的唯一一次请求：只有你输入的内容会发给下面选的搜索源，别的都不会。地图本身仍然会向所配置的底图服务请求瓦片。',
+		'搜地名，把查到的坐标写进笔记；反过来，也能把笔记的坐标查成地名。这是插件自己发起的仅有的两次请求，都会发往下面选的搜索源，别的都不会。地图本身仍然会向所配置的底图服务请求瓦片。',
 	'settings.search.provider.name': '搜索源',
 	'settings.search.provider.desc': '高德对国内地点熟得多；OpenStreetMap 不用注册。',
 	'settings.search.keyStore.name': '高德 key 存在哪',
@@ -401,6 +417,8 @@ const zh: Record<TranslationKey, string> = {
 	'open.target.modal': '弹窗',
 	'settings.open.coordsProperty.name': '坐标属性',
 	'settings.open.coordsProperty.desc': '存放「纬度,经度」的属性名。下面的定位写入的也是它。',
+	'settings.open.placeProperty.name': '地名属性',
+	'settings.open.placeProperty.desc': '「从坐标填写地名」命令写入结果的属性名。',
 	'settings.open.zoom.name': '缩放级别',
 	'settings.open.zoom.desc': '打开到某篇笔记时放大到的级别。跟随时不动缩放，保持你自己调的。',
 	'settings.open.follow.name': '跟随当前笔记',
@@ -426,6 +444,9 @@ const zh: Record<TranslationKey, string> = {
 		'在内联地图下方显示距离、爬升和时间。GPX 和 TCX 带这些信息，GeoJSON 通常两样都没有；缺的那几项直接不显示，而不是显示成 0。',
 	'settings.tracks.profile.name': '显示高程剖面',
 	'settings.tracks.profile.desc': '统计下面的小图，只对记录了高程的文件出现。',
+	'settings.tracks.markers.name': '显示轨迹标记',
+	'settings.tracks.markers.desc':
+		'每条轨迹的起点和终点图钉、沿线的方向箭头，以及——仅内联地图——悬停显示途经点自己的名称。',
 };
 
 const LOCALES = { en, zh } as const;

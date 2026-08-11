@@ -6,6 +6,42 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.10.0]
+
+### Added
+
+- **Fill place name from coordinates.** Reverse geocodes a note's coordinate
+  property through whichever place-search provider and key you already
+  configured, and writes the result into a new property (**Place property** in
+  settings, default `location`) — overwriting it, since running the command is
+  the explicit ask. Not behind **Enable location**: no permission prompt,
+  nothing about where you are recorded — but the coordinate you already had
+  does leave the vault this way, which [What leaves your
+  vault](README.md#what-leaves-your-vault) now says.
+- **Start and end markers, direction arrows, and waypoint names.** Every track
+  now shows a start pin and a differently-shaped end pin, and arrows along the
+  line pointing which way it goes; a waypoint that carries its own name shows
+  it on hover, on an inline `![[track.gpx]]` map. One setting, **Show track
+  markers**, default on, sits beside track statistics and the elevation
+  profile. Base map views get the pins and arrows too — the waypoint-name
+  tooltip is inline-only for now, since a base view's hover already opens the
+  note's own popup.
+- **The elevation profile now links to the map.** Hovering it moves a point
+  along the track on the map; hovering the track moves the point along the
+  profile. Both leave when the pointer does. Inline embeds only — a base map
+  view has no profile to link to.
+
+### Changed
+
+- **A plain `[[track.gpx]]` now puts the track on the map too**, as does a
+  `track: "[[track.gpx]]"` property — where before only `![[track.gpx]]` did.
+  The `!` is now the whole difference, exactly as it is everywhere else in
+  Obsidian: with it you get an inline map in the note _and_ the line on every
+  base map, without it only the line. That is the answer to a note that already
+  holds a map of its own and does not want a second one under it
+  ([#6](https://github.com/Jin1c-3/obsidian-advanced-maps/issues/6)). Nothing
+  existing changes meaning — every embed that drew a track still draws it.
+
 ## [1.9.0]
 
 ### Changed
@@ -235,7 +271,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.9.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.0...HEAD
+[1.10.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.9.0...1.10.0
 [1.9.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.8.0...1.9.0
 [1.8.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.7.0...1.8.0
 [1.7.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.6.0...1.7.0

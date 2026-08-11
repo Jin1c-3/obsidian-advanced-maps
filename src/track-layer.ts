@@ -5,7 +5,7 @@
 import { Keymap, Menu } from 'obsidian';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { TFile } from 'obsidian';
-import { LINE_LAYER, POINT_LAYER, SRC, type TrackKnob } from './constants';
+import { ARROW_LAYER, ENDPOINT_LAYER, LINE_LAYER, POINT_LAYER, SRC, type TrackKnob } from './constants';
 import {
 	knownMode,
 	projectCenter,
@@ -15,7 +15,7 @@ import {
 	toWgs84,
 	type CoordSystem,
 } from './coords';
-import { boundsOf, styleReady, trackKnob } from './geometry';
+import { boundsOf, styleReady, trackFeatures, trackKnob, type TrackFeatureProps } from './geometry';
 import { getLocale, t } from './i18n';
 import {
 	applyTrackPaint,
@@ -63,7 +63,7 @@ export interface FocusTarget {
 	file?: TFile;
 }
 
-type TrackFeature = Feature<Geometry, { amColor: string; amIndex: number }>;
+type TrackFeature = Feature<Geometry, TrackFeatureProps>;
 
 /**
  * Can this Obsidian build nest menus? `MenuItem.setSubmenu` is undeclared, so
@@ -107,7 +107,7 @@ function override<T extends object, K extends keyof T>(obj: T, key: K, make: (or
 
 export class TrackLayer {
 	private items: DrawItem[] = [];
-	private data: FeatureCollection<Geometry, { amColor: string; amIndex: number }> | null = null;
+	private data: FeatureCollection<Geometry, TrackFeatureProps> | null = null;
 	private userMoved = false;
 	private interactionsBound = false;
 	private detached = false;
@@ -649,22 +649,13 @@ export class TrackLayer {
 		return this.resolve(raw || this.plugin.settings.trackColor);
 	}
 
-	private build(
-		items: DrawItem[],
-		system: CoordSystem
-	): FeatureCollection<Geometry, { amColor: string; amIndex: number }> {
+	private build(items: DrawItem[], system: CoordSystem): FeatureCollection<Geometry, TrackFeatureProps> {
 		const features: TrackFeature[] = [];
 		items.forEach((item, index) => {
 			for (const trackFile of item.trackFiles) {
 				const rec = this.plugin.tracks.get(trackFile.path);
 				if (!rec || rec.error) continue;
-				for (const feature of projectedFeatures(rec, system)) {
-					features.push({
-						type: 'Feature',
-						geometry: feature.geometry,
-						properties: { amColor: item.color, amIndex: index },
-					});
-				}
+				features.push(...trackFeatures(projectedFeatures(rec, system), item.color, index));
 			}
 		});
 		return { type: 'FeatureCollection', features };
@@ -757,7 +748,8 @@ export class TrackLayer {
 			map,
 			this.knob('trackWeight'),
 			this.knob('trackOpacity') / 100,
-			this.resolve('var(--background-primary)')
+			this.resolve('var(--background-primary)'),
+			this.plugin.settings.trackMarkers
 		);
 	}
 
@@ -768,7 +760,11 @@ export class TrackLayer {
 		const map = this.view.map;
 		if (!map) return;
 		this.interactionsBound = true;
-		for (const layer of [LINE_LAYER, POINT_LAYER]) {
+		// Endpoint pins and direction arrows share the click-to-open,
+		// hover-shows-the-note-popup behaviour of the line and the waypoint dots
+		// "for free" — same source, same amIndex, so itemFrom() resolves them the
+		// same way it resolves everything else.
+		for (const layer of [LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER]) {
 			map.on('click', layer, (ev: MapMouseEvent) => this.open(ev));
 			map.on('mousemove', layer, (ev: MapMouseEvent) => this.hover(ev));
 			map.on('mouseenter', layer, () => map.getCanvas().addClass('is-over-marker'));

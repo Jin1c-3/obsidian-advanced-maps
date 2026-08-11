@@ -21,19 +21,20 @@ vendored map library, no runtime dependencies at all.
 
 ## What it fixes
 
-| Problem                                                                                                           | What this plugin does                                                                                                     |
-| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| A note has a `.gpx` from a walk attached, and the map shows only a pin.                                           | Draws the track, in that note's colour. Hover for its popup, click to open it.                                            |
-| The `.gpx` knows how far you walked and how much you climbed, and nothing ever tells you.                         | Distance, ascent, moving time and pace under the inline map, with an elevation profile.                                   |
-| Mainland Chinese basemaps don't serve WGS-84, so every pin floats several streets — up to a kilometre — off.      | Converts coordinates on the way to the map and back on the way out. Nothing on disk changes; your notes stay WGS-84.      |
-| The map opens on the whole world, or on wherever the config happens to point.                                     | Auto-frames markers _and_ tracks, and gets out of the way once you pan. A ⛶ button re-frames on demand.                   |
-| `![[track.gpx]]` in a note renders as a link.                                                                     | Renders it as a real map, inline.                                                                                         |
-| You want to see one note on the map without hunting for it in a base.                                             | An "open in map" entry on the note's ⋮ menu opens your base's map view on that note, and opens its popup.                 |
-| A map in the sidebar and the note you are editing drift apart.                                                    | It follows: the camera moves to whichever note you switch to. The base's query is never touched.                          |
-| A trip note is about six places, and a note holds one coordinate.                                                 | One line embeds a map of the notes around it — linked, linking back, and itself. Drag a note in and it appears.           |
-| Somebody sends you a map share link and you have to dig the numbers out — in the right order, in the right datum. | Paste it. The coordinate is read and written as WGS-84, whatever the link was in.                                         |
-| You know the name of the place but not where it is.                                                               | Search for it and pick it off the list.                                                                                   |
-| Filling in a note's coordinates by hand.                                                                          | Stamps a template's blank `coords:` with where you are — including on desktop, which the plugins before this one skipped. |
+| Problem                                                                                                           | What this plugin does                                                                                                                            |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A note has a `.gpx` from a walk attached, and the map shows only a pin.                                           | Draws the track, in that note's colour. Hover for its popup, click to open it.                                                                   |
+| A track is just a line — no sense of which way it went, or where it started and ended.                            | A start pin, a different end pin, and direction arrows along the line. A named waypoint shows its name on hover, inline.                         |
+| The `.gpx` knows how far you walked and how much you climbed, and nothing ever tells you.                         | Distance, ascent, moving time and pace under the inline map, with an elevation profile you can hover to find a point on the map, and vice versa. |
+| Mainland Chinese basemaps don't serve WGS-84, so every pin floats several streets — up to a kilometre — off.      | Converts coordinates on the way to the map and back on the way out. Nothing on disk changes; your notes stay WGS-84.                             |
+| The map opens on the whole world, or on wherever the config happens to point.                                     | Auto-frames markers _and_ tracks, and gets out of the way once you pan. A ⛶ button re-frames on demand.                                          |
+| `![[track.gpx]]` in a note renders as a link.                                                                     | Renders it as a real map, inline. Drop the `!` and the track still reaches every base map, with no second map in the note.                       |
+| You want to see one note on the map without hunting for it in a base.                                             | An "open in map" entry on the note's ⋮ menu opens your base's map view on that note, and opens its popup.                                        |
+| A map in the sidebar and the note you are editing drift apart.                                                    | It follows: the camera moves to whichever note you switch to. The base's query is never touched.                                                 |
+| A trip note is about six places, and a note holds one coordinate.                                                 | One line embeds a map of the notes around it — linked, linking back, and itself. Drag a note in and it appears.                                  |
+| Somebody sends you a map share link and you have to dig the numbers out — in the right order, in the right datum. | Paste it. The coordinate is read and written as WGS-84, whatever the link was in.                                                                |
+| You know the name of the place but not where it is.                                                               | Search for it and pick it off the list.                                                                                                          |
+| Filling in a note's coordinates by hand.                                                                          | Stamps a template's blank `coords:` with where you are — including on desktop, which the plugins before this one skipped.                        |
 
 ## Requirements
 
@@ -60,6 +61,21 @@ Attach a `.gpx`, `.geojson`, `.kml` or `.tcx` to a note — `![[2026-04-12.gpx]]
 configure, and no need to widen the base's filters to let attachment files in. A
 base that queries `file.ext == "gpx"` directly works too.
 
+A plain `[[2026-04-12.gpx]]`, or a `track: "[[2026-04-12.gpx]]"` property, counts
+just the same — and that is how you say **track on the map, no map in the note**.
+The `!` is the difference, exactly as it is everywhere else in Obsidian: with it
+you get the line on every base map _and_ an inline map right there in the note;
+without it, only the line. Worth knowing if your note already holds a map of its
+own.
+
+Every track also gets a start pin, a differently-shaped end pin, and arrows
+along it showing which way it goes — on a base map view and on an inline embed
+alike. A waypoint that carries its own name shows it on hover, but only on an
+inline map: a base view's hover already opens the note's own popup, and a
+second tooltip on the same hover would fight it rather than add to it. One
+setting, **Show track markers**, defaults on and turns all of this off
+together.
+
 ### Inline maps, and what the track knows
 
 The same embed renders as a real map in the note itself — pan it, zoom it, switch
@@ -72,6 +88,11 @@ the average pace. Whatever the file does not record is left out rather than show
 as zero — a `.geojson` usually has no elevation and no timestamps, so it gets a
 distance and nothing else. Hover any number to see what it is. Both the line and
 the profile can be switched off in settings.
+
+The profile and the map are linked, both ways: hover the profile and a point
+moves along the track on the map; hover the track on the map and the same point
+appears on the profile. Inline embeds only — a base map view has no profile to
+link to.
 
 Two of those are less obvious than they look, and both are set the careful way:
 **ascent** ignores drift under 5 m, because raw GPS elevation is noisy enough to
@@ -300,12 +321,30 @@ plain text. New installs start on secret storage; a key you had before this
 existed stays where it was until you move it, and switching carries it across
 rather than clearing it.
 
-This is **the only request the plugin makes on its own behalf**, and only while
-the search box is open: what goes out is what you typed, to the source you
-picked. No telemetry, no note contents, no coordinates you already had.
+Together with the command below, this is **one of the two requests the plugin
+makes on its own behalf**: what goes out is what you typed, or — for the other
+one — the one coordinate you asked it to look up, to the source you picked. No
+telemetry, no note contents.
 
 It is not the only traffic a map generates, though — see [What leaves your
 vault](#what-leaves-your-vault).
+
+### Place name from coordinates
+
+_Fill place name from coordinates_ is the other direction: it reads the note's
+coordinate property and writes back an address, into a separate property —
+**Place property** in settings, default `location`. It overwrites whatever is
+already there, the same reasoning that lets _Fill coordinates from current
+location_ overwrite: running a command by hand is the explicit ask.
+
+It reuses whichever provider and key you set up for place search above. When
+that provider is Amap, the coordinate is shifted to GCJ-02 before it is sent —
+Amap's reverse geocoder expects the same datum its forward search answers in.
+
+Like the link-paste command, this is **not** behind **Enable location**: it
+raises no permission prompt and records nothing about where this device is.
+Unlike link-paste, though, it does send a coordinate you already had to a third
+party — see [What leaves your vault](#what-leaves-your-vault).
 
 ### Location
 
@@ -328,20 +367,25 @@ the details and a console snippet to test your own machine.
 
 ## What leaves your vault
 
-Short version: your notes and your tracks never go anywhere. Everything below is
-either something a map cannot work without, or something you asked for.
+Short version: your notes and your tracks never go anywhere on their own — the
+one exception is a coordinate you deliberately hand to _Fill place name from
+coordinates_. Everything below is either something a map cannot work without,
+or something you asked for.
 
-| When                              | What goes out                                               | To                                      |
-| --------------------------------- | ----------------------------------------------------------- | --------------------------------------- |
-| Any map is on screen              | Tile requests, so your IP and the area you are looking at   | Whichever background the view is set to |
-| You type in the search box        | The words you typed, your language, your key if you set one | The search source you picked            |
-| You pick _Open in external map_   | The one spot you right-clicked, in that browser tab         | The map app you chose, in your browser  |
-| You switch on **Enable location** | Nothing leaves — the fix comes from the operating system    | —                                       |
+| When                                       | What goes out                                               | To                                      |
+| ------------------------------------------ | ----------------------------------------------------------- | --------------------------------------- |
+| Any map is on screen                       | Tile requests, so your IP and the area you are looking at   | Whichever background the view is set to |
+| You type in the search box                 | The words you typed, your language, your key if you set one | The search source you picked            |
+| You run _Fill place name from coordinates_ | The one coordinate you ran it on                            | The search source you picked            |
+| You pick _Open in external map_            | The one spot you right-clicked, in that browser tab         | The map app you chose, in your browser  |
+| You switch on **Enable location**          | Nothing leaves — the fix comes from the operating system    | —                                       |
 
 The plugin has no telemetry, no update ping and no server of its own. Track
-files, note contents and coordinates you already had are never transmitted. A
-pasted short link is **not** resolved for you, precisely because that would mean
-handing it to a third party.
+files and note contents are never transmitted, and neither is a coordinate you
+already had — except by _Fill place name from coordinates_, which exists
+specifically to send one out and look up what is there. A pasted short link is
+**not** resolved for you, precisely because that would mean handing it to a
+third party.
 
 Two things worth knowing if you are deploying this for other people rather than
 using it yourself: a search key appears in the request URL wherever you keep it

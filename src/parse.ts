@@ -50,18 +50,23 @@ function buildProperties(
 interface CollectedPoints {
 	positions: Position[];
 	times: (number | null)[];
+	/** Only meaningful for `<wpt>` — a `<trkpt>`/`<rtept>` almost never names
+	 *  one, and `addLine()` ignores this array either way. */
+	names: (string | undefined)[];
 }
 
 /**
  * `<trkpt>` / `<rtept>` / `<wpt>` all share this shape: lat/lon as attributes,
- * elevation and time as optional children. `times` is always returned at the
- * same length as `positions` — callers that don't need it (waypoints) just
- * don't look — so there is one place that keeps the two arrays in step rather
- * than each call site re-deriving that.
+ * elevation, time and name as optional children. All three of `positions`,
+ * `times` and `names` are always returned at the same length — callers that
+ * don't need one of them (a track segment has no use for `names`) just don't
+ * look — so there is one place that keeps the three arrays in step rather than
+ * each call site re-deriving that.
  */
 function collectPoints(parent: Document | Element, tag: string): CollectedPoints {
 	const positions: Position[] = [];
 	const times: (number | null)[] = [];
+	const names: (string | undefined)[] = [];
 	const nodes = parent.getElementsByTagName(tag);
 	for (let i = 0; i < nodes.length; i++) {
 		const node = nodes[i];
@@ -75,8 +80,9 @@ function collectPoints(parent: Document | Element, tag: string): CollectedPoints
 		const timeText = node.getElementsByTagName('time')[0]?.textContent;
 		const ms = timeText ? Date.parse(timeText) : NaN;
 		times.push(isFinite(ms) ? ms : null);
+		names.push(node.getElementsByTagName('name')[0]?.textContent?.trim() || undefined);
 	}
-	return { positions, times };
+	return { positions, times, names };
 }
 
 /** Minimal GPX reader: track segments, routes and waypoints. */
@@ -104,8 +110,13 @@ export function parseGpx(text: string): ParsedTrack {
 	for (let i = 0; i < routes.length; i++) addLine(collectPoints(routes[i], 'rtept'));
 
 	let waypoints = 0;
-	for (const pt of collectPoints(doc, 'wpt').positions) {
-		features.push({ type: 'Feature', properties: null, geometry: { type: 'Point', coordinates: pt } });
+	const wpts = collectPoints(doc, 'wpt');
+	for (let i = 0; i < wpts.positions.length; i++) {
+		features.push({
+			type: 'Feature',
+			properties: buildProperties(wpts.names[i], undefined),
+			geometry: { type: 'Point', coordinates: wpts.positions[i] },
+		});
 		waypoints++;
 	}
 

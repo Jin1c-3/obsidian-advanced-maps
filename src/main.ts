@@ -21,13 +21,23 @@
  * Maps lands here untouched.
  */
 
-import { FileView, Notice, parseFrontMatterAliases, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
+import {
+	FileView,
+	getLanguage,
+	Notice,
+	parseFrontMatterAliases,
+	parseYaml,
+	Plugin,
+	requestUrl,
+	stringifyYaml,
+	TFile,
+} from 'obsidian';
 import type { CachedMetadata, Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
 import { FOCUS_RETRY_MS, FOCUS_TRIES, TRACK_EXTS } from './constants';
 import { formatLatLng, parseLatLng } from './coords';
 import { TrackEmbed } from './embed';
 import { t } from './i18n';
-import { needsKey } from './geocode';
+import { GeocodeError, needsKey, parseReverse, reverseRequest } from './geocode';
 import { LinkModal } from './link-modal';
 import { formatFix, isBlank, Locator } from './locate';
 import {
@@ -89,6 +99,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.registerLinkPaste();
 		this.registerPlaceSearch();
 		this.registerLocate();
+		this.registerReverseGeocode();
 		// Its own listener rather than a line inside the one the locator already
 		// has on `file-open`: that one is about writing to the note, this one is
 		// about moving a camera, and neither should be able to break the other.
@@ -291,15 +302,25 @@ export default class AdvancedMapsPlugin extends Plugin {
 	 * The track files a note points at — or the file itself, so a base that
 	 * queries `file.ext == "gpx"` works too.
 	 *
-	 * Reading embeds from the metadata cache rather than the query result means
-	 * the base's own filters keep working untouched: no need to widen a filter
-	 * just to let attachments into the result set.
+	 * Reading the metadata cache rather than the query result means the base's
+	 * own filters keep working untouched: no need to widen a filter just to let
+	 * attachments into the result set.
+	 *
+	 * **All three ways of pointing at a file count**, not only `![[x.gpx]]`:
+	 * a plain `[[x.gpx]]` in the body, and a `[[x.gpx]]` inside a property, do
+	 * too. That is what lets the two halves of this plugin be asked for
+	 * separately, which they could not be while an embed was the only way in:
+	 * `!` is Obsidian's own mark for "render it here", so `![[x.gpx]]` means an
+	 * inline map in the note *and* the line on every base map, while `[[x.gpx]]`
+	 * means the line on the base map and nothing rendered in the note. The
+	 * reported symptom of having no way to say the second one was two maps in
+	 * one note, one of them unwanted (issue #6).
 	 */
 	resolveTracks(file: TFile): TFile[] {
 		if (TRACK_EXTS.has(file.extension)) return [file];
 		if (file.extension !== 'md') return [];
 		const cache = this.app.metadataCache.getFileCache(file);
-		if (!cache || !cache.embeds) return [];
+		if (!cache) return [];
 
 		// Keyed on the cache object rather than the path, so it invalidates itself:
 		// re-indexing a note hands back a *new* CachedMetadata, which is a miss.
@@ -310,8 +331,11 @@ export default class AdvancedMapsPlugin extends Plugin {
 		if (memo) return memo;
 
 		const out: TFile[] = [];
-		for (const embed of cache.embeds) {
-			const dest = this.app.metadataCache.getFirstLinkpathDest(embed.link, file.path);
+		// Embeds first, so a note that both embeds and links the same file keeps
+		// the order it reads in; `getFirstLinkpathDest` answers the same TFile for
+		// both, which is what makes the identity check enough to de-duplicate.
+		for (const ref of [...(cache.embeds ?? []), ...(cache.links ?? []), ...(cache.frontmatterLinks ?? [])]) {
+			const dest = this.app.metadataCache.getFirstLinkpathDest(ref.link, file.path);
 			if (dest && TRACK_EXTS.has(dest.extension) && !out.includes(dest)) out.push(dest);
 		}
 		this.trackLinks.set(cache, out);
@@ -769,6 +793,90 @@ export default class AdvancedMapsPlugin extends Plugin {
 		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
 			frontmatter[this.settings.coordsProperty] = coords;
 		});
+	}
+
+	/* ---- reverse geocoding ---- */
+
+	/**
+	 * Deliberately not behind **Enable location**, for the same reason the link
+	 * paste and place search are not: it raises no permission prompt and records
+	 * nothing about where this device is. Unlike either of those, though, it does
+	 * send a coordinate the reader already had to a third party — the note's own
+	 * `coordsProperty` value, on the way to becoming a place name. README's "What
+	 * leaves your vault" says so.
+	 */
+	private registerReverseGeocode(): void {
+		this.addCommand({
+			id: 'reverse-geocode',
+			name: t('command.reverseGeocode'),
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!this.hasCoords(file)) return false;
+				if (!checking) void this.reverseGeocodeCurrent(file);
+				return true;
+			},
+		});
+	}
+
+	/**
+	 * The place property, written the same deliberate way `writeCoords` writes
+	 * the coordinate one — kept as its own small method rather than folded into a
+	 * generalized `write(file, property, value)`, because `writeCoords`'s own
+	 * comment calls itself "the one place a coordinate reaches disk from a
+	 * deliberate command", and a place name is not a coordinate.
+	 */
+	private async writePlace(file: TFile, name: string): Promise<void> {
+		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+			frontmatter[this.settings.placeProperty] = name;
+		});
+	}
+
+	/**
+	 * Read the note's coordinate, ask the configured provider what is there, and
+	 * write the answer into `placeProperty` — overwriting whatever was there,
+	 * since running the command is the explicit ask.
+	 *
+	 * `needsKey` is checked here rather than in the command's `checkCallback`:
+	 * doing it there would make the command silently vanish from the palette
+	 * whenever Amap is picked with no key set, which is worse than a notice
+	 * saying so. `registerPlaceSearch` made the same choice.
+	 */
+	private async reverseGeocodeCurrent(file: TFile): Promise<void> {
+		const found = this.readCoords(file);
+		if (!found) {
+			new Notice(t('notice.noCoords', { file: file.basename, property: this.settings.coordsProperty }));
+			return;
+		}
+		const pair = parseLatLng(found.raw);
+		if (!pair) {
+			new Notice(
+				t('notice.badCoords', {
+					file: file.basename,
+					property: this.settings.coordsProperty,
+					value: String(found.raw),
+				})
+			);
+			return;
+		}
+
+		const { geocodeProvider } = this.settings;
+		const key = this.amapKey();
+		if (needsKey(geocodeProvider, key)) {
+			new Notice(t('notice.search.needsKey'));
+			return;
+		}
+
+		try {
+			const request = reverseRequest(geocodeProvider, pair[0], pair[1], { key, language: getLanguage() || 'en' });
+			const response = await requestUrl({ url: request.url, headers: request.headers, throw: false });
+			if (response.status >= 400) throw new GeocodeError(`HTTP ${response.status}`);
+			const name = parseReverse(geocodeProvider, response.json);
+			await this.writePlace(file, name);
+			new Notice(t('notice.reverseGeocode.done', { property: this.settings.placeProperty, value: name }));
+		} catch (e) {
+			const reason = e instanceof GeocodeError ? e.message : e instanceof Error ? e.message : String(e);
+			new Notice(t('notice.reverseGeocode.failed', { reason }));
+		}
 	}
 
 	/* ---- location ---- */

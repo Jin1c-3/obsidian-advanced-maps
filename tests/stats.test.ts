@@ -8,6 +8,8 @@ import {
 	formatElevation,
 	formatSpeed,
 	haversine,
+	nearestByDistance,
+	nearestByPosition,
 	trackStats,
 } from '../src/stats';
 import type { Feature, Geometry } from 'geojson';
@@ -475,9 +477,22 @@ describe('elevationProfile', () => {
 		];
 		const profile = elevationProfile([line(coords)]);
 		expect(profile).toHaveLength(3);
-		expect(profile[0]).toEqual({ d: 0, ele: 10 });
+		expect(profile[0]).toEqual({ d: 0, ele: 10, lng: 0, lat: 0 });
 		expect(profile[1].d).toBeCloseTo(haversine(coords[0], coords[1]), 6);
 		expect(profile[2].ele).toBe(15);
+	});
+
+	it('carries each sample’s own WGS-84 lng/lat through untouched', () => {
+		// Distinct, non-zero lng/lat on every point — unlike most of this
+		// describe block's fixtures, which hold lng at 0 and would not catch a
+		// transposed lng/lat bug.
+		const coords = [
+			[120.11, 30.28, 10],
+			[120.12, 30.29, 12],
+		];
+		const profile = elevationProfile([line(coords)]);
+		expect(profile[0]).toEqual({ d: 0, ele: 10, lng: 120.11, lat: 30.28 });
+		expect(profile[1]).toEqual({ d: expect.any(Number) as number, ele: 12, lng: 120.12, lat: 30.29 });
 	});
 
 	it('carries cumulative distance across a LineString boundary without adding a bogus cross-segment jump', () => {
@@ -504,8 +519,13 @@ describe('elevationProfile', () => {
 		for (let i = 0; i < 1000; i++) coords.push([0, i * 0.0001, i]);
 		const profile = elevationProfile([line(coords)], 100);
 		expect(profile.length).toBeLessThanOrEqual(100);
-		expect(profile[0]).toEqual({ d: 0, ele: 0 });
-		expect(profile[profile.length - 1]).toEqual({ d: expect.any(Number) as number, ele: 999 });
+		expect(profile[0]).toEqual({ d: 0, ele: 0, lng: 0, lat: 0 });
+		expect(profile[profile.length - 1]).toEqual({
+			d: expect.any(Number) as number,
+			ele: 999,
+			lng: 0,
+			lat: 999 * 0.0001,
+		});
 	});
 
 	it('uses the default sample cap when none is given', () => {
@@ -524,13 +544,15 @@ describe('elevationProfile', () => {
 			]),
 		]);
 		expect(s).toHaveLength(2);
-		expect(s[0]).toEqual({ d: 0, ele: 10 });
+		expect(s[0]).toEqual({ d: 0, ele: 10, lng: 0, lat: 0 });
 	});
 
 	it('handles a degenerate sample cap of 1 by returning just the last point', () => {
 		const coords: number[][] = [];
 		for (let i = 0; i < 50; i++) coords.push([0, i * 0.0001, i]);
-		expect(elevationProfile([line(coords)], 1)).toEqual([{ d: expect.any(Number) as number, ele: 49 }]);
+		expect(elevationProfile([line(coords)], 1)).toEqual([
+			{ d: expect.any(Number) as number, ele: 49, lng: 0, lat: 49 * 0.0001 },
+		]);
 	});
 
 	it('skips positions with no elevation but keeps their distance folded into the next known point', () => {
@@ -542,6 +564,48 @@ describe('elevationProfile', () => {
 		const profile = elevationProfile([line(coords)]);
 		expect(profile).toHaveLength(2);
 		expect(profile[1].d).toBeCloseTo(haversine(coords[0], coords[1]) + haversine(coords[1], coords[2]), 6);
+	});
+});
+
+describe('nearestByDistance', () => {
+	const samples = [
+		{ d: 0, ele: 0, lng: 0, lat: 0 },
+		{ d: 10, ele: 1, lng: 0, lat: 0 },
+		{ d: 20, ele: 2, lng: 0, lat: 0 },
+	];
+
+	it('picks the nearer of two neighbouring samples', () => {
+		expect(nearestByDistance(samples, 6)).toBe(1); // 4 away from index 1, 6 from index 0
+		expect(nearestByDistance(samples, 4)).toBe(0); // 4 away from index 0, 6 from index 1
+	});
+
+	it('resolves an exact tie to the first candidate, via < rather than <=', () => {
+		// 5 is equidistant between d=0 and d=10; the scan sees index 0 first and
+		// a strict `<` never lets the later, equally-close index 1 replace it.
+		expect(nearestByDistance(samples, 5)).toBe(0);
+	});
+
+	it('clamps to the last index for a target past the last sample', () => {
+		expect(nearestByDistance(samples, 1000)).toBe(2);
+	});
+});
+
+describe('nearestByPosition', () => {
+	const samples = [
+		{ d: 0, ele: 0, lng: 120.1, lat: 30.1 },
+		{ d: 10, ele: 1, lng: 120.2, lat: 30.2 },
+		{ d: 20, ele: 2, lng: 120.5, lat: 30.5 },
+	];
+
+	it('picks the geographically nearest of three candidates', () => {
+		expect(nearestByPosition(samples, 120.11, 30.11)).toBe(0);
+		expect(nearestByPosition(samples, 120.49, 30.49)).toBe(2);
+	});
+
+	it('resolves a point between two samples to whichever is numerically closer', () => {
+		// (120.16, 30.16) sits between index 0 (120.1,30.1) and index 1
+		// (120.2,30.2), closer to index 1.
+		expect(nearestByPosition(samples, 120.16, 30.16)).toBe(1);
 	});
 });
 

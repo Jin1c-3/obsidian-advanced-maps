@@ -1,5 +1,16 @@
+import type { Feature, Geometry } from 'geojson';
 import { describe, expect, it, vi } from 'vitest';
-import { boundsOf, clamp, extendBounds, styleReady, styleUsable, trackKnob, walkCoords } from '../src/geometry';
+import {
+	boundsOf,
+	clamp,
+	extendBounds,
+	lineEndpoints,
+	styleReady,
+	styleUsable,
+	trackFeatures,
+	trackKnob,
+	walkCoords,
+} from '../src/geometry';
 import { TRACK_KNOBS } from '../src/constants';
 import type { LngLatBounds, MapLibreMap } from '../src/types/obsidian-internals';
 
@@ -158,6 +169,213 @@ describe('boundsOf', () => {
 
 	it('ignores an empty seed rather than counting it as a point', () => {
 		expect(boundsOf(map, [], fakeBounds().bounds)).toBeNull();
+	});
+});
+
+describe('lineEndpoints', () => {
+	it('answers first and last coordinate of a LineString', () => {
+		const geometry: Geometry = {
+			type: 'LineString',
+			coordinates: [
+				[1, 2],
+				[3, 4],
+				[5, 6],
+			],
+		};
+		expect(lineEndpoints(geometry)).toEqual([
+			[1, 2],
+			[5, 6],
+		]);
+	});
+
+	it('answers the same coordinate twice for a one-point LineString', () => {
+		const geometry: Geometry = { type: 'LineString', coordinates: [[7, 8]] };
+		expect(lineEndpoints(geometry)).toEqual([
+			[7, 8],
+			[7, 8],
+		]);
+	});
+
+	it('answers null for a LineString with no coordinates', () => {
+		expect(lineEndpoints({ type: 'LineString', coordinates: [] })).toBeNull();
+	});
+
+	it('walks a MultiLineString to its true first and last coordinate', () => {
+		const geometry: Geometry = {
+			type: 'MultiLineString',
+			coordinates: [
+				[
+					[1, 1],
+					[2, 2],
+				],
+				[
+					[3, 3],
+					[4, 4],
+				],
+			],
+		};
+		expect(lineEndpoints(geometry)).toEqual([
+			[1, 1],
+			[4, 4],
+		]);
+	});
+
+	it('skips an empty sub-line inside a MultiLineString', () => {
+		const geometry: Geometry = {
+			type: 'MultiLineString',
+			coordinates: [
+				[],
+				[
+					[9, 9],
+					[10, 10],
+				],
+				[],
+			],
+		};
+		expect(lineEndpoints(geometry)).toEqual([
+			[9, 9],
+			[10, 10],
+		]);
+	});
+
+	it('answers null for a MultiLineString whose every sub-line is empty', () => {
+		expect(lineEndpoints({ type: 'MultiLineString', coordinates: [[], []] })).toBeNull();
+		expect(lineEndpoints({ type: 'MultiLineString', coordinates: [] })).toBeNull();
+	});
+
+	it('answers null for a geometry with no line to walk', () => {
+		expect(lineEndpoints({ type: 'Point', coordinates: [1, 2] })).toBeNull();
+		expect(
+			lineEndpoints({
+				type: 'Polygon',
+				coordinates: [
+					[
+						[0, 0],
+						[1, 0],
+						[1, 1],
+						[0, 0],
+					],
+				],
+			})
+		).toBeNull();
+		expect(lineEndpoints({ type: 'GeometryCollection', geometries: [] })).toBeNull();
+	});
+});
+
+describe('trackFeatures', () => {
+	type Input = Array<Feature<Geometry, Record<string, unknown> | null>>;
+
+	it('carries a line, its two synthetic endpoints, and a plain point through unchanged', () => {
+		const input: Input = [
+			{
+				type: 'Feature',
+				properties: null,
+				geometry: {
+					type: 'LineString',
+					coordinates: [
+						[1, 2],
+						[3, 4],
+					],
+				},
+			},
+			{ type: 'Feature', properties: null, geometry: { type: 'Point', coordinates: [5, 6] } },
+		];
+		const out = trackFeatures(input, '#f00', 2);
+		expect(out).toHaveLength(4);
+
+		expect(out[0]).toEqual({
+			type: 'Feature',
+			geometry: input[0].geometry,
+			properties: { amColor: '#f00', amIndex: 2 },
+		});
+		expect(out[1]).toEqual({
+			type: 'Feature',
+			geometry: { type: 'Point', coordinates: [1, 2] },
+			properties: { amColor: '#f00', amIndex: 2, amRole: 'start' },
+		});
+		expect(out[2]).toEqual({
+			type: 'Feature',
+			geometry: { type: 'Point', coordinates: [3, 4] },
+			properties: { amColor: '#f00', amIndex: 2, amRole: 'end' },
+		});
+		expect(out[3]).toEqual({
+			type: 'Feature',
+			geometry: input[1].geometry,
+			properties: { amColor: '#f00', amIndex: 2 },
+		});
+	});
+
+	it('carries a named waypoint’s own name as amName', () => {
+		const input: Input = [
+			{ type: 'Feature', properties: { name: 'Bund' }, geometry: { type: 'Point', coordinates: [1, 1] } },
+		];
+		const [out] = trackFeatures(input, '#0f0', 0);
+		expect(out.properties.amName).toBe('Bund');
+	});
+
+	it('never puts a name on a LineString, even when its source named one (the KML case)', () => {
+		const input: Input = [
+			{
+				type: 'Feature',
+				properties: { name: 'Trail A' },
+				geometry: {
+					type: 'LineString',
+					coordinates: [
+						[0, 0],
+						[1, 1],
+					],
+				},
+			},
+		];
+		const [line] = trackFeatures(input, '#00f', 0);
+		expect(line.properties.amName).toBeUndefined();
+	});
+
+	it('treats an empty or non-string name as absent, not as amName: ""', () => {
+		const input: Input = [
+			{ type: 'Feature', properties: { name: '' }, geometry: { type: 'Point', coordinates: [0, 0] } },
+			{ type: 'Feature', properties: { name: 42 }, geometry: { type: 'Point', coordinates: [1, 1] } },
+		];
+		const out = trackFeatures(input, '#000', 0);
+		for (const feature of out) expect('amName' in feature.properties).toBe(false);
+	});
+
+	it('yields two synthetic endpoints for a MultiLineString too', () => {
+		const input: Input = [
+			{
+				type: 'Feature',
+				properties: null,
+				geometry: {
+					type: 'MultiLineString',
+					coordinates: [
+						[
+							[0, 0],
+							[1, 1],
+						],
+						[
+							[2, 2],
+							[3, 3],
+						],
+					],
+				},
+			},
+		];
+		const out = trackFeatures(input, '#fff', 5);
+		const roles = out.map((f) => f.properties.amRole);
+		expect(roles).toEqual([undefined, 'start', 'end']);
+		expect(out[1].geometry).toEqual({ type: 'Point', coordinates: [0, 0] });
+		expect(out[2].geometry).toEqual({ type: 'Point', coordinates: [3, 3] });
+	});
+
+	it('answers an empty array for an empty input', () => {
+		expect(trackFeatures([], '#fff', 0)).toEqual([]);
+	});
+
+	it('adds no synthetic points when lineEndpoints() answers null', () => {
+		const input: Input = [{ type: 'Feature', properties: null, geometry: { type: 'LineString', coordinates: [] } }];
+		const out = trackFeatures(input, '#fff', 0);
+		expect(out).toHaveLength(1);
+		expect(out[0].properties).toEqual({ amColor: '#fff', amIndex: 0 });
 	});
 });
 

@@ -47,10 +47,14 @@ export interface AdvancedMapsSettings {
 	/** The numbers under an inline map, and the chart under those. */
 	trackStats: boolean;
 	elevationProfile: boolean;
+	/** Start/end pins, direction arrows, and — inline only — a waypoint's name on hover. */
+	trackMarkers: boolean;
 	/** "Open in map" — the map launched from a note's ⋮ menu. */
 	basePath: string;
 	viewName: string;
 	coordsProperty: string;
+	/** Where "fill place name from coordinates" writes its result — never coordsProperty. */
+	placeProperty: string;
 	openZoom: number;
 	menuLabel: string;
 	/** Whether that map is the base file itself, or a pop-up embedding it. */
@@ -97,9 +101,11 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	embedHeight: 320,
 	trackStats: true,
 	elevationProfile: true,
+	trackMarkers: true,
 	basePath: '',
 	viewName: '',
 	coordsProperty: 'coords',
+	placeProperty: 'location',
 	openZoom: 15,
 	menuLabel: '',
 	// The base itself, because it is the only one of the two whose edits are
@@ -591,6 +597,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				this.text('settings.open.coordsProperty.name', 'settings.open.coordsProperty.desc', 'coordsProperty', {
 					placeholder: DEFAULT_SETTINGS.coordsProperty,
 				}),
+				this.text('settings.open.placeProperty.name', 'settings.open.placeProperty.desc', 'placeProperty', {
+					placeholder: DEFAULT_SETTINGS.placeProperty,
+				}),
 				this.slider('settings.open.zoom.name', 'settings.open.zoom.desc', 'openZoom', 1, 18, 1),
 				this.toggle('settings.open.follow.name', 'settings.open.follow.desc', 'followActiveNote'),
 				this.text('settings.open.aroundView.name', 'settings.open.aroundView.desc', 'aroundViewName', {
@@ -722,6 +731,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				),
 				this.toggle('settings.tracks.stats.name', 'settings.tracks.stats.desc', 'trackStats'),
 				this.toggle('settings.tracks.profile.name', 'settings.tracks.profile.desc', 'elevationProfile'),
+				this.toggle('settings.tracks.markers.name', 'settings.tracks.markers.desc', 'trackMarkers'),
 			]),
 		];
 	}
@@ -772,7 +782,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		let next = value;
 		if (typeof next === 'string') {
 			next = next.trim();
-			if (next === '' && (key === 'coordsProperty' || key === 'trackColor')) {
+			if (next === '' && (key === 'coordsProperty' || key === 'placeProperty' || key === 'trackColor')) {
 				next = DEFAULT_SETTINGS[key];
 			}
 		}
@@ -822,6 +832,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				break;
 			case 'trackStats':
 			case 'elevationProfile':
+			case 'trackMarkers':
 				// The point of a toggle you can see the result of is seeing the result.
 				this.plugin.refreshTracks();
 				break;

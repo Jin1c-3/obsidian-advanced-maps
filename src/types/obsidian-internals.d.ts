@@ -258,6 +258,13 @@ export interface MapMouseEvent {
 	features?: MarkerFeature[];
 	lngLat: { lng: number; lat: number };
 	originalEvent?: MouseEvent;
+	/** MapLibre's own pixel-in-container field — used to place the embed's
+	 *  hand-built waypoint tooltip rather than `originalEvent.offsetX/offsetY`,
+	 *  which is relative to whatever element the browser happened to pick as the
+	 *  event target rather than to the map. Optional, like everything else this
+	 *  file declares about a MapLibre event: hand-typed rather than imported
+	 *  from a `maplibre-gl` this plugin does not depend on. */
+	point?: { x: number; y: number };
 }
 
 export interface MapLibreMap {
@@ -272,6 +279,22 @@ export interface MapLibreMap {
 	addLayer(spec: unknown, before?: string): void;
 	removeLayer(id: string): void;
 	setPaintProperty(layerId: string, name: string, value: unknown): void;
+	setLayoutProperty(layerId: string, name: string, value: unknown): void;
+	/**
+	 * Standard, documented MapLibre GL JS `Map` methods — not an Obsidian
+	 * secret, declared here for the same reason every other `MapLibreMap`
+	 * member is: this plugin carries no `maplibre-gl` dependency to import the
+	 * real types from. `addImage`'s payload is a synchronous `ImageData`
+	 * (`ctx.getImageData()`), not the async canvas→blob→`Image()`→decode round
+	 * trip the native marker code uses — that round trip exists there only to
+	 * rasterize an untrusted, dynamically-chosen Lucide SVG through an `<img>`
+	 * src, and the start/end/arrow icons here are drawn with plain canvas path
+	 * primitives, nothing to decode.
+	 */
+	hasImage(id: string): boolean;
+	addImage(id: string, image: ImageData, options?: { pixelRatio?: number }): void;
+	/** Throws if a layer still references the id — remove the layer first. */
+	removeImage(id: string): void;
 	addControl(control: MapControl, position?: string): void;
 	removeControl(control: MapControl): void;
 	on(type: string, listener: (ev: any) => void): void;

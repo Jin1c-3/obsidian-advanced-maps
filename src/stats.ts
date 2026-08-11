@@ -272,10 +272,22 @@ export function formatElevation(metres: number): string {
 	return `${Math.round(clampFinite(metres))} m`;
 }
 
+/** One resampled point of an elevation profile — see `elevationProfile`. */
+export interface ProfileSample {
+	d: number; // cumulative distance from the start of the track, metres
+	ele: number; // metres
+	// WGS-84 — the coordinate this sample's own position already was. Riding
+	// along for free (no extra pass over the track needed) is what lets a hover
+	// anywhere on the map find its way back to the nearest sample here, and a
+	// hover on the profile find its way back to a point on the map.
+	lng: number;
+	lat: number;
+}
+
 /**
- * A resampled `{ d, ele }` series for a sparkline: cumulative distance from the
- * start of the track against elevation, downsampled to at most `samples`
- * points so an 11 k-point export does not become an 11 k-point SVG path.
+ * A resampled series for a sparkline — and for the map ↔ profile hover link —
+ * downsampled to at most `samples` points so an 11 k-point export does not
+ * become an 11 k-point SVG path.
  *
  * `d` mirrors `trackStats`' own rule for `distance`: it accumulates within each
  * LineString but never jumps the gap between one LineString and the next, since
@@ -284,8 +296,8 @@ export function formatElevation(metres: number): string {
  * into `d`, so the points that remain stay at their true distance along the
  * track rather than bunching together.
  */
-export function elevationProfile(features: Features, samples = 160): Array<{ d: number; ele: number }> {
-	const full: Array<{ d: number; ele: number }> = [];
+export function elevationProfile(features: Features, samples = 160): ProfileSample[] {
+	const full: ProfileSample[] = [];
 	let cumulative = 0;
 
 	for (const feature of features) {
@@ -298,7 +310,9 @@ export function elevationProfile(features: Features, samples = 160): Array<{ d: 
 			lastCoord = pos;
 
 			const ele = pos[2];
-			if (typeof ele === 'number' && isFinite(ele)) full.push({ d: cumulative, ele });
+			if (typeof ele === 'number' && isFinite(ele)) {
+				full.push({ d: cumulative, ele, lng: pos[0], lat: pos[1] });
+			}
 		}
 	}
 
@@ -312,9 +326,67 @@ export function elevationProfile(features: Features, samples = 160): Array<{ d: 
 	// first and last samples land exactly on index 0 and full.length - 1 — the
 	// two points a sparkline can least afford to distort — while the count never
 	// exceeds `samples`, unlike a fixed stride that overshoots by up to one.
-	const out: Array<{ d: number; ele: number }> = [];
+	const out: ProfileSample[] = [];
 	for (let i = 0; i < samples; i++) {
 		out.push(full[Math.round((i * (full.length - 1)) / (samples - 1))]);
 	}
 	return out;
+}
+
+/**
+ * The index of the sample whose cumulative distance `d` is closest to
+ * `targetD` — how a hover on the profile itself (pixel → fraction → distance)
+ * finds the sample to highlight.
+ *
+ * A plain linear scan, not a binary search: `samples` is capped at ~160
+ * entries (see `elevationProfile`'s own `samples` parameter) and this runs on
+ * every `mousemove`, so an O(n) scan over that few candidates is the cheap
+ * side of that trade, not the expensive one — and while `d` is monotonically
+ * non-decreasing by construction, leaning on that for a binary search would
+ * buy nothing a reader could feel. Ties resolve to the first candidate seen,
+ * via `<` rather than `<=`.
+ */
+export function nearestByDistance(samples: ProfileSample[], targetD: number): number {
+	let best = 0;
+	let bestDist = Infinity;
+	for (let i = 0; i < samples.length; i++) {
+		const dist = Math.abs(samples[i].d - targetD);
+		if (dist < bestDist) {
+			bestDist = dist;
+			best = i;
+		}
+	}
+	return best;
+}
+
+/**
+ * The index of the sample geographically closest to (`lng`, `lat`) — both
+ * WGS-84, the space every sample's own lng/lat already lives in — how a hover
+ * on the track itself finds the sample to highlight on the profile.
+ *
+ * Squared planar distance in degree-space, not haversine: this picks the
+ * nearest of at most ~160 candidates already known to lie along one track, not
+ * a real-world distance anybody reads, so the distortion haversine exists to
+ * correct buys nothing here — and skipping the square root costs nothing
+ * either, since only the *ordering* of the candidates matters, never the
+ * distance's own value. An out-and-back or looped track can have two
+ * different along-track distances land at nearly the same physical point;
+ * this does not try to disambiguate that (it would need every sample tagged
+ * with which LineString it came from, which is more than a hover cursor was
+ * asked to carry) — a known, accepted gap, not an oversight. Ties resolve to
+ * the first candidate seen, the same as `nearestByDistance`.
+ */
+export function nearestByPosition(samples: ProfileSample[], lng: number, lat: number): number {
+	let best = 0;
+	let bestDist = Infinity;
+	for (let i = 0; i < samples.length; i++) {
+		const dLng = samples[i].lng - lng;
+		const dLat = samples[i].lat - lat;
+		const dist = dLng * dLng + dLat * dLat;
+		if (dist < bestDist) {
+			bestDist = dist;
+			best = i;
+		}
+	}
+	return best;
 }

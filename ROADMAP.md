@@ -23,7 +23,8 @@ that card, and the card belongs to a **note**, which may carry several tracks.
 Three answers, and the first is the one to try:
 
 - **Whichever track is under the cursor.** Cleanest meaning, and it needs one
-  data change: a track feature's properties are `{ amColor, amIndex }`, and
+  more data change on top of what start/end markers already added: a track
+  feature's properties are `{ amColor, amIndex, amName?, amRole? }`, and
   `amIndex` points at the _note_ — the loop that builds them walks
   `item.trackFiles` and stamps them all with the same index. Per-track numbers
   need a second index alongside it.
@@ -37,6 +38,24 @@ One unknown to probe rather than assume: `PopupManager` declares `showPopup` and
 it after `showPopup` returns. Measure it with `obsidian eval` first.
 
 The elevation profile stays inline. A popup is narrow and the SVG needs width.
+
+### Waypoint names on hover, on a base map
+
+A waypoint's own name shows on hover today, but only on an inline
+`![[track.gpx]]` embed — see CLAUDE.md's "Start/end markers, direction and
+waypoint names". The embed half shipped; the base-view half did not, for the
+same reason the section above is still open: hovering a track on a **base**
+view already opens the row's own popup, through `hover()` in `track-layer.ts`
+calling `popupManager.showPopup`, and a second, independent tooltip on that
+same hover risks visually fighting it — two floating boxes, or one hiding the
+other — with `PopupManager` owning DOM neither this plugin nor a hand-built
+tooltip has a handle on.
+
+The two gaps are almost certainly the same seam. Whatever eventually reaches
+_inside_ that popup's own content — to add per-track statistics, the entry
+directly above this one — is probably the same mechanism a waypoint's name
+under the cursor should go through too, rather than two separate answers to
+"how does this plugin add something to a popup it does not own."
 
 ## Worth doing
 
@@ -68,10 +87,13 @@ Filling in the provinces or cities a vault has notes in — the "footprint map"
 every Chinese travel app is built around. MapLibre draws it with one fill layer,
 which is the same seam the tracks already use.
 
-Two parts that are not free: the boundary polygons, which should be a GeoJSON
-file **the reader keeps in their vault** rather than data bundled into the
-plugin; and naming a coordinate, which needs reverse geocoding — both providers
-in `geocode.ts` have an endpoint for it and neither is wired up.
+Naming a coordinate is no longer the missing half: `reverseRequest`/
+`parseReverse` in `geocode.ts` and the _Fill place name from coordinates_
+command answer "what is at this point" today, through the same two providers
+place search already uses. What is still undone is the one part that was never
+about geocoding — the boundary polygons, which should be a GeoJSON file **the
+reader keeps in their vault** rather than data bundled into the plugin, and the
+fill layer that draws them.
 
 ### Import a KML's placemarks as notes
 

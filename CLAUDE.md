@@ -104,11 +104,11 @@ need redrawing too.
 ## How tracks find their way onto the map
 
 Tracks are **not** pulled from the query result. For every note in the base, the
-plugin reads that note's embeds from the metadata cache and resolves any link
-whose extension is in `TRACK_EXTS` — `.gpx`, `.geojson`, `.kml`, `.tcx`:
+plugin reads that note's own references out of the metadata cache and resolves
+any whose extension is in `TRACK_EXTS` — `.gpx`, `.geojson`, `.kml`, `.tcx`:
 
 ```
-moments/20260412191024.md  ──embeds──▶  assets/2026年4月12日 下午831.gpx
+moments/20260412191024.md  ──points at──▶  assets/2026年4月12日 下午831.gpx
 ```
 
 Two consequences:
@@ -122,8 +122,40 @@ Two consequences:
 A track file that appears in the query result directly is also drawn, so
 `file.ext == "gpx"` style bases work too.
 
-Every track becomes one GeoJSON source with two layers: a `line` layer and a
-`circle` layer for waypoints, both coloured per-feature via `['get','amColor']`.
+### All three ways of pointing at a file count, and `!` is the difference
+
+`resolveTracks` reads `cache.embeds`, `cache.links` **and**
+`cache.frontmatterLinks` — `![[x.gpx]]`, `[[x.gpx]]` in the body, and
+`track: "[[x.gpx]]"` in a property all put the line on the base map. Only the
+first of the three also renders an inline map, because that is what
+`embedRegistry` is handed and `!` is Obsidian's own mark for "render it here".
+
+That split is the feature, not an implementation detail. While an embed was the
+only way in, the two halves of this plugin could not be asked for separately:
+`![[x.gpx]]` was the sole way to get a track onto a base map, and it dragged an
+inline map into the note along with it. The reported symptom (issue #6) was a
+note holding an embedded base map — showing the note's pin _and_ its track,
+correctly — with a second, unwanted map underneath it, and no setting anywhere
+that could turn one of them off. A plain link is the off switch, and it needs no
+setting: `!` means both, no `!` means the base map only.
+
+Measured live, on one note carrying all three forms at once: `cache.embeds`,
+`cache.links` and `cache.frontmatterLinks` each held exactly their own one, and
+`resolveTracks` answered all three files in that order. A note whose body both
+embeds and links the _same_ file answered it once —
+`getFirstLinkpathDest` returns the same `TFile` for both, so the identity check
+is enough and no path comparison is needed. And a note with a plain link and no
+embed rendered `0` elements matching `.advanced-maps-embed` while still
+resolving its track, which is the whole of what #6 asked for.
+
+Do not "tidy" this into a single array read off `cache`. The three lists are
+separate in `CachedMetadata` and a note can carry the same file in all three.
+
+Every track becomes one GeoJSON source with four layers: a `line` layer, a
+`circle` layer for waypoints, and — see "Start/end markers, direction and
+waypoint names" below — a direction-arrow layer and a start/end-pin layer, all
+four coloured per-feature via `['get','amColor']` or, for the two symbol
+layers, by which hand-drawn image `amRole` points at.
 
 Auto-fit covers markers _and_ tracks, and stands down when the view pins a
 `center` or a `defaultZoom`, or once the user pans or zooms. The ⛶ control
@@ -543,6 +575,52 @@ Four things are load-bearing:
 under the 1.13.1 this plugin already requires, and both public — so no entry in
 `types/obsidian-internals.d.ts` and no runtime probe.
 
+## Reverse geocoding
+
+"Fill place name from coordinates" is place search's mirror image: a coordinate
+in, an address out. It reuses `geocodeProvider`, `amapKeyStore`, `amapKey` and
+`amapSecretId` as they stand rather than introducing a second provider concept
+— a 高德 Web-service key already covers `/v3/place/text` and `/v3/geocode/regeo`
+alike, so a second dropdown would be one question asked twice. The only new
+setting this feature needed is where the answer goes: `placeProperty`, default
+`location`, never `coordsProperty` — reading and writing the same property
+would make the command overwrite the very thing it reads.
+
+`reverseRequest`/`parseReverse` in `geocode.ts` route to `nominatimReverseRequest`
+/`parseNominatimReverse` or `amapReverseRequest`/`parseAmapReverse`, exactly as
+`geocodeRequest`/`parseGeocode` route the forward case. Nominatim's `/reverse`
+answers one object rather than an array — there is only ever one address for a
+point — and, verified live, still signals failure with HTTP 200: an
+out-of-range or oceanic point comes back `{"error":"Unable to geocode"}` rather
+than a 4xx. 高德's `/v3/geocode/regeo` reuses the same `status`/`info` gate
+`parseAmap` already has, verified live against a real invalid key.
+
+**The seam that matters:** 高德's reverse geocoder takes GCJ-02 input, the one
+place in this plugin where 高德 does not itself answer in the datum it also
+expects. Every note's coordinate is WGS-84, so `amapReverseRequest` runs it
+through `wgs2gcj` before it goes in the `location` param — mirroring
+`maplinks.ts`'s `externalMapUrl`, which already does its own provider-specific
+shift rather than trusting the caller to have done it. The shift lives inside
+`amapReverseRequest` itself, in `geocode.ts`, rather than in `main.ts`'s
+caller — which is also why it sits inside the 90 %/85 %-gated pure file instead
+of behind a live-only Obsidian probe: a wrong direction here is invisible on
+screen and lands the answer on a street ~500 m from the one that was actually
+clicked, and that is exactly the kind of mistake this repo tests rather than
+eyeballs.
+
+Not behind **Enable location**, for the same reason the link-paste command is
+not: it raises no permission prompt and records nothing about where this
+device is. Unlike link-paste, though, it does put a coordinate the reader
+already had on the wire — the one place this repo's "nothing leaves the vault
+you didn't ask to leave" claim needed an asterisk, which is why both READMEs
+say so.
+
+`needsKey` is checked inside the command's handler, at the moment it runs, not
+inside `checkCallback` — checking it there would make the command silently
+vanish from the palette whenever 高德 is picked with no key configured, which
+is worse than the notice `registerPlaceSearch` already shows for the same
+condition.
+
 ## Location
 
 Fills a note's coordinate property from the device, two ways: automatically when
@@ -655,9 +733,11 @@ existing caller assumes.
 
 **Measure `rec.features`, never `projectedFeatures()`.** The GCJ and BD offsets
 are non-linear, so a distance taken in tile space is a distance in the wrong
-space — wrong by little enough to look right. `projectedFeatures` also drops
-`properties`, so the times would vanish too; that is the cheap proof, not the
-reason.
+space — wrong by little enough to look right. `projectedFeatures` still drops
+`times`, so the ascent/duration/speed math would have nothing to read either;
+that is the cheap proof, not the reason. It does carry a waypoint's own `name`
+across the shift, for the markers below — the one exception to "properties are
+dropped" now that something downstream reads one.
 
 Two numbers are judgement calls and both are written down where they are set:
 
@@ -677,6 +757,98 @@ The elevation profile is hand-rolled inline SVG — there is no chart library to
 reach for, same as there is no map library — and `elevationProfile()` downsamples
 so an 11 k-point export does not become an 11 k-point path.
 
+### The profile ↔ map hover link
+
+Inline embeds only — a base map view has no profile to link to, so unlike
+start/end markers below this has no base-view half at all, not even a partial
+one. Hovering the profile draws a point on the map at that spot on the track,
+plus a vertical rule and a distance/elevation readout on the profile itself;
+hovering the track on the map does the same thing from the other direction.
+Both leave when the pointer does.
+
+**The moving dot is a GeoJSON layer (`CURSOR_SRC`/`CURSOR_LAYER`), not a
+`maplibregl.Marker` and not a DOM element tracked with `map.project()`.**
+There is no exported MapLibre to construct a `Marker` from — the same reason
+the tracks themselves are a source and a layer rather than any kind of
+Marker — and a layer-backed point gets correct screen placement through every
+pan and zoom for free, with nothing to update but its data.
+
+**Hit-testing goes through a private, invisible, wide copy of the line —
+`HIT_SRC`/`HIT_LAYER` — never the visible `LINE_LAYER` itself.** MapLibre
+hits a line layer against its own rendered width, and `trackWeight`'s own
+minimum (1 px, `TRACK_KNOBS`) is not something a reader can reliably point
+at, so `ensureHoverLayers()` in `embed.ts` holds the hit corridor at
+`Math.max(18, weight * 1.5)` regardless of how thin the visible line is
+drawn. It is its own source rather than a second layer reading `SRC` because
+`removeTrackLayers()` in `layers.ts` — shared with the base-view
+`TrackLayer` — knows nothing about `HIT_LAYER` and calls `removeSource(SRC)`
+unconditionally; a foreign layer still referencing `SRC` at that point would
+make that call throw, inside a `catch` that exists for an unrelated reason,
+and leave `SRC` behind for `drawTracks()`'s next call to take the
+`setData()` branch instead of re-adding the layers `removeTrackLayers()` had
+just removed — the visible track gone until a full style reload. A private
+source sidesteps the whole hazard by construction rather than by a rule to
+remember.
+
+**Both hover layers are torn down and rebuilt on `refresh()`, not left in
+place across it.** `removeTrackLayers()` only knows the four shared track
+layers, so if `refresh()` left the hover layers alone, they would survive
+while the track layers it just removed come back — and a fresh `addLayer()`
+always lands on top of whatever is already in the stack, so the newly
+re-added `LINE_LAYER`/`POINT_LAYER`/etc. would end up drawn _over_ the
+never-removed cursor dot, burying it under the redrawn line on every
+settings toggle or re-parsed file after the first. `refresh()` therefore
+calls `removeHoverLayers()` right beside `removeTrackLayers()`, so `draw()`
+always rebuilds track-then-hover-link in that order and the dot stays on
+top. `style.load` never has this problem: a style swap wipes every source
+and layer at once, so there is nothing stale left to bury anything under.
+
+**Two coordinate-space seams, in opposite directions, same discipline as
+everywhere else in this file.** `renderProfile()`'s `highlightAt()` knows a
+sample's `lng`/`lat` in WGS-84 (see `stats.ts` above) and shifts it _into_
+tile space — `toTileSpace(this.system(), s.lng, s.lat)` — before calling
+`setCursorPoint()`. `hoverTrack()` is handed an `ev.lngLat` that is already
+tile space and shifts it _back_ — `toWgs84()` — before comparing it against
+the WGS-84 samples with `nearestByPosition()`. Reversed or omitted in either
+direction, the search runs against the wrong space and, on Chinese tiles,
+quietly picks a plausible-but-wrong sample — never an error, never visibly
+off enough to notice by eye.
+
+**`elevationProfile()`'s samples carry their own WGS-84 `lng`/`lat` now, for
+free** — the downsampled series already walked every coordinate on its way
+to computing `d`, and `pos[0]`/`pos[1]` were sitting right there. Two small
+search helpers, `nearestByDistance` and `nearestByPosition`, are both plain
+O(n) linear scans over the ≤160-sample array, run on every `mousemove` — a
+judgement call rather than a measured one: cheap enough on that few
+candidates not to be worth a binary search or a spatial index, and simple
+enough to read correctly at a glance, which a binary search leaning on `d`'s
+monotonicity would not buy anything a reader could feel. `nearestByPosition`
+uses squared planar distance in degree-space rather than haversine, on the
+same reasoning: picking the nearest of a few dozen candidates already known
+to lie along one track is not the same problem haversine solves, and its
+distortion-correction buys nothing here. It does not disambiguate an
+out-and-back or looped track, where two different along-track distances can
+land at nearly the same physical point — a known, accepted gap (fixing it
+would mean tagging every sample with which `LineString` it came from), not
+an oversight.
+
+**Map → profile hover reuses the exact same `highlightAt()` closure —
+including its own `setCursorPoint()` call — that profile → map hover
+uses**, rather than a second, leaner path that only touches the rule and the
+readout. Hovering the track directly therefore also redraws the tiny dot
+exactly under the pointer that is already there, which is harmless and
+arguably useful; the alternative is two functions that both know how to
+"highlight sample `i`," and this codebase already has scar tissue about that
+particular kind of duplication drifting apart later.
+
+Not live-verified against a running Obsidian — this landed without a vault to
+test in, unlike most of the rest of this file. `ensureHoverLayers()`,
+`bindInteractions()`'s two new listeners, and the hit corridor's actual
+pointer tolerance in a real browser are all reasoned through, not measured;
+treat the 18 px / 1.5× numbers as starting points rather than measured ones
+until someone checks them with `obsidian eval`, the way "Testing" below
+already asks for.
+
 ### KML and TCX
 
 Both are XML and both go through the same `DOMParser` GPX already used. TCX is
@@ -690,6 +862,119 @@ aliases the namespace differently — or prefixes the whole file `kml:` — sile
 yields nothing. Both shapes are in the tests. `<gx:Track>` is KML's only
 time-carrying form, and its `<gx:coord>` is space-separated where `<coordinates>`
 is comma-separated inside a tuple and whitespace-separated between them.
+
+## Start/end markers, direction and waypoint names
+
+Every drawn track gets a start pin, an end pin, direction arrows along the
+line, and — on inline embeds — a waypoint's own name on hover. One setting,
+`trackMarkers`, defaults on, sits beside track statistics and the elevation
+profile, and covers all three at once: they are one visual idea (which way did
+this go, and where does it begin), not three features that happen to share a
+toggle.
+
+**Hand-drawn canvas icons, not SDF plus `icon-color`, not Lucide through
+`setIcon()`.** The native raster style ships no glyphs and no sprite
+(`obsidian-maps/src/map/style.ts` is version 8, sources and layers, nothing
+else), so a `text-field` renders nothing on it — a waypoint's name has to be a
+tooltip, not a label on the map, and a start/end marker has to be an image,
+not text. `map.addImage()` is the native marker code's own door
+(`markers.ts`'s `createCompositeMarkerImage`), so this follows it rather than
+opening a new one — but not its async canvas→blob→`Image()`→decode round trip,
+which exists there only to rasterize an untrusted, dynamically-chosen Lucide
+SVG through an `<img>` src. These three icons are plain canvas path fills with
+nothing to decode, so `ctx.getImageData()` hands `addImage()` a synchronous
+`ImageData` instead, and `addTrackLayers()`/`drawTracks()` stay the
+synchronous functions every existing caller already assumes. A Lucide name was
+the other option and was rejected for a sharper reason than "one more
+dependency": an icon name Obsidian's bundled set does not have renders
+nothing, silently, and there is no way to probe for that from outside a
+running Obsidian — a filled circle, a filled square and a filled triangle
+cannot fail that way.
+
+No SDF and no `icon-color`. `icon-color` only tints an SDF-marked image, and a
+hand-authored true distance field is the kind of thing that looks fine until
+it is rendered at a couple of zoom levels and turns out aliased at one of
+them — exactly the "fiddly" a per-note track colour on these icons would have
+been. The colour is baked into the pixels instead, which is also why there is
+no per-note colour here: **robust beats pretty**. `ensureTrackIcons()` in
+`layers.ts` draws with a fixed, theme-aware palette — start = `var(
+--text-success)`, end = `var(--text-error)`, the arrow = `var(--text-muted)`,
+every one haloed in `var(--background-primary)`, the same halo idiom the
+waypoint circles already use via `circle-stroke-color`. `text-success`/
+`text-error`/`text-muted` against `background-primary` is the base contrast
+pairing Obsidian's own theme system already guarantees on both a light and a
+dark theme, not a colour this plugin picked and hoped works, and it reads over
+any track colour because it never has to compete with one — the marker's fill
+is not the track's fill.
+
+**`amRole`/`amName`, and why `trackFeatures()` lives in `geometry.ts`.** A
+synthetic start/end point shares the track's own GeoJSON source — a second
+source was not worth the extra `addSource`/`addLayer` bookkeeping for two
+points per line — so it needs a way to tell itself apart from a real waypoint.
+`amRole: 'start' | 'end'` is that tag, and `layers.ts`'s waypoint-circle filter
+grew a `['!', ['has', 'amRole']]` clause the moment a synthetic point could
+land in the same source: get that backwards and every track grows two extra
+"waypoint" dots at its ends. `amName` is deliberately **Point-only** — a KML
+`<Placemark>` can name a LineString too (`tests/parse.test.ts` proves it with
+'Trail A'), but nothing reads a name off a line, and carrying it through would
+only invite a future hover handler to bind a track's name to whichever point
+happens to be under the cursor. Both live on `TrackFeatureProps` in
+`geometry.ts`, and the function that stamps them — `trackFeatures()` — lives
+there too rather than in `layers.ts`, specifically so it sits on the
+90%-covered pure-file list and is testable with no MapLibre stub: it is the
+one shared helper both `TrackLayer.build()` (base views) and `TrackEmbed.draw()`
+(inline embeds) call, which is what keeps the two draw paths from drifting
+apart on what a feature carries — the trap this repo has already paid for once,
+in "How tracks find their way onto the map".
+
+**Layer order is four decisions, not one "below the pins."** `addLayer`'s
+`before` argument only orders a new layer relative to _one_ named layer, so
+getting all four right _relative to each other_ means calling `addLayer` in a
+deliberate order — line, then arrow, then point, then endpoint, every one
+anchored `before: marker-pins` — rather than trusting the same anchor to sort
+them. Endpoint above point is what keeps a start/end pin sitting exactly on a
+waypoint dot from vanishing underneath it. `icon-allow-overlap` and
+`icon-ignore-placement` are both `true` on both symbol layers for the same
+reason native `marker-pins` sets them (`markers.ts`): a symbol layer collides
+with itself by default, and a loop route puts the start and end pin on the
+same pixel — without both flags MapLibre would silently keep one and drop the
+other, and a busy zoomed-out map would thin its arrows for no visible reason.
+
+**`showMarkers` goes through `applyTrackPaint()`, never through
+`signature()`.** `applyTrackPaint()` already runs unconditionally on every
+`sync()`/`draw()` — weight and opacity work exactly this way today — so
+threading `trackMarkers` through it as a fifth argument is what lets the _Show
+track markers_ toggle take effect on an already-open map at once. **This must
+not move.** Folding visibility into `TrackLayer.signature()`'s upload-skip gate
+instead would mean a plain settings toggle changes nothing the signature can
+see, and the two new layers would keep whatever visibility they last had until
+some unrelated change — a recolour, a track file edit, a theme swap — happened
+to force a redraw anyway. That is the exact class of bug guard #8 in
+"Non-obvious things to leave alone" already documents for paint and framing;
+this is the same guard applying to a fourth and fifth layer.
+
+**Waypoint-name-on-hover ships on embeds only.** A base view already shows a
+note's own popup on hovering any part of its track, through
+`popupManager.showPopup` — see `hover()` in `track-layer.ts` — and this plugin
+has no handle on that popup's DOM to append a name to rather than fight: two
+floating boxes, or one hiding the other, is worse than the gap. An embed has
+no interactivity of its own to collide with, so `TrackEmbed` binds its own
+`mousemove`/`mouseleave` on the waypoint-circle layer and positions a small
+`div` off the MapLibre event's own `point` field — container-relative pixels,
+not `originalEvent.offsetX/offsetY`, which is relative to whatever element the
+browser happened to pick as the event target. The base-view half is a written
+gap in the roadmap, not a silently missing feature — see "Waypoint names on
+hover, on a base map".
+
+Icon pixel sizes (20 px for the start/end pins, 12 px for the arrow),
+`symbol-spacing` (90 px), and the weight-coupling formula `applyTrackPaint()`
+scales `icon-size` by were chosen without a running Obsidian to screenshot
+against and are stated as starting points, not measured numbers — this repo's
+own rule is to never claim a number as measured that was not. They are the one
+thing about this feature worth a live visual pass before calling it settled:
+whether the arrows read at a normal zoom without cluttering a busy, zoomed-out
+multi-track view, and whether a loop route (start and end at the same point)
+reads as "two markers stacked" rather than as one hiding the other.
 
 ## Opening a spot in another map app
 

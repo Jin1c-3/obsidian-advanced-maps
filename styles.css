@@ -19,6 +19,33 @@
 	height: 100%;
 }
 
+/* A waypoint's name, on hover — inline embeds only, positioned from the
+ * MapLibre event's own pixel coordinate rather than laid out by CSS. Hidden
+ * by default and toggled with a class rather than inline `display`, so the
+ * one style rule stays the single source of what "hidden" means.
+ * `pointer-events: none` is not cosmetic: without it, the cursor pausing over
+ * the label — which sits visually on top of the canvas the mousemove/
+ * mouseleave pair needs — steals the event and the tooltip flickers itself
+ * back out. */
+.advanced-maps-waypoint-tooltip {
+	position: absolute;
+	z-index: 5;
+	display: none;
+	padding: var(--size-2-1) var(--size-2-2);
+	transform: translate(-50%, -130%);
+	white-space: nowrap;
+	pointer-events: none;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	color: var(--text-normal);
+	font-size: var(--font-ui-smaller);
+}
+
+.advanced-maps-waypoint-tooltip.is-visible {
+	display: block;
+}
+
 /* Distance/ascent/duration bar and elevation profile under an inline map.
  * Deliberately a sibling of .advanced-maps-embed rather than a child of it:
  * that box has a fixed height and `overflow: hidden` so the map fills exactly
@@ -62,6 +89,7 @@
  * it. Roughly 48–64 px tall — tall enough to read the shape of a climb,
  * short enough to still read as an accessory to the bar above it. */
 .advanced-maps-profile {
+	position: relative;
 	display: block;
 	width: 100%;
 	height: 56px;
@@ -70,6 +98,9 @@
 	border-radius: var(--radius-s);
 	background: var(--background-secondary);
 	overflow: hidden;
+	/* Signals the hover link before the reader has found it — the readout is
+	   positioned relative to this box, which is what "relative" above is for. */
+	cursor: crosshair;
 }
 
 .advanced-maps-profile svg {
@@ -95,6 +126,48 @@
 	 * non-uniform scaling — without it a wide, short note stretches the stroke
 	 * thin in one axis and thick in the other. */
 	vector-effect: non-scaling-stroke;
+}
+
+/* The hover link's vertical rule — hidden by opacity rather than `display`
+ * so toggling it can transition, and `pointer-events: none` so the rule
+ * itself never steals the wrap's own mousemove/mouseleave pair. Same
+ * non-scaling-stroke reasoning as .advanced-maps-profile-line above. */
+.advanced-maps-profile-rule {
+	stroke: var(--text-accent);
+	stroke-width: 1;
+	stroke-opacity: 0;
+	pointer-events: none;
+	vector-effect: non-scaling-stroke;
+	transition: stroke-opacity 100ms ease-out;
+}
+
+.advanced-maps-profile-rule.is-active {
+	stroke-opacity: 0.6;
+}
+
+/* The distance/elevation readout that follows the rule — a plain HTML
+ * element, not SVG text; see renderProfile()'s own comment for why. `left`
+ * is set from JS as a percentage of the box's own rendered width, matching
+ * where the rule landed; `translateX(-50%)` centres the label on that point
+ * the same way the native waypoint tooltip centres on its pixel. */
+.advanced-maps-profile-readout {
+	position: absolute;
+	top: var(--size-2-1);
+	transform: translateX(-50%);
+	padding: var(--size-2-1) var(--size-2-2);
+	white-space: nowrap;
+	pointer-events: none;
+	opacity: 0;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	color: var(--text-normal);
+	font-size: var(--font-ui-smaller);
+	transition: opacity 100ms ease-out;
+}
+
+.advanced-maps-profile-readout.is-active {
+	opacity: 1;
 }
 
 .advanced-maps-error {

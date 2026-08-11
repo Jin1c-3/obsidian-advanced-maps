@@ -1,4 +1,4 @@
-import type { Geometry } from 'geojson';
+import type { Feature, Geometry, Position } from 'geojson';
 import { TRACK_KNOBS, type TrackKnob } from './constants';
 import type { LngLatBounds, MapLibreMap } from './types/obsidian-internals';
 
@@ -117,4 +117,94 @@ export function styleReady(map: MapLibreMap, timeout = 5000): Promise<void> {
 		map.on('style.load', check);
 		map.on('load', check);
 	});
+}
+
+/**
+ * A LineString's or MultiLineString's true first and last coordinate — walking
+ * past any empty sub-line a MultiLineString may carry, rather than trusting its
+ * first and last *entries*. `null` for anything else, including a LineString
+ * with no coordinates at all: there is no "start" to a line that never began.
+ *
+ * A single-point LineString is not treated specially — `coords[0]` and
+ * `coords[coords.length - 1]` are already the same position, which is exactly
+ * "both markers land on top of each other", the correct answer for a track
+ * that is one point long.
+ */
+export function lineEndpoints(geometry: Geometry): [Position, Position] | null {
+	if (geometry.type === 'LineString') {
+		const coords = geometry.coordinates;
+		return coords.length > 0 ? [coords[0], coords[coords.length - 1]] : null;
+	}
+	if (geometry.type === 'MultiLineString') {
+		let first: Position | null = null;
+		let last: Position | null = null;
+		for (const line of geometry.coordinates) {
+			if (line.length === 0) continue;
+			first ??= line[0];
+			last = line[line.length - 1];
+		}
+		return first && last ? [first, last] : null;
+	}
+	return null;
+}
+
+/** What a drawn track feature carries beyond its geometry. */
+export interface TrackFeatureProps extends Record<string, unknown> {
+	/** Which note's colour this belongs to. */
+	amColor: string;
+	/** Which note this belongs to — an index into the draw list, not a file path. */
+	amIndex: number;
+	/** A waypoint's own name, Point geometries only. See `trackFeatures` for why. */
+	amName?: string;
+	/** Set on the two synthetic points `trackFeatures` adds per line; absent on
+	 *  everything real, which is what `layers.ts`'s point-layer filter tells apart. */
+	amRole?: 'start' | 'end';
+}
+
+/**
+ * The one shared step between a parsed (or projected) track and what actually
+ * reaches the map: every feature carries its note's colour and index, a
+ * waypoint keeps its own name, and every line gains two synthetic start/end
+ * points for `layers.ts`'s endpoint layer to draw.
+ *
+ * `amName` is deliberately Point-only. A KML `<Placemark>` can name a
+ * LineString too — `tests/parse.test.ts` proves it with 'Trail A' — but nothing
+ * downstream reads a name off a line, and carrying it through here would only
+ * invite a future hover handler to bind it to the wrong thing: a name that
+ * describes the whole track, attached to whichever point the cursor happens to
+ * be nearest.
+ *
+ * Both `TrackLayer.build()` (base views) and `TrackEmbed.draw()` (inline
+ * embeds) call this rather than building their own feature list, which is what
+ * keeps the two draw paths from drifting apart on what a feature carries.
+ */
+export function trackFeatures(
+	features: Array<Feature<Geometry, Record<string, unknown> | null>>,
+	color: string,
+	index: number
+): Array<Feature<Geometry, TrackFeatureProps>> {
+	const out: Array<Feature<Geometry, TrackFeatureProps>> = [];
+	for (const feature of features) {
+		const props: TrackFeatureProps = { amColor: color, amIndex: index };
+		if (feature.geometry.type === 'Point') {
+			const name = feature.properties?.name;
+			if (typeof name === 'string' && name !== '') props.amName = name;
+		}
+		out.push({ type: 'Feature', geometry: feature.geometry, properties: props });
+
+		const endpoints = lineEndpoints(feature.geometry);
+		if (!endpoints) continue;
+		const [start, end] = endpoints;
+		out.push({
+			type: 'Feature',
+			geometry: { type: 'Point', coordinates: start },
+			properties: { amColor: color, amIndex: index, amRole: 'start' },
+		});
+		out.push({
+			type: 'Feature',
+			geometry: { type: 'Point', coordinates: end },
+			properties: { amColor: color, amIndex: index, amRole: 'end' },
+		});
+	}
+	return out;
 }

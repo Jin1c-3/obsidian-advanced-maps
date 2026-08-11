@@ -69,11 +69,17 @@ export function projectedFeatures(rec: TrackRecord | undefined, system: CoordSys
 	const memo = (rec.projected ??= new Map<CoordSystem, ParsedTrack['features']>());
 	const hit = memo.get(system);
 	if (hit) return hit;
-	const features = rec.features.map((feature) => ({
-		type: 'Feature' as const,
-		properties: null,
-		geometry: projectGeometry(feature.geometry, system),
-	}));
+	const features = rec.features.map((feature) => {
+		// A waypoint's own name survives the shift — `times` still does not, and
+		// nothing downstream needs a timestamp on a *drawn* feature; stats read
+		// `rec.features`, never this.
+		const name = feature.properties?.name;
+		return {
+			type: 'Feature' as const,
+			properties: typeof name === 'string' && name !== '' ? { name } : null,
+			geometry: projectGeometry(feature.geometry, system),
+		};
+	});
 	memo.set(system, features);
 	return features;
 }

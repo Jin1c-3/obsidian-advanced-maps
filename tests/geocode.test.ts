@@ -1,15 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
 	amapRequest,
+	amapReverseRequest,
 	geocodeRequest,
 	GeocodeError,
 	needsKey,
 	nominatimRequest,
+	nominatimReverseRequest,
 	parseAmap,
+	parseAmapReverse,
 	parseGeocode,
 	parseNominatim,
+	parseNominatimReverse,
+	parseReverse,
+	reverseRequest,
 } from '../src/geocode';
-import { toWgs84 } from '../src/coords';
+import { toWgs84, wgs2gcj } from '../src/coords';
 
 describe('nominatimRequest', () => {
 	it('asks for names in the reader’s language', () => {
@@ -70,6 +76,46 @@ describe('parseNominatim', () => {
 	it('marks results WGS-84, so converting them is a no-op', () => {
 		const [first] = parseNominatim(rows);
 		expect(toWgs84(first.system, first.lng, first.lat)).toEqual([120.1444, 30.2426]);
+	});
+});
+
+describe('nominatimReverseRequest', () => {
+	it('asks /reverse for lat/lon/format/accept-language', () => {
+		const { url } = nominatimReverseRequest(30.2426, 120.1444, 'zh');
+		const parsed = new URL(url);
+		expect(parsed.pathname).toBe('/reverse');
+		const params = parsed.searchParams;
+		expect(params.get('lat')).toBe('30.2426');
+		expect(params.get('lon')).toBe('120.1444');
+		expect(params.get('format')).toBe('jsonv2');
+		expect(params.get('accept-language')).toBe('zh');
+	});
+
+	it('identifies itself, the same as the forward request', () => {
+		const { headers } = nominatimReverseRequest(1, 2, 'en');
+		expect(headers['User-Agent']).toMatch(/obsidian-advanced-maps/);
+	});
+
+	it('sends no Referer — Electron blocks the request outright when it is set', () => {
+		expect(nominatimReverseRequest(1, 2, 'en').headers).not.toHaveProperty('Referer');
+	});
+});
+
+describe('parseNominatimReverse', () => {
+	it('reads display_name off a single object, not an array', () => {
+		expect(parseNominatimReverse({ display_name: '西湖, 杭州市, 浙江省, 中国' })).toBe(
+			'西湖, 杭州市, 浙江省, 中国'
+		);
+	});
+
+	it('throws with the provider’s own words when it answers with an error field', () => {
+		expect(() => parseNominatimReverse({ error: 'Unable to geocode' })).toThrow(GeocodeError);
+		expect(() => parseNominatimReverse({ error: 'Unable to geocode' })).toThrow('Unable to geocode');
+	});
+
+	it('fails loudly on null and on a body with neither field', () => {
+		expect(() => parseNominatimReverse(null)).toThrow(GeocodeError);
+		expect(() => parseNominatimReverse({})).toThrow(GeocodeError);
 	});
 });
 
@@ -135,6 +181,61 @@ describe('parseAmap', () => {
 	});
 });
 
+describe('amapReverseRequest', () => {
+	it('shifts the WGS-84 input to GCJ-02 before it goes in the location param — the seam that matters', () => {
+		// 天安门, Beijing — well inside China, so the shift is not the identity.
+		const lat = 39.9042;
+		const lng = 116.4074;
+		const { url } = amapReverseRequest(lat, lng, 'KEY123');
+		const params = new URL(url).searchParams;
+		const [sentLng, sentLat] = (params.get('location') ?? '').split(',').map(Number);
+		const [expectedLng, expectedLat] = wgs2gcj(lng, lat);
+		expect(sentLng).toBeCloseTo(expectedLng, 9);
+		expect(sentLat).toBeCloseTo(expectedLat, 9);
+		// Not the raw WGS-84 value: a missed conversion is invisible on screen and
+		// ~500 m off, which is exactly what this assertion would catch.
+		expect(sentLng).not.toBeCloseTo(lng, 3);
+		expect(sentLat).not.toBeCloseTo(lat, 3);
+	});
+
+	it('hits the regeo endpoint with the key', () => {
+		const { url } = amapReverseRequest(30, 120, 'KEY123');
+		expect(url).toContain('/v3/geocode/regeo');
+		expect(new URL(url).searchParams.get('key')).toBe('KEY123');
+	});
+
+	it('is the identity outside China, same as wgs2gcj itself', () => {
+		const lat = 51.5033;
+		const lng = -0.1196;
+		const { url } = amapReverseRequest(lat, lng, 'K');
+		const [sentLng, sentLat] = (new URL(url).searchParams.get('location') ?? '').split(',').map(Number);
+		expect(sentLng).toBeCloseTo(lng, 6);
+		expect(sentLat).toBeCloseTo(lat, 6);
+	});
+});
+
+describe('parseAmapReverse', () => {
+	it('reads regeocode.formatted_address on status "1"', () => {
+		const body = { status: '1', regeocode: { formatted_address: '浙江省杭州市西湖区北山街道' } };
+		expect(parseAmapReverse(body)).toBe('浙江省杭州市西湖区北山街道');
+	});
+
+	it('treats status "0" as a failure even though the HTTP call succeeded', () => {
+		expect(() => parseAmapReverse({ status: '0', info: 'INVALID_USER_KEY' })).toThrow(GeocodeError);
+		expect(() => parseAmapReverse({ status: '0', info: 'INVALID_USER_KEY' })).toThrow('INVALID_USER_KEY');
+	});
+
+	it('fails loudly when status is "1" but formatted_address is missing or empty', () => {
+		expect(() => parseAmapReverse({ status: '1', regeocode: {} })).toThrow(GeocodeError);
+		expect(() => parseAmapReverse({ status: '1', regeocode: { formatted_address: '' } })).toThrow(GeocodeError);
+		expect(() => parseAmapReverse({ status: '1' })).toThrow(GeocodeError);
+	});
+
+	it('fails loudly on a body it cannot make sense of', () => {
+		expect(() => parseAmapReverse(null)).toThrow(GeocodeError);
+	});
+});
+
 describe('routing', () => {
 	it('sends each provider to its own reader', () => {
 		expect(geocodeRequest('amap', 'x', { key: 'K', language: 'zh' }).url).toContain('amap.com');
@@ -148,5 +249,21 @@ describe('routing', () => {
 		expect(needsKey('amap', '   ')).toBe(true);
 		expect(needsKey('amap', 'K')).toBe(false);
 		expect(needsKey('nominatim', '')).toBe(false);
+	});
+});
+
+describe('reverse routing', () => {
+	it('sends each provider through its own builder', () => {
+		expect(reverseRequest('amap', 30, 120, { key: 'K', language: 'zh' }).url).toContain('amap.com');
+		expect(reverseRequest('nominatim', 30, 120, { key: '', language: 'zh' }).url).toContain(
+			'openstreetmap.org/reverse'
+		);
+	});
+
+	it('sends each provider’s body through its own reader', () => {
+		expect(parseReverse('nominatim', { display_name: 'Big Ben, London' })).toBe('Big Ben, London');
+		expect(parseReverse('amap', { status: '1', regeocode: { formatted_address: '浙江省杭州市' } })).toBe(
+			'浙江省杭州市'
+		);
 	});
 });
