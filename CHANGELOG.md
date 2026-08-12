@@ -6,10 +6,15 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.12.1]
+
+Documentation only — `main.js` is byte-identical to 1.12.0.
+
 ### Changed
 
 - The plugin description now names photos and counts four ways to fill a
-  coordinate, rather than three.
+  coordinate, rather than three. `manifest.json`, `package.json` and the
+  repository's own About line all say the same sentence.
 - The screenshots of the photo features are a real walk with real photos taken
   along it, instead of synthetic placeholder images, and the README's lead
   image is one of them.
@@ -384,7 +389,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.1...HEAD
+[1.12.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.0...1.12.1
 [1.12.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.11.0...1.12.0
 [1.11.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.1...1.11.0
 [1.10.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.0...1.10.1
