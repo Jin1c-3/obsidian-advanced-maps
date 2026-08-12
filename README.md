@@ -335,7 +335,10 @@ _Fill place name from coordinates_ is the other direction: it reads the note's
 coordinate property and writes back an address, into a separate property —
 **Place property** in settings, default `location`. It overwrites whatever is
 already there, the same reasoning that lets _Fill coordinates from current
-location_ overwrite: running a command by hand is the explicit ask.
+location_ overwrite: running a command by hand is the explicit ask. If Place
+property is set to the same name as Coordinate property, the command refuses
+and shows a notice instead — writing there would overwrite the coordinate it
+just read.
 
 It reuses whichever provider and key you set up for place search above. When
 that provider is Amap, the coordinate is shifted to GCJ-02 before it is sent —

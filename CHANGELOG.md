@@ -6,6 +6,38 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.10.1]
+
+### Fixed
+
+- **The direction arrows now point along the track.** They were drawn pointing up
+  in their own image, and a line placement rotates an icon's _right_ edge onto
+  the line's bearing — so every arrow sat on the track pointing across it. They
+  also could not have shown it: a filled triangle at 12 px has its apex 6 px from
+  either base corner, which says nothing about which corner is the front, and a
+  shape with no legible direction cannot look like it is pointing the wrong way.
+  Now an arrowhead with a notched tail, apex to the right, at 18 px — big enough
+  to read at the zoom a track's own auto-fit picks, which 12 px was not.
+- **The end pin was a hard red square**, which beside Obsidian's own rounded map
+  controls reads as an image that failed to load. It is now a ring at the start
+  pin's own diameter — a pair, and one that survives a reader who cannot
+  separate the two colours.
+- **Fill place name from coordinates** now refuses, with a notice, when
+  **Place property** and **Coordinate property** are set to the same
+  frontmatter key — including a **Coordinate property** renamed to
+  `location`, **Place property**'s own default — rather than silently
+  overwriting the note's coordinate with the address string it just looked
+  up.
+- **Show track markers**, turned off, now also hides the waypoint-name
+  tooltip on inline maps. It already hid the start/end pins and the
+  direction arrows; the tooltip kept working regardless of the setting.
+- The direction-arrow icon now gets the same halo the start and end pins
+  already have, so it stays legible on a track colour close to
+  `var(--text-muted)` instead of blending into the line it sits on.
+- The waypoint-name tooltip on an inline map no longer clips against the
+  embed's own top edge; it flips below the cursor when there is not room
+  above.
+
 ## [1.10.0]
 
 ### Added
@@ -272,6 +304,7 @@ one vault; the behaviour is unchanged, everything around it is new.
   base's first map view, and the menu label falls back to the localized default.
 
 [Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.0...HEAD
+[1.10.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.0...1.10.1
 [1.10.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.9.0...1.10.0
 [1.9.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.8.0...1.9.0
 [1.8.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.7.0...1.8.0

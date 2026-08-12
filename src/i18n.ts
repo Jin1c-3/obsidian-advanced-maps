@@ -114,6 +114,9 @@ const en = {
 	/* ---- reverse geocoding ---- */
 	'notice.reverseGeocode.failed': 'Advanced Maps: could not look up a place name — {reason}',
 	'notice.reverseGeocode.done': '{property}: {value}',
+	'notice.reverseGeocode.samePropertyAsCoords':
+		'Advanced Maps: Place property and Coordinate property are both "{property}" — set them to different ' +
+		'properties in settings, or this would overwrite the coordinate with the place name.',
 
 	/* ---- settings: external maps ---- */
 	'settings.external.heading': 'Open in external map',
@@ -352,6 +355,8 @@ const zh: Record<TranslationKey, string> = {
 
 	'notice.reverseGeocode.failed': 'Advanced Maps：查找地名失败——{reason}',
 	'notice.reverseGeocode.done': '{property}：{value}',
+	'notice.reverseGeocode.samePropertyAsCoords':
+		'Advanced Maps：地名属性和坐标属性都是「{property}」——请在设置里把它们改成不同的属性，否则会用地名覆盖坐标。',
 
 	'settings.external.heading': '用外部地图打开',
 	'settings.external.intro':

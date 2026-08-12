@@ -583,8 +583,15 @@ in, an address out. It reuses `geocodeProvider`, `amapKeyStore`, `amapKey` and
 — a 高德 Web-service key already covers `/v3/place/text` and `/v3/geocode/regeo`
 alike, so a second dropdown would be one question asked twice. The only new
 setting this feature needed is where the answer goes: `placeProperty`, default
-`location`, never `coordsProperty` — reading and writing the same property
-would make the command overwrite the very thing it reads.
+`location` — deliberately not `coordsProperty`'s default of `coords`, so a
+fresh install has the two apart. Nothing stops a reader from pointing both at
+the same property by hand, though — typing `coords` into the new field, or
+renaming `coordsProperty` to `location` while `placeProperty` sits at its
+default — and reading and writing the same property would make the command
+overwrite the very thing it reads. So `reverseGeocodeCurrent` checks the two
+settings against each other before touching the note, the same way it checks
+`needsKey` before spending a request, and refuses with a notice rather than
+silently turning a note's coordinate into an address string.
 
 `reverseRequest`/`parseReverse` in `geocode.ts` route to `nominatimReverseRequest`
 /`parseNominatimReverse` or `amapReverseRequest`/`parseAmapReverse`, exactly as
@@ -888,8 +895,11 @@ synchronous functions every existing caller already assumes. A Lucide name was
 the other option and was rejected for a sharper reason than "one more
 dependency": an icon name Obsidian's bundled set does not have renders
 nothing, silently, and there is no way to probe for that from outside a
-running Obsidian — a filled circle, a filled square and a filled triangle
-cannot fail that way.
+running Obsidian — a hand-drawn canvas path cannot fail that way.
+
+Which shapes took a phone to settle, and two of the first three were wrong.
+See "the shapes were wrong twice" below: a canvas path that cannot fail to
+render can still fail to be read, and that half is not visible in the source.
 
 No SDF and no `icon-color`. `icon-color` only tints an SDF-marked image, and a
 hand-authored true distance field is the kind of thing that looks fine until
@@ -966,15 +976,88 @@ browser happened to pick as the event target. The base-view half is a written
 gap in the roadmap, not a silently missing feature — see "Waypoint names on
 hover, on a base map".
 
-Icon pixel sizes (20 px for the start/end pins, 12 px for the arrow),
-`symbol-spacing` (90 px), and the weight-coupling formula `applyTrackPaint()`
-scales `icon-size` by were chosen without a running Obsidian to screenshot
-against and are stated as starting points, not measured numbers — this repo's
-own rule is to never claim a number as measured that was not. They are the one
-thing about this feature worth a live visual pass before calling it settled:
-whether the arrows read at a normal zoom without cluttering a busy, zoomed-out
-multi-track view, and whether a loop route (start and end at the same point)
-reads as "two markers stacked" rather than as one hiding the other.
+### The arrow was wrong twice, and only a phone said so
+
+Three separate mistakes here, on two rounds of looking at a real screenshot. The
+one worth reading first, because it is invisible in the source and silent at
+runtime:
+
+**An arrow icon on a line placement must be drawn pointing RIGHT, not up.**
+`icon-rotation-alignment: 'map'` under `symbol-placement: 'line'` rotates the
+image's **+x axis** onto the line's bearing — the same convention as text along
+a line, which reads left-to-right in the direction of travel, and the reason
+every OSM one-way arrow sprite is drawn pointing right. Drawn pointing up, as
+this shipped, the arrows still sit on the line and still turn as it turns; they
+just point **across** it for its whole length. Nothing errors, the rotation code
+is doing exactly what it says, and on a mostly-straight segment the result looks
+enough like a decoration that the first screenshot did not give it away — it
+took a second one, on a stretch with a bend in it, for "these point the wrong
+way" to become "these point at 90° to the wrong way".
+
+The other two were the shapes. The first version of the three icons was a filled
+circle, a filled square and a filled triangle, at 20 px / 20 px / 12 px, with
+the sizes and `symbol-spacing` written down as reasoned starting points rather
+than measured numbers. The reasoning held for the circle and failed for the
+other two, and neither failure is visible in the source either:
+
+- **A filled triangle does not read as an arrow at 12 px.** It was drawn
+  `(6,0) → (12,12) → (0,12)`, so the apex sat 6 px from either base corner and
+  nothing said which of the three corners was the front. It is now an arrowhead
+  with a **notched tail**: one concave end, which a viewer reads as "the back"
+  immediately, where they do not read a marginally sharper corner as "the
+  front". 18 px rather than 12, and the halo 1.2 px rather than 1.5: at 12 the
+  halo was closing the notch back up, and at 14 — measured against a real 5.8 km
+  track at the zoom `fit()` picks for it — the arrows were legible only once you
+  knew to look for them. Worth noticing that this failure **masked** the rotation
+  one above: a shape with no legible direction cannot look like it is pointing
+  the wrong way.
+
+  Do not answer "still too small" by raising `ARROW_PX` much further, and
+  **especially** not by raising `applyTrackPaint()`'s `Math.min(1.6, …)` clamp on
+  `icon-size`. A line-placed symbol MapLibre cannot fit on its segment is
+  **dropped, not shrunk**: measured on that same track, `icon-size: 4` removed
+  every arrow from the map rather than making any of them bigger. The failure
+  looks exactly like the feature being switched off, and `18 × 1.6` is already
+  close to where placement starts refusing.
+
+- **An axis-aligned filled square reads as a broken image.** Beside Obsidian's
+  own rounded map controls, a hard-edged red rectangle with a 2 px light border
+  is what a failed `<img>` looks like. It is now a **ring** at the start disc's
+  own diameter: solid-versus-ring, which also carries the pair for a reader who
+  cannot separate `text-success` from `text-error`, where colour alone would
+  not. The hole is filled with the halo colour rather than left transparent,
+  since a transparent one shows the track's own line running through the middle
+  of the marker that marks its end.
+
+`ICON_SCALE`/`pixelRatio` were **not** the problem, which is worth saying
+because a hard-edged blob on a phone looks exactly like a 1× bitmap on a 3×
+screen. They were already 3 and matched; the shapes were simply unreadable at
+any resolution.
+
+**How to check any of this without a phone**, which is what made the second and
+third rounds cheap: the CLI reaches a live inline map. `plugin.embeds` is a Set
+of `TrackEmbed`, and esbuild mangles nothing, so `map` and `rec` are both
+reachable — pick the entry that has them (a torn-down embed is still in the Set
+with `map: null`), read the last dozen coordinates of a LineString to get a
+segment whose bearing you know from the data, aim the camera at it, and screenshot:
+
+```bash
+obsidian open path="moments/….md"        # then wait for the embed to build
+obsidian eval code="const e=[...app.plugins.plugins['advanced-maps'].embeds].filter(e=>e.map)[0]; e.map.jumpTo({center:[120.126525,30.249265],zoom:17.6}); 'aimed'"
+obsidian dev:screenshot path=/tmp/arrows.png
+```
+
+Two traps in that loop. A fresh `draw()` ends in `fit()`, so a `jumpTo` issued
+while the embed is still building is overwritten a moment later — aim it after
+the map has settled, or accept the framed overview. And `plugin:reload` destroys
+every embed, so the note has to be re-rendered (switch away and back) before
+there is a map to aim at all.
+
+Still unmeasured, and still worth a live pass: `symbol-spacing` (90 px) on a
+busy zoomed-out multi-track view, and whether a loop route — start and end on
+the same pixel — reads as two markers stacked rather than as one hiding the
+other. `icon-allow-overlap`/`icon-ignore-placement` are set for that case, so
+the question is whether it _reads_, not whether both are drawn.
 
 ## Opening a spot in another map app
 

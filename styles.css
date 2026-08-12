@@ -46,6 +46,14 @@
 	display: block;
 }
 
+/* Flipped by embed.ts for a waypoint near the top edge of the map, where the
+ * default above-cursor transform would otherwise carry the label through
+ * .advanced-maps-embed's own overflow: hidden. Mirrors the same 30%-of-height
+ * gap from the cursor point that the default transform leaves above it. */
+.advanced-maps-waypoint-tooltip.is-below {
+	transform: translate(-50%, 30%);
+}
+
 /* Distance/ascent/duration bar and elevation profile under an inline map.
  * Deliberately a sibling of .advanced-maps-embed rather than a child of it:
  * that box has a fixed height and `overflow: hidden` so the map fills exactly

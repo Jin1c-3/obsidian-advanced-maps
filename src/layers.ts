@@ -152,9 +152,13 @@ const arrowLayerSpec = {
 		'icon-image': ARROW_ICON,
 		'symbol-placement': 'line',
 		'symbol-spacing': 90,
-		// The icon is drawn pointing "up" in its own canvas — see ensureTrackIcons
-		// — which 'map' alignment then rotates to match the line's own bearing at
-		// each placement point.
+		// The icon is drawn pointing RIGHT in its own canvas — see ensureTrackIcons
+		// — because 'map' alignment on a line placement rotates the image's +x axis
+		// onto the line's bearing, not its top. Same convention as text along a
+		// line, which reads left-to-right in the direction of travel, and the
+		// reason every OSM one-way arrow sprite is drawn pointing right. Drawing
+		// it pointing up instead is a silent 90° error: the arrows still sit on
+		// the line, still rotate as it turns, and point across it the whole way.
 		'icon-rotation-alignment': 'map',
 		'icon-allow-overlap': true,
 		'icon-ignore-placement': true,
@@ -176,9 +180,16 @@ const arrowLayerSpec = {
  * Three ordinary canvas path shapes rather than Lucide icons through
  * `setIcon()`: a Lucide name that does not exist in Obsidian's bundled icon
  * set renders nothing, silently, and there is no way to probe for one from
- * outside a running Obsidian. A filled circle, a filled square and a filled
- * triangle cost nothing to get right and look right at every size these
- * render at.
+ * outside a running Obsidian. A hand-drawn path cannot fail that way.
+ *
+ * Which shapes, though, took a phone to settle, and the first answer was wrong
+ * on two of the three. A plain filled triangle does not read as an arrow at
+ * this size — at 12 px its apex was 6 px from either base corner, so nothing
+ * said which of the three was the front — and an axis-aligned filled square,
+ * sitting beside Obsidian's own rounded map controls, reads as an image that
+ * failed to load. Both are fixed below, and both were only visible on a
+ * screenshot: a triangle and a square are exactly the shapes that look
+ * reasonable in the source.
  *
  * No SDF and no `icon-color`. `icon-color` only tints an SDF-marked image, and
  * a hand-authored true distance field is the kind of thing that looks fine
@@ -193,7 +204,14 @@ const arrowLayerSpec = {
  *  than this and handed to MapLibre with a matching `pixelRatio`, the same way
  *  a retina image is served larger than its layout size. */
 const ENDPOINT_PX = 20;
-const ARROW_PX = 12;
+/** 18 rather than the 12 this shipped at: the notched tail below needs room to
+ *  read as a notch, and at 12 the halo stroke was closing it back up. Do not
+ *  raise this much further, and do not raise `applyTrackPaint`'s 1.6 clamp on
+ *  `icon-size` to compensate for a thin line: measured, a line-placed symbol
+ *  MapLibre cannot fit on its segment is **dropped**, not shrunk — at
+ *  `icon-size: 4` every arrow on this track vanished rather than getting
+ *  bigger. 18 × the 1.6 clamp is still inside what places. */
+const ARROW_PX = 18;
 const ICON_SCALE = 3;
 
 /**
@@ -269,12 +287,24 @@ function ensureTrackIcons(map: MapLibreMap): void {
 		map.addImage(
 			END_ICON,
 			drawIcon(ENDPOINT_PX, (ctx, size) => {
-				const pad = 3;
+				// A ring, at the same diameter as the start disc. Solid-versus-ring is
+				// also what carries the pair for a reader who cannot tell
+				// `text-success` from `text-error`, which colour alone would not.
+				const r = size / 2 - 2;
+				ctx.beginPath();
+				ctx.arc(size / 2, size / 2, r, 0, Math.PI * 2);
 				ctx.fillStyle = endColor;
-				ctx.fillRect(pad, pad, size - pad * 2, size - pad * 2);
+				ctx.fill();
 				ctx.lineWidth = 2;
 				ctx.strokeStyle = halo;
-				ctx.strokeRect(pad, pad, size - pad * 2, size - pad * 2);
+				ctx.stroke();
+				// Punched out in the halo colour rather than left transparent: a
+				// transparent hole would show the track's own line running through
+				// the middle of the marker that marks where it ends.
+				ctx.beginPath();
+				ctx.arc(size / 2, size / 2, r * 0.42, 0, Math.PI * 2);
+				ctx.fillStyle = halo;
+				ctx.fill();
 			}),
 			{ pixelRatio: ICON_SCALE }
 		);
@@ -283,14 +313,29 @@ function ensureTrackIcons(map: MapLibreMap): void {
 		map.addImage(
 			ARROW_ICON,
 			drawIcon(ARROW_PX, (ctx, size) => {
-				// Points "up" — see arrowLayerSpec's `icon-rotation-alignment`.
+				// An arrowhead with a notched tail, apex pointing RIGHT — see
+				// arrowLayerSpec's `icon-rotation-alignment` for why right and not up,
+				// which cost a second look at a phone to notice. The notch is the
+				// other half: it gives the shape one concave end, and a viewer reads
+				// "that end is the back" far faster than they read "that corner is
+				// sharper". Which is what the triangle this replaces got wrong.
 				ctx.beginPath();
-				ctx.moveTo(size / 2, 0);
-				ctx.lineTo(size, size);
-				ctx.lineTo(0, size);
+				ctx.moveTo(size * 0.95, size / 2);
+				ctx.lineTo(size * 0.12, size * 0.88);
+				ctx.lineTo(size * 0.4, size / 2);
+				ctx.lineTo(size * 0.12, size * 0.12);
 				ctx.closePath();
 				ctx.fillStyle = arrowColor;
 				ctx.fill();
+				// Same halo the endpoint pins get, and for the same reason: the
+				// arrow sits directly on the line it decorates, so a track colour
+				// close to `text-muted` would otherwise blend the two together.
+				// Thinner than their 2 px, because a round-joined ring that wide on
+				// a shape this small fills the notch back in.
+				ctx.lineWidth = 1.2;
+				ctx.strokeStyle = halo;
+				ctx.lineJoin = 'round';
+				ctx.stroke();
 			}),
 			{ pixelRatio: ICON_SCALE }
 		);

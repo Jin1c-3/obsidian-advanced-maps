@@ -250,9 +250,13 @@ export class TrackEmbed extends Component {
 	private hoverWaypoint(ev: MapMouseEvent): void {
 		const name = ev.features?.[0]?.properties?.amName;
 		const point = ev.point;
-		// Absent is absent — TCX has no waypoint concept at all, and GeoJSON may
-		// or may not name a point. Both read the same as "nothing to show" here.
-		if (typeof name !== 'string' || name === '' || !point || !this.rootEl) {
+		// Read live, the same as applyTrackPaint() reads it on every draw() — one
+		// setting, trackMarkers, covers the endpoint pins, the direction arrows
+		// and this tooltip together, and a reader who turns it off expects all
+		// three gone at once rather than the tooltip surviving on its own.
+		if (!this.plugin.settings.trackMarkers || typeof name !== 'string' || name === '' || !point || !this.rootEl) {
+			// Absent is absent — TCX has no waypoint concept at all, and GeoJSON may
+			// or may not name a point. Both read the same as "nothing to show" here.
 			this.hideWaypointTooltip();
 			return;
 		}
@@ -261,6 +265,15 @@ export class TrackEmbed extends Component {
 		this.tooltipEl.style.left = `${point.x}px`;
 		this.tooltipEl.style.top = `${point.y}px`;
 		this.tooltipEl.addClass('is-visible');
+		// .advanced-maps-embed clips with overflow: hidden so the map fills
+		// exactly the configured height. The default transform carries the
+		// tooltip 130% of its own height above the cursor, so a waypoint within
+		// that margin of the top edge would have its label pushed through the
+		// clip rather than just crowd the border — flip it below the cursor
+		// there instead. offsetHeight is read after `is-visible` is applied
+		// (it is 0 on a `display: none` element), so this is measuring the
+		// tooltip actually about to be shown, not a stale size from last hover.
+		this.tooltipEl.toggleClass('is-below', point.y < this.tooltipEl.offsetHeight * 1.3);
 	}
 
 	private hideWaypointTooltip(): void {

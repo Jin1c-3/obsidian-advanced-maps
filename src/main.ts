@@ -842,6 +842,17 @@ export default class AdvancedMapsPlugin extends Plugin {
 	 * saying so. `registerPlaceSearch` made the same choice.
 	 */
 	private async reverseGeocodeCurrent(file: TFile): Promise<void> {
+		// Checked before anything else touches the note: writePlace() writes to
+		// exactly this key, so if it is also where readCoords() just read the
+		// coordinate from, the write below would overwrite that coordinate with
+		// the place name it becomes. The two default apart ('coords' vs
+		// 'location'), but a reader can point them at the same property by hand —
+		// including by renaming coordsProperty to 'location', the very name
+		// placeProperty defaults to — and nothing else here would notice.
+		if (this.settings.placeProperty === this.settings.coordsProperty) {
+			new Notice(t('notice.reverseGeocode.samePropertyAsCoords', { property: this.settings.coordsProperty }));
+			return;
+		}
 		const found = this.readCoords(file);
 		if (!found) {
 			new Notice(t('notice.noCoords', { file: file.basename, property: this.settings.coordsProperty }));
