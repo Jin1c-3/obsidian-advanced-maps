@@ -5,29 +5,85 @@ import { toTileSpace, type CoordSystem } from './coords';
 import { t } from './i18n';
 import type { LngLatBounds, LocateControl, MapControl, MapLibreMap } from './types/obsidian-internals';
 
-/** A zoom-to-fit button, wearing the same markup as the built-in controls. */
-export class FitControl implements MapControl {
-	private readonly containerEl: HTMLElement;
+/**
+ * One button, wearing the same markup as the built-in controls.
+ *
+ * Shared by both of ours rather than written twice: two four-line `onAdd`s that
+ * have to agree on which classes make a MapLibre control look like an Obsidian
+ * one are exactly the kind of pair that drifts once a theme changes underneath
+ * them.
+ */
+class ControlButton implements MapControl {
+	protected readonly containerEl: HTMLElement;
+	/** Null until `onAdd`, and again after `onRemove`. */
+	protected buttonEl: HTMLElement | null = null;
 
-	constructor(private readonly onClick: () => void) {
+	constructor(
+		private readonly icon: string,
+		private readonly label: string,
+		private readonly onClick: () => void
+	) {
 		this.containerEl = createDiv('maplibregl-ctrl maplibregl-ctrl-group canvas-control-group mod-raised');
 	}
 
 	onAdd(): HTMLElement {
 		const btn = this.containerEl.createDiv({
 			cls: 'canvas-control-item',
-			attr: { 'aria-label': t('control.zoomToFit') },
+			attr: { 'aria-label': this.label },
 		});
-		setIcon(btn, 'scan');
+		setIcon(btn, this.icon);
 		btn.addEventListener('click', (ev) => {
 			ev.stopPropagation();
 			this.onClick();
 		});
+		this.buttonEl = btn;
 		return this.containerEl;
 	}
 
 	onRemove(): void {
+		this.buttonEl = null;
 		this.containerEl.detach();
+	}
+}
+
+/** A zoom-to-fit button. */
+export class FitControl extends ControlButton {
+	constructor(onClick: () => void) {
+		super('scan', t('control.zoomToFit'), onClick);
+	}
+}
+
+/**
+ * The "follow the active note" toggle, which is what decides whether a given
+ * map keeps up with the note being edited.
+ *
+ * It is a button on the map rather than a setting because *which* map should
+ * follow is a per-map question, and no rule about where a map sits answers it.
+ * Sidebar-only was that rule for two versions, and it got the split-screen case
+ * — a note in one tab group, a map in the next one over — exactly wrong.
+ *
+ * The pressed state is a class and an `aria-pressed`, not a second icon: the
+ * built-in controls have no pressed look to inherit, so `styles.css` states one.
+ */
+export class FollowControl extends ControlButton {
+	constructor(onToggle: () => void) {
+		super('crosshair', t('control.follow'), onToggle);
+	}
+
+	override onAdd(): HTMLElement {
+		const el = super.onAdd();
+		this.buttonEl?.addClass('advanced-maps-follow');
+		return el;
+	}
+
+	setActive(on: boolean): void {
+		const btn = this.buttonEl;
+		if (!btn) return;
+		btn.toggleClass('is-active', on);
+		btn.setAttribute('aria-pressed', String(on));
+		// The label says what the button does next, which is the half a reader
+		// cannot get from the pressed look alone.
+		btn.setAttribute('aria-label', t(on ? 'control.followOff' : 'control.follow'));
 	}
 }
 

@@ -66,6 +66,8 @@ export default class AdvancedMapsPlugin extends Plugin {
 	readonly embeds = new Set<TrackEmbed>();
 	/** Notes whose blank coordinate property is already being filled in. */
 	private readonly filling = new Set<string>();
+	/** The pane the followed notes are opening in; see `followTarget`. */
+	private followPane: WorkspaceLeaf | null = null;
 	/** Which track files a note embeds, memoised against the metadata that answered. */
 	private trackLinks = new WeakMap<CachedMetadata, TFile[]>();
 
@@ -590,35 +592,81 @@ export default class AdvancedMapsPlugin extends Plugin {
 	}
 
 	/**
-	 * A map in a sidebar keeping up with the note being edited.
+	 * The maps that follow, keeping up with the note being edited.
 	 *
 	 * **The camera moves, never the query.** The filter belongs to Bases and to
 	 * whoever wrote the base; rewriting it to name one note — which is how the
-	 * other map plugin does this — takes the wheel off them.
+	 * other map plugin does this — takes the wheel off them. The zoom is left
+	 * alone too: no `zoom` on the target, so MapLibre keeps whatever the reader
+	 * chose. "Open in map" passes `openZoom` because that is a jump to a subject
+	 * rather than a look around one.
 	 *
-	 * Only sidebar maps follow, and the zoom is left alone. A map in the main area
-	 * is something being read or arranged, and moving it because a note was
-	 * clicked in the file explorer is the same overreach one step smaller.
+	 * **Which** maps follow is each map's own button and nothing else. This asked
+	 * `leaf.getRoot() !== workspace.rootSplit` for two versions — sidebar only, on
+	 * the grounds that a map in the main area is something being read or arranged
+	 * rather than something watching. That reasoning holds for a map sharing a tab
+	 * group with the note, which is hidden the moment the note opens, and gets the
+	 * case people actually asked about exactly backwards: a note in one tab group
+	 * and a map in the next one over is the follow layout, and it lives entirely
+	 * in the main area. No rule about where a map sits distinguishes the two —
+	 * only the reader does, which is what the button is.
 	 */
 	private followActiveNote(file: TAbstractFile | null): void {
-		if (!this.settings.followActiveNote) return;
-		if (!(file instanceof TFile)) return;
-		const found = this.readCoords(file);
-		const pair = found ? parseLatLng(found.raw) : null;
-		if (!pair) return;
-		const target: FocusTarget = { lat: pair[0], lng: pair[1], animate: true, file };
-		for (const layer of this.sidebarLayers()) layer.focus(target);
+		const target = this.noteTarget(file);
+		if (!target) return;
+		// Recorded here rather than from the `file-open` handler, because a base
+		// file opening in a leaf fires `file-open` too and `noteTarget` is what
+		// tells the two apart: only a note with a readable coordinate gets this
+		// far, so `followPane` cannot end up pointing at a map.
+		this.followPane = this.app.workspace.getMostRecentLeaf();
+		for (const layer of this.layers) if (layer.isFollowing()) layer.focus(target);
 	}
 
-	/** The layers drawing outside the main area, which are the only ones that follow. */
-	private sidebarLayers(): TrackLayer[] {
-		const { workspace } = this.app;
-		const out: TrackLayer[] = [];
-		workspace.iterateAllLeaves((leaf) => {
-			if (leaf.getRoot() === workspace.rootSplit) return;
-			out.push(...this.layersIn(leaf.view.containerEl));
-		});
-		return out;
+	/**
+	 * One map has just been asked to start following. Called by the button rather
+	 * than calling it, so that turning following on lands the camera at once
+	 * instead of at the next `file-open`.
+	 */
+	followNow(layer: TrackLayer): void {
+		const target = this.noteTarget(this.app.workspace.getActiveFile());
+		if (target) layer.focus(target);
+	}
+
+	/**
+	 * Where a click on a **following** map should open a note: the pane that map
+	 * is following, which is the pane the last followed note opened in.
+	 *
+	 * The native view opens a marker's note with `openLinkText(path, '', false)`,
+	 * which lands in the active leaf — and clicking a map is what makes that leaf
+	 * the map's own. So a following map answers a click by replacing itself with
+	 * the note it was pointing at, which is the one thing a viewfinder must not
+	 * do. Measured: with the map's leaf active, both `getMostRecentLeaf()` and
+	 * `getLeaf(false)` answer the map's leaf, so there is no built-in "the other
+	 * pane" to ask for — it has to be remembered from when it was the active one.
+	 *
+	 * Null gives the caller the native behaviour back, which is the right answer
+	 * for a map nobody has followed anything with yet.
+	 */
+	followTarget(layer: TrackLayer): WorkspaceLeaf | null {
+		const leaf = this.followPane;
+		if (!leaf || !leaf.view) return null;
+		// Closed since, or it is this very map — either way it is not somewhere
+		// else to open a note.
+		const own = layer.view.containerEl;
+		if (!leaf.view.containerEl?.isConnected) return null;
+		if (own && leaf.view.containerEl.contains(own)) return null;
+		return leaf;
+	}
+
+	/** Where a note's own coordinate would put a camera, or null if it has none to read. */
+	private noteTarget(file: TAbstractFile | null): FocusTarget | null {
+		if (!(file instanceof TFile)) return null;
+		const found = this.readCoords(file);
+		const pair = found ? parseLatLng(found.raw) : null;
+		if (!pair) return null;
+		// keepFocus: this camera moved because the reader switched notes, not
+		// because they came over here. See `restoreFocus` in track-layer.ts.
+		return { lat: pair[0], lng: pair[1], animate: true, file, keepFocus: true };
 	}
 
 	/* ---- a map of the notes around this one ---- */

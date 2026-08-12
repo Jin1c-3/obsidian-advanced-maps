@@ -33,6 +33,8 @@ const en = {
 
 	/* ---- map controls and embeds ---- */
 	'control.zoomToFit': 'Zoom to fit',
+	'control.follow': 'Follow the active note',
+	'control.followOff': 'Stop following the active note',
 	'embed.failed': 'Could not draw {file}: {message}',
 	'embed.mapsDisabled': 'the built-in Maps plugin is not enabled',
 
@@ -228,10 +230,11 @@ const en = {
 	'settings.open.placeProperty.desc': 'The property "Fill place name from coordinates" writes its result into.',
 	'settings.open.zoom.name': 'Zoom level',
 	'settings.open.zoom.desc': 'How close the map lands when it opens on a note. Following keeps the zoom you set.',
-	'settings.open.follow.name': 'Follow the active note',
+	'settings.open.follow.name': 'New maps follow the active note',
 	'settings.open.follow.desc':
-		'A map open in a sidebar pans to the note you switch to, and opens its popup. Only sidebar maps follow — one ' +
-		'in the main area is a thing you are reading. The query is never touched, only the camera.',
+		'A following map pans to the note you switch to and opens its popup — the query is never touched, only the ' +
+		'camera. Every map has its own ⊹ button for this, wherever it is open; this only sets which way that button ' +
+		'starts. It is not remembered when a map is closed.',
 	'settings.open.aroundView.name': '"Around this note" view name',
 	'settings.open.aroundView.desc':
 		'The view added to that base for maps of the notes around a note. Renaming it here does not repoint maps ' +
@@ -287,6 +290,8 @@ const zh: Record<TranslationKey, string> = {
 	'notice.locate.gaveUp': 'Advanced Maps：{reason}。本次启动不再自动重试，手动执行命令可以重来。',
 
 	'control.zoomToFit': '缩放到全部',
+	'control.follow': '跟随当前笔记',
+	'control.followOff': '停止跟随当前笔记',
 	'embed.failed': '无法绘制 {file}：{message}',
 	'embed.mapsDisabled': '内置的 Maps 插件未启用',
 
@@ -426,10 +431,10 @@ const zh: Record<TranslationKey, string> = {
 	'settings.open.placeProperty.desc': '「从坐标填写地名」命令写入结果的属性名。',
 	'settings.open.zoom.name': '缩放级别',
 	'settings.open.zoom.desc': '打开到某篇笔记时放大到的级别。跟随时不动缩放，保持你自己调的。',
-	'settings.open.follow.name': '跟随当前笔记',
+	'settings.open.follow.name': '新地图默认跟随当前笔记',
 	'settings.open.follow.desc':
-		'侧边栏里打开的地图会跟着切换的笔记移动，并弹出它的气泡。只有侧边栏的地图会跟——主区域那张是你正在看的东西。' +
-		'只动镜头，不动查询条件。',
+		'跟随中的地图会跟着切换的笔记移动，并弹出它的气泡——只动镜头，不动查询条件。每张地图不论开在哪里都有自己的 ⊹ ' +
+		'按钮，这里只决定按钮的初始状态；地图关掉后不会记住。',
 	'settings.open.aroundView.name': '「周围」视图名称',
 	'settings.open.aroundView.desc':
 		'为「本篇相关笔记的地图」在该 base 中添加的视图。在这里改名不会改已经插入的地图——它们的链接指向旧名字。',

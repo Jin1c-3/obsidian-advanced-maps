@@ -204,6 +204,15 @@
 	height: min(70vh, 800px) !important;
 }
 
+/* The follow toggle's pressed state. The built-in map controls are all
+ * momentary — there is no "on" look to inherit from them — so this states one,
+ * in the accent colour the rest of the UI already uses for it. The button also
+ * carries aria-pressed, which is the half of this a colour cannot say. */
+.canvas-control-item.advanced-maps-follow.is-active {
+	color: var(--text-accent);
+	background-color: var(--background-modifier-hover);
+}
+
 /* ---- "set coordinates from a link" ---- */
 
 .advanced-maps-link-modal {

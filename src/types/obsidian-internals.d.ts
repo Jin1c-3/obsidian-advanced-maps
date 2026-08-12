@@ -146,6 +146,13 @@ export interface MarkerManager {
 	resolveColor(color: string): string;
 	getBounds(): LngLatBounds | null;
 	getMarkerDrivenProps(config: MapConfig | undefined): unknown;
+	/**
+	 * What a click on a pin does. Handed to the constructor by the view as
+	 * `(path, newLeaf) => app.workspace.openLinkText(path, '', newLeaf)` — read
+	 * out of `obsidian-maps/src/map-view.ts`, and an own property of the manager,
+	 * which is what makes it wrappable per instance.
+	 */
+	onOpenFile(path: string, newLeaf: boolean): void;
 }
 
 export interface PopupManager {

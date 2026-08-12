@@ -4,7 +4,7 @@
 
 import { Keymap, Menu } from 'obsidian';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
-import type { TFile } from 'obsidian';
+import type { PaneType, TFile } from 'obsidian';
 import { ARROW_LAYER, ENDPOINT_LAYER, LINE_LAYER, POINT_LAYER, SRC, type TrackKnob } from './constants';
 import {
 	knownMode,
@@ -22,6 +22,7 @@ import {
 	drawTracks,
 	fitTo,
 	FitControl,
+	FollowControl,
 	guardLocateControl,
 	removeTrackLayers,
 	type LocateGuard,
@@ -61,6 +62,13 @@ export interface FocusTarget {
 	animate?: boolean;
 	/** Whose popup to open on arrival, when that note is one of this view's own rows. */
 	file?: TFile;
+	/**
+	 * Put the keyboard back where it was once the camera and the popup are done.
+	 *
+	 * Set by following and not by "open in map": the difference is whether the
+	 * reader asked to be over here. See `restoreFocus`.
+	 */
+	keepFocus?: boolean;
 }
 
 type TrackFeature = Feature<Geometry, TrackFeatureProps>;
@@ -112,6 +120,18 @@ export class TrackLayer {
 	private interactionsBound = false;
 	private detached = false;
 	private fitControl: FitControl | null = null;
+	private followControl: FollowControl | null = null;
+	/**
+	 * Whether this map keeps up with the note being edited. Per layer, so per
+	 * open map — the setting is only where a new one starts, and two tabs on the
+	 * same base view answer this separately.
+	 *
+	 * Not persisted anywhere: the two places that could hold it are the base file
+	 * (which would make one map's button rewrite everybody else's copy of that
+	 * view) and state of the plugin's own, which this repo would rather not keep.
+	 * So a reopened tab starts from the setting again.
+	 */
+	private following: boolean;
 	private markerFeatures: MarkerFeature[] | null = null;
 	/** How to put back every method wrapped for the life of this layer. */
 	private readonly restorers: Array<() => void> = [];
@@ -133,7 +153,36 @@ export class TrackLayer {
 		private readonly plugin: AdvancedMapsPlugin,
 		/** Public so the plugin can find the layer that draws inside a given element. */
 		readonly view: BasesMapView
-	) {}
+	) {
+		// Read once, here, rather than consulted on every `file-open`: the setting
+		// is the state a *new* map starts in, so changing it must not reach across
+		// and re-arm a map whose button the reader has since pressed.
+		this.following = plugin.settings.followActiveNote;
+	}
+
+	/** Whether this map is one of the ones that follows. Read by the plugin's `file-open`. */
+	isFollowing(): boolean {
+		return this.following;
+	}
+
+	/**
+	 * The button, and the two things it does besides flipping a flag.
+	 *
+	 * Switching it **on** aims at the note that is open now rather than waiting
+	 * for the next `file-open`: a toggle that appears to do nothing until you
+	 * click away and back reads as broken.
+	 *
+	 * Switching it **off** drops `held`, which is what stands `fit()` down (see
+	 * `fit`). Left in place, turning following off would leave the map frozen on
+	 * the last note it followed — auto-fit still standing down for a target
+	 * nothing is aiming at any more.
+	 */
+	private toggleFollow(): void {
+		this.following = !this.following;
+		this.followControl?.setActive(this.following);
+		if (this.following) this.plugin.followNow(this);
+		else this.held = null;
+	}
 
 	private wrap<T extends object, K extends keyof T>(obj: T, key: K, make: (orig: T[K]) => T[K]): void {
 		this.restorers.push(override(obj, key, make));
@@ -178,6 +227,15 @@ export class TrackLayer {
 			// features around; bounds() reads them instead.
 			this.markerFeatures = moved;
 			return moved;
+		});
+
+		// Where a click on a pin sends the note. The native callback is
+		// `openLinkText(path, '', newLeaf)`, which lands in the active leaf — the
+		// map's own, since clicking it is what activated it. Wrapped rather than
+		// re-implemented so a map nobody is following keeps the native behaviour
+		// exactly, including whatever a future version does with `newLeaf`.
+		this.wrap(manager, 'onOpenFile', (orig) => (path: string, newLeaf: boolean) => {
+			this.openNote(path, newLeaf, () => orig.call(manager, path, newLeaf));
 		});
 
 		// A marker's popup is anchored at the note's own value rather than at the
@@ -383,14 +441,16 @@ export class TrackLayer {
 		const view = this.view;
 
 		this.removeLayers();
-		if (this.fitControl && view.map) {
+		for (const control of [this.fitControl, this.followControl]) {
+			if (!control || !view.map) continue;
 			try {
-				view.map.removeControl(this.fitControl);
+				view.map.removeControl(control);
 			} catch {
 				/* map already gone */
 			}
 		}
 		this.fitControl = null;
+		this.followControl = null;
 
 		for (const restore of this.restorers.splice(0)) restore();
 		delete view.__advancedMapsLayer;
@@ -404,6 +464,11 @@ export class TrackLayer {
 	onMapCreated(map: NonNullable<BasesMapView['map']>): void {
 		this.fitControl = new FitControl(() => this.fit(true));
 		map.addControl(this.fitControl, 'top-right');
+		this.followControl = new FollowControl(() => this.toggleFollow());
+		map.addControl(this.followControl, 'top-right');
+		// `addControl` calls `onAdd` synchronously, so the button exists by now and
+		// can be told which way it is pointing.
+		this.followControl.setActive(this.following);
 		this.locate ??= guardLocateControl(map, () => this.system());
 		this.appliedSystem = this.system();
 
@@ -476,8 +541,39 @@ export class TrackLayer {
 			return;
 		}
 		this.held = target;
-		this.aim(target, target.animate === true);
-		this.pendingPopup = this.showNotePopup(target) ? null : target;
+		this.restoreFocus(target, () => {
+			this.aim(target, target.animate === true);
+			this.pendingPopup = this.showNotePopup(target) ? null : target;
+		});
+	}
+
+	/**
+	 * Run something that opens a popup, and leave the keyboard where it was.
+	 *
+	 * A MapLibre `Popup` focuses itself when it opens — `focusAfterOpen`, which
+	 * defaults to true and which the native `PopupManager` never sets — so it
+	 * grabs the first focusable thing inside itself, the note link. Measured: with
+	 * a note focused in one pane, a follow lands `document.activeElement` on
+	 * `a.internal-link` inside the map's popup.
+	 *
+	 * That is correct for a popup the reader opened by pointing at a pin, and it
+	 * is the whole of why following was unusable in a split: every switch between
+	 * notes took the caret out of the editor and put it on the map. The popup is
+	 * still worth opening — a map that moves should say what it moved for — so the
+	 * focus goes back rather than the popup going away.
+	 *
+	 * Restoring after the fact, rather than turning `focusAfterOpen` off on the
+	 * shared popup: the flag is MapLibre's own and the popup is the native
+	 * manager's, and a reader who opens a popup by hovering a pin should still be
+	 * able to tab into it.
+	 */
+	private restoreFocus(target: FocusTarget, run: () => void): void {
+		const doc = this.view.containerEl?.doc ?? activeDocument;
+		const before = target.keepFocus ? doc.activeElement : null;
+		run();
+		// `focus()` on the element that already has it is a no-op, but asking is
+		// cheaper than the scroll a redundant one can cause in a long note.
+		if (before instanceof HTMLElement && doc.activeElement !== before) before.focus();
 	}
 
 	/** The camera move itself, which is also what a later re-frame is undone with. */
@@ -734,7 +830,7 @@ export class TrackLayer {
 		// a map the reader has since moved somewhere else.
 		const waiting = this.pendingPopup;
 		this.pendingPopup = null;
-		if (waiting) this.showNotePopup(waiting);
+		if (waiting) this.restoreFocus(waiting, () => this.showNotePopup(waiting));
 	}
 
 	private removeLayers(): void {
@@ -785,7 +881,31 @@ export class TrackLayer {
 		const item = this.itemFrom(ev);
 		if (!item) return;
 		const mod = ev.originalEvent ? Keymap.isModEvent(ev.originalEvent) : false;
-		void this.view.app.workspace.openLinkText(item.file.path, '', mod);
+		this.openNote(item.file.path, mod);
+	}
+
+	/**
+	 * A click on this map, sent somewhere that is not this map.
+	 *
+	 * Only while following, and only for a plain click — a mod-click means "a new
+	 * tab" and already lands somewhere harmless. Everything else falls through to
+	 * `native`, so a map nobody is following behaves exactly as it always did,
+	 * including whatever a later version of Maps does with `newLeaf`.
+	 *
+	 * `active: true`, because a click on a pin is a request to read that note.
+	 * The `file-open` this raises comes back round to `followActiveNote`, which
+	 * aims this same map at the note it was already showing — a no-op move, and
+	 * cheaper than an exception to the rule.
+	 */
+	private openNote(path: string, mod: PaneType | boolean, native?: () => void): void {
+		const leaf = this.following && !mod ? this.plugin.followTarget(this) : null;
+		const file = leaf ? this.view.app.vault.getFileByPath(path) : null;
+		if (leaf && file) {
+			void leaf.openFile(file, { active: true });
+			return;
+		}
+		if (native) native();
+		else void this.view.app.workspace.openLinkText(path, '', mod);
 	}
 
 	/** Reuse the built-in popup, so a track hover reads like its marker hover. */

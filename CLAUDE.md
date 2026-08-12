@@ -338,18 +338,20 @@ has since moved.
 
 ### Following
 
-`file-open` → the note's coordinate → `focus()` on every layer drawing in a
-**sidebar**. Three decisions:
+`file-open` → the note's coordinate → `focus()` on every layer whose own follow
+button is pressed. Three decisions:
 
 - **The camera moves, never the query.** Map View does this by rewriting its
   filter to `path:"$PATH$"`; here the filter belongs to Bases and to whoever
   wrote the base.
-- **Sidebar only.** A map in the main area is something being read or arranged.
-  `leaf.getRoot() !== workspace.rootSplit` is the test.
+- **Which maps follow is a button on each map, not a rule about where it sits.**
+  See below — this was `leaf.getRoot() !== workspace.rootSplit` for two versions
+  and the rule was wrong.
 - **The zoom is left alone** — no `zoom` in the target, so MapLibre keeps it.
-  Measured: 3.1187 in, 3.1187 out. Zoom to where you want to sit and following
-  stays there; "open in map" passes `openZoom` because that is a jump to a
-  subject rather than a look around one.
+  Measured: 3.1187 in, 3.1187 out, and 3.5588 across two follows in the split
+  test below. Zoom to where you want to sit and following stays there; "open in
+  map" passes `openZoom` because that is a jump to a subject rather than a look
+  around one.
 
 Measured live, on a real 292-note base: on WGS-84 tiles the camera lands on
 `30.281019,120.119698` exactly; on 高德 tiles it lands on
@@ -359,6 +361,120 @@ conversion would have made. A `sync()`, a `reproject()` and a late `load` all
 leave both unchanged, with `userMoved` still false — and `fit(true)` from the ⛶
 control still frames everything, which is the line between "the reader asked" and
 "something re-framed underneath them".
+
+#### Sidebar-only was the wrong rule, and a button is the right one
+
+The first version followed on `leaf.getRoot() !== workspace.rootSplit` — sidebar
+maps only — on the grounds that a map in the main area is something being read or
+arranged rather than a viewfinder, and moving it because a note was clicked in
+the file explorer is an overreach.
+
+That reasoning is sound and the rule it produced is not, because it does not
+separate the two main-area cases. A map **sharing a tab group** with the note is
+hidden the moment that note opens, so following it is pointless. A map in the
+**next tab group over** — a note on the left, a map on the right, which is the
+layout people actually mean by "follow" — is the sidebar case with a different
+parent, and it was the one case the rule excluded. Position cannot tell them
+apart, and neither can visibility (`containerEl.isShown()`, which is public API
+and does work): a background tab a reader parked deliberately and a background
+tab they never think about look identical from here. Only the reader knows, so
+the answer is to ask them once, with a control on the map itself.
+
+Map View reached the same conclusion by a different road: `followActiveNote` is a
+field of its `MapState` (`mapState.ts`), toggled from the view's own control
+panel (`ViewControlsPanel.svelte`), and it has no notion of sidebars anywhere.
+Two things there are worth _not_ copying. It registers `file-open` and
+`active-leaf-change` per view in `BaseMapView`'s constructor with a bare
+`workspace.on()` and never offrefs them; and it follows by rewriting the query,
+which is the decision above.
+
+Four things hold this shape together:
+
+- **The flag lives on the `TrackLayer`, so it is per open map.** Not on the base
+  view (which is per _view_ — the same view open twice would share one answer,
+  and it would mean writing to the reader's `.base` file), and not in settings.
+- **The setting is now a default, read once in the constructor.** Consulting
+  `settings.followActiveNote` on every `file-open` instead would let a settings
+  change re-arm a map whose button the reader had since pressed.
+- **Nothing is persisted.** A reopened tab starts from the setting again. The two
+  places that could hold it are the base file and plugin-owned state, and both
+  cost more than the feature.
+- **Turning it off clears `held`.** `held` is what stands `fit()` down (guard #8
+  and `fit()`'s own list), so leaving it set would freeze the map on the last
+  note it followed — auto-fit still deferring to a target nothing aims at.
+  Measured: with following off, `fit(false)` re-framed from the note to the whole
+  data set, which it could not have done with `held` still in place.
+
+Turning it **on** calls `plugin.followNow(layer)` rather than waiting for the
+next `file-open`. A toggle that appears to do nothing until you click away and
+back reads as broken.
+
+Measured live in exactly the layout the old rule got wrong — a note in one
+main-area tab group, `moments.base` in the next one over, nothing in a sidebar:
+switching notes put the camera on `120.119698,30.281019` and then
+`120.121950,30.264949`, both the notes' own coordinates to six decimals, with the
+zoom unchanged at 3.5588 across both. Then, through the button's own DOM click
+rather than the method behind it: off left `aria-pressed="false"` and dropped the
+`is-active` class, `fit(false)` re-framed to `112.952458,33.188151`, opening
+another note moved nothing, and pressing it again flew straight to that note
+without any `file-open` at all.
+
+#### The two things that made a following map unusable beside a note
+
+Both only show up in the split layout, which is why neither was found while
+following was sidebar-only, and both are about a map that moves without being
+asked reaching further than the camera.
+
+**The popup takes the keyboard.** A MapLibre `Popup` focuses itself when it
+opens — `focusAfterOpen`, which defaults to true and which the native
+`PopupManager` never sets — so it grabs the first focusable thing inside itself,
+the note link. Measured: with a note focused in one pane, a follow moved
+`document.activeElement` from the editor to `a.internal-link` inside the map's
+popup. Every switch between notes therefore took the caret out of the editor,
+which makes the feature worse than useless — you cannot type.
+
+`restoreFocus()` in `track-layer.ts` puts it back, around both the immediate
+popup and the deferred one `sync()` opens for a row that had not arrived yet.
+Restoring afterwards rather than turning `focusAfterOpen` off on the shared
+popup: the flag is MapLibre's and the popup is the native manager's, and a reader
+who opened a popup by hovering a pin should still be able to tab into it. The
+gate is `keepFocus` on the `FocusTarget`, set by following and not by "open in
+map" — the difference is whether the reader asked to be over here. Measured after
+the fix, in source mode: `div.cm-content` before, `div.cm-content` after, with
+the popup open and the camera moved.
+
+**A click on a pin ate the map.** The native view opens a marker's note with
+`(path, newLeaf) => openLinkText(path, '', newLeaf)`, an own property of the
+`MarkerManager` (`obsidian-maps/src/map-view.ts`), so it lands in the active
+leaf — and clicking a map is exactly what makes that leaf the map's own. A
+following map answered a click by replacing itself with the note it had been
+pointing at.
+
+There is no "the other pane" to ask Obsidian for: measured with the map's leaf
+active, both `getMostRecentLeaf()` and `getLeaf(false)` answer the map's leaf.
+Map View keeps its own MRU list (`utils.lastUsedLeaves`) for this reason. This
+does not need one, because following already knows the answer: `followPane` is
+recorded in `followActiveNote`, **after** `noteTarget` has confirmed a readable
+coordinate — a base file opening in a leaf fires `file-open` too, and that check
+is what keeps the pane pointer off a map. So the rule is one sentence: **a
+following map opens notes in the pane it is following.**
+
+`openNote()` is the one door for both click paths — the wrapped `onOpenFile` for
+pins and `open()` for tracks — and it falls through to the native call for a
+mod-click, for a map that is not following, and for a `followPane` that has since
+closed or turns out to be this very map. Measured, with the map's leaf active
+and a pin click driven through `markerManager.onOpenFile`: following on put the
+note in the **left** pane and left `bases:moments.base` and its layer intact;
+following off replaced the map pane with the note, which is the untouched
+behaviour everyone not following still gets.
+
+Two traps met while measuring, both worth knowing. `iterateAllLeaves` **stops on
+a truthy callback return**, so a diagnostic whose body is `leaves.push(l)` — which
+returns the new length — reports one leaf per split and looks exactly like
+Obsidian hiding `bases` leaves from it. The plugin's own callbacks return
+`undefined` and are fine. And a Bases **map view is not a workspace view**: it
+has no `.leaf`, so `layer.view.leaf` is undefined and the leaf tree has to be
+walked from `rootSplit` instead.
 
 ## A map of the notes around a note
 
