@@ -7,14 +7,30 @@
  * to have no rows behind it. The track is then drawn on top.
  */
 
-import { Component } from 'obsidian';
-import type { TFile } from 'obsidian';
+import { Component, Keymap, TFile } from 'obsidian';
 import type { FeatureCollection, Geometry } from 'geojson';
-import { CURSOR_LAYER, CURSOR_SRC, HIT_LAYER, HIT_SRC, POINT_LAYER } from './constants';
+import {
+	CURSOR_LAYER,
+	CURSOR_SRC,
+	HIT_LAYER,
+	HIT_SRC,
+	PHOTO_DOT_LAYER,
+	PHOTO_EXTS,
+	PHOTO_LAYER,
+	POINT_LAYER,
+} from './constants';
 import { resolveSystem, toTileSpace, toWgs84, type CoordSystem } from './coords';
 import { boundsOf, styleReady, trackFeatures, trackKnob, type TrackFeatureProps } from './geometry';
 import { t } from './i18n';
-import { applyTrackPaint, drawTracks, fitTo, guardLocateControl, removeTrackLayers, type LocateGuard } from './layers';
+import {
+	applyTrackPaint,
+	drawTracks,
+	ensurePhotoImages,
+	fitTo,
+	guardLocateControl,
+	removeTrackLayers,
+	type LocateGuard,
+} from './layers';
 import {
 	elevationProfile,
 	formatDistance,
@@ -27,7 +43,8 @@ import {
 	type ProfileSample,
 	type TrackStats,
 } from './stats';
-import { projectedFeatures, type TrackRecord } from './track-cache';
+import { PhotoModal } from './photo-modal';
+import { photoImageId, projectedFeatures, type TrackRecord } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type { BasesMapView, MapLibreMap, MapMouseEvent } from './types/obsidian-internals';
 
@@ -47,8 +64,14 @@ export class TrackEmbed extends Component {
 	/** Guards map.on(), which survives style.load and refresh() — see
 	 *  bindInteractions() for why binding twice would be wrong. */
 	private interactionsBound = false;
-	/** A waypoint's name on hover. Embeds only — see CLAUDE.md for why the base
-	 *  view keeps its existing hover-shows-the-note-popup behaviour instead. */
+	/** The last DOM event `openPhoto()` acted on — one click over two photo
+	 *  layers dispatches twice; see bindInteractions(). */
+	private handledClick: MouseEvent | null = null;
+	/** A waypoint's name on hover, and — the same element, different content —
+	 *  a photo's own thumbnail on hover over a point on PHOTO_LAYER. Embeds
+	 *  only — see CLAUDE.md for why the base view keeps its existing
+	 *  hover-shows-the-note-popup behaviour instead, which is exactly why a
+	 *  photo point gets no competing tooltip there either. */
 	private tooltipEl: HTMLElement | null = null;
 	/** The elevation profile's own hover state, set by renderProfile() and read
 	 *  by hoverTrack() — null whenever there is no profile panel to link to
@@ -58,9 +81,52 @@ export class TrackEmbed extends Component {
 	constructor(
 		private readonly containerEl: HTMLElement,
 		private readonly plugin: AdvancedMapsPlugin,
-		private readonly file: TFile
+		private readonly file: TFile,
+		/** The note this embed sits in — see `loadPhotos()`. Empty when the embed
+		 *  API did not name one, which reads the same as "this note has no
+		 *  photos" and needs no separate branch. */
+		private readonly sourcePath = ''
 	) {
 		super();
+	}
+
+	/**
+	 * The host note's photos, so an inline map shows the pictures taken along
+	 * the track it is drawing.
+	 *
+	 * The embedded file itself is never a photo and cannot become one: the
+	 * embed registry hands `.jpg`/`.png`/`.webp`/`.avif` to Obsidian's own
+	 * image embed, and `registerTrackEmbeds` only ever claims extensions
+	 * nothing else has. So a photo reaches an inline map exactly one way —
+	 * through the note the embed is written in, which is the same note the
+	 * base-view path already draws photos for. Both halves therefore read the
+	 * same list, `resolveTracks`, filtered to the photo half of it.
+	 *
+	 * Kept apart from `this.rec` rather than merged into it, and that
+	 * separation is load-bearing twice over: `renderStats()` and
+	 * `elevationProfile()` both measure `this.rec.features`, and folding seven
+	 * zoo photos into the walk they were taken on would add several kilometres
+	 * of "distance" between points nobody walked between, and a sawtooth
+	 * elevation profile out of whatever altitude each phone happened to record.
+	 */
+	private photos: Array<{ file: TFile; rec: TrackRecord }> = [];
+
+	private async loadPhotos(): Promise<void> {
+		this.photos = [];
+		if (!this.plugin.settings.showPhotos || !this.sourcePath) return;
+		const host = this.plugin.app.vault.getFileByPath(this.sourcePath);
+		if (!host) return;
+		const files = this.plugin.resolveTracks(host).filter((f) => PHOTO_EXTS.has(f.extension));
+		const loaded = await Promise.all(
+			files.map(async (file) => ({
+				file,
+				rec: await this.plugin.tracks.load(file, this.plugin.settings.photoDatum),
+			}))
+		);
+		if (this.dead) return;
+		// A photo whose EXIF carried no coordinate parses to a record with no
+		// features and no error — not a failure, just a picture taken indoors.
+		this.photos = loaded.filter((p) => !p.rec.error && p.rec.features.length > 0);
 	}
 
 	/** The embed API calls this when the file is swapped underneath us. */
@@ -98,7 +164,8 @@ export class TrackEmbed extends Component {
 	}
 
 	private async build(): Promise<void> {
-		this.rec = await this.plugin.tracks.load(this.file);
+		this.rec = await this.plugin.tracks.load(this.file, this.plugin.settings.photoDatum);
+		await this.loadPhotos();
 		if (this.dead || !this.rootEl) return;
 		if (this.rec.error) return this.fail(this.rec.error);
 
@@ -142,7 +209,8 @@ export class TrackEmbed extends Component {
 	/** Re-read the file and start the layers over — the track itself changed. */
 	async refresh(): Promise<void> {
 		if (!this.map || this.dead) return;
-		this.rec = await this.plugin.tracks.load(this.file);
+		this.rec = await this.plugin.tracks.load(this.file, this.plugin.settings.photoDatum);
+		await this.loadPhotos();
 		if (!this.map || this.dead) return;
 		removeTrackLayers(this.map);
 		// removeTrackLayers() only knows about the four shared track layers —
@@ -175,12 +243,27 @@ export class TrackEmbed extends Component {
 		if (!this.map || this.dead) return;
 
 		const color = view.markerManager.resolveColor(this.plugin.settings.trackColor);
-		// index 0 for every feature: an embed draws exactly one file, so there is
-		// only ever one "note" for amIndex to point at — unlike a base view, which
-		// draws one per row and needs the index to tell them apart on hover.
+		// index 0 for every feature, the track's and the host note's photos alike:
+		// an embed has exactly one "note" behind it — the one it is written in —
+		// so there is only ever one thing for amIndex to point at, unlike a base
+		// view, which draws one per row and needs the index to tell them apart.
+		const system = this.system();
+		const trackData: FeatureCollection<Geometry, TrackFeatureProps> = {
+			type: 'FeatureCollection',
+			features: trackFeatures(projectedFeatures(this.rec, system), color, 0),
+		};
+		// The photos ride in the same collection, so they are drawn, framed and
+		// removed by exactly the machinery the track already goes through. They
+		// are deliberately *not* in `trackData`, which is what feeds the
+		// elevation profile's hit corridor below — a wide invisible line whose
+		// only job is to be easy to point at, and which a Point contributes
+		// nothing to anyway.
 		const data: FeatureCollection<Geometry, TrackFeatureProps> = {
 			type: 'FeatureCollection',
-			features: trackFeatures(projectedFeatures(this.rec, this.system()), color, 0),
+			features: [
+				...trackData.features,
+				...this.photos.flatMap((p) => trackFeatures(projectedFeatures(p.rec, system), color, 0)),
+			],
 		};
 
 		if (!drawTracks(map, data)) return;
@@ -193,8 +276,28 @@ export class TrackEmbed extends Component {
 			weight,
 			trackKnob('trackOpacity', settings.trackOpacity) / 100,
 			stroke,
-			settings.trackMarkers
+			settings.trackMarkers,
+			settings.photoThumbnails
 		);
+
+		// `ensurePhotoImages` is what decodes each thumbnail — async, off
+		// `drawTracks`'s synchronous path, see layers.ts — and registers it under
+		// the exact id `loadPhoto()` already stamped onto the feature as
+		// `amPhoto`. A note with no photos calls it with an empty list, which is
+		// a no-op, and a photo whose EXIF carried no thumbnail simply has nothing
+		// to contribute: it stays the dot `PHOTO_DOT_LAYER` always draws.
+		const icons = this.photos.flatMap((p) =>
+			p.rec.photo?.thumbnail
+				? [
+						{
+							id: photoImageId(p.file.path),
+							thumbnail: p.rec.photo.thumbnail,
+							orientation: p.rec.photo.orientation,
+						},
+					]
+				: []
+		);
+		ensurePhotoImages(map, icons, new Set(icons.map((p) => p.id)));
 
 		// The elevation-profile hover link's own style state — wiped by the same
 		// theme/background swap that just wiped the track, so re-created here
@@ -203,7 +306,7 @@ export class TrackEmbed extends Component {
 		// draw() does not need to know whether renderStats() found one, only
 		// renderProfile() (which sets this.profile) ever reads from it.
 		ensureHoverLayers(map, weight);
-		setHitData(map, data);
+		setHitData(map, trackData);
 		applyCursorPaint(map, color, stroke);
 
 		this.bindInteractions();
@@ -235,6 +338,12 @@ export class TrackEmbed extends Component {
 	 * An embed has no interactivity of its own to collide with. The hover link
 	 * has no base-view counterpart at all — a base view has no profile to link
 	 * to (see CLAUDE.md).
+	 *
+	 * PHOTO_LAYER gets its own pair of listeners rather than folding into
+	 * POINT_LAYER's: a photo point never lands on POINT_LAYER in the first
+	 * place (its filter excludes anything carrying `amRole`, and a photo
+	 * carries `amRole: 'photo'` precisely so it doesn't draw twice — see
+	 * CLAUDE.md's "photo" trap #2), and PHOTO_LAYER draws nothing else.
 	 */
 	private bindInteractions(): void {
 		if (this.interactionsBound) return;
@@ -242,7 +351,20 @@ export class TrackEmbed extends Component {
 		if (!map) return;
 		this.interactionsBound = true;
 		map.on('mousemove', POINT_LAYER, (ev: MapMouseEvent) => this.hoverWaypoint(ev));
-		map.on('mouseleave', POINT_LAYER, () => this.hideWaypointTooltip());
+		map.on('mouseleave', POINT_LAYER, () => this.hideTooltip());
+		// Both photo layers, not just the one carrying a picture: a photo with no
+		// decoded icon draws on PHOTO_DOT_LAYER alone (see its comment in
+		// constants.ts), and binding only PHOTO_LAYER would leave exactly those
+		// inert. Which is also why `openPhoto` needs the same one-event guard the
+		// base view's `open()` has — the thumbnail and the dot beneath it are one
+		// feature, and a click over both dispatches twice.
+		for (const layer of [PHOTO_DOT_LAYER, PHOTO_LAYER]) {
+			map.on('mousemove', layer, (ev: MapMouseEvent) => this.hoverPhoto(ev));
+			map.on('mouseleave', layer, () => this.hideTooltip());
+			map.on('click', layer, (ev: MapMouseEvent) => this.openPhoto(ev));
+			map.on('mouseenter', layer, () => map.getCanvas().addClass('is-over-marker'));
+			map.on('mouseleave', layer, () => map.getCanvas().removeClass('is-over-marker'));
+		}
 		map.on('mousemove', HIT_LAYER, (ev: MapMouseEvent) => this.hoverTrack(ev));
 		map.on('mouseleave', HIT_LAYER, () => this.hideTrackHover());
 	}
@@ -257,26 +379,121 @@ export class TrackEmbed extends Component {
 		if (!this.plugin.settings.trackMarkers || typeof name !== 'string' || name === '' || !point || !this.rootEl) {
 			// Absent is absent — TCX has no waypoint concept at all, and GeoJSON may
 			// or may not name a point. Both read the same as "nothing to show" here.
-			this.hideWaypointTooltip();
+			this.hideTooltip();
 			return;
 		}
 		this.tooltipEl ??= this.rootEl.createDiv('advanced-maps-waypoint-tooltip');
+		// setText() replaces every child, so a tooltip left over from a photo
+		// hover (an <img> plus a caption div, see hoverPhoto()) is cleared back
+		// to plain text here without a separate empty() call — and the class it
+		// added is dropped explicitly, since removeClass has no such side effect.
+		this.tooltipEl.removeClass('advanced-maps-photo-tooltip');
 		this.tooltipEl.setText(name);
+		this.positionTooltip(point);
+	}
+
+	/**
+	 * The picture behind the pin, at a size worth looking at — the same
+	 * `PhotoModal` a base map view opens, and for the same reason a modal
+	 * rather than a pane: an inline map lives *inside* a note, so opening the
+	 * image in the active leaf would replace the note you are reading it in.
+	 *
+	 * No "open note" row here, unlike the base-view case. The note this photo
+	 * belongs to is the note the embed is written in — the one already on
+	 * screen around the map — so the row would offer to take you where you
+	 * already are. `PhotoModal` draws it only when handed a callback, which is
+	 * why this hands it none rather than one that does nothing.
+	 */
+	private openPhoto(ev: MapMouseEvent): void {
+		if (ev.originalEvent) {
+			if (this.handledClick === ev.originalEvent) return;
+			this.handledClick = ev.originalEvent;
+		}
+		const path = ev.features?.[0]?.properties?.amPath;
+		if (typeof path !== 'string' || path === '') return;
+		const file = this.plugin.app.vault.getFileByPath(path);
+		if (!file) return;
+		if (ev.originalEvent && Keymap.isModEvent(ev.originalEvent)) {
+			void this.plugin.app.workspace.openLinkText(path, this.sourcePath, Keymap.isModEvent(ev.originalEvent));
+			return;
+		}
+		new PhotoModal(this.plugin.app, file).open();
+	}
+
+	/**
+	 * The same tooltip element, showing the photo itself rather than a name:
+	 * an <img> sized to its own resource path plus the file name underneath.
+	 * `amPath` is the photo file's vault path (see geometry.ts's
+	 * TrackFeatureProps) — resolved through the vault here rather than trusted
+	 * as-is, since a path that was valid when the layer was drawn can still
+	 * point at a file that has since moved or been deleted by the time the
+	 * pointer reaches it.
+	 */
+	private hoverPhoto(ev: MapMouseEvent): void {
+		const path = ev.features?.[0]?.properties?.amPath;
+		const point = ev.point;
+		if (typeof path !== 'string' || path === '' || !point || !this.rootEl) {
+			this.hideTooltip();
+			return;
+		}
+		const abstract = this.plugin.app.vault.getAbstractFileByPath(path);
+		const file = abstract instanceof TFile ? abstract : null;
+		// A file that failed to resolve still has a name worth showing — take it
+		// off the path itself rather than leaving the tooltip empty.
+		const name = file?.name ?? (path.split('/').pop() || path);
+
+		this.tooltipEl ??= this.rootEl.createDiv('advanced-maps-waypoint-tooltip');
+		this.tooltipEl.addClass('advanced-maps-photo-tooltip');
+		this.tooltipEl.empty();
+
+		if (file) {
+			// getResourcePath never throws on a real TFile in practice, but this
+			// tooltip is not worth losing to an internal it did not expect — no
+			// image is exactly the "fall back to the file name alone" case below,
+			// so a thrown resource path lands there rather than on a blank box.
+			try {
+				const src = this.plugin.app.vault.getResourcePath(file);
+				const img = this.tooltipEl.createEl('img', {
+					cls: 'advanced-maps-photo-tooltip-img',
+					attr: { src, alt: name },
+				});
+				// The image decodes asynchronously, so the flip decision inside
+				// positionTooltip() — based on the tooltip's *current* rendered
+				// height — is only right for the bare-filename box it is called
+				// against below. Once the photo has actually painted the box is
+				// taller, so the flip is re-decided against its real height too.
+				img.addEventListener('load', () => this.positionTooltip(point));
+			} catch {
+				/* no resource path for this file — filename-only tooltip below */
+			}
+		}
+		this.tooltipEl.createDiv({ cls: 'advanced-maps-photo-tooltip-name', text: name });
+		this.positionTooltip(point);
+	}
+
+	/**
+	 * The waypoint tooltip's shared placement logic — same element for a plain
+	 * name and for a photo's thumbnail-plus-caption, so both go through this
+	 * rather than duplicating the flip rule.
+	 *
+	 * .advanced-maps-embed clips with overflow: hidden so the map fills exactly
+	 * the configured height. The default transform carries the tooltip 130% of
+	 * its own height above the cursor, so content within that margin of the top
+	 * edge would have its label pushed through the clip rather than just crowd
+	 * the border — flip it below the cursor there instead. offsetHeight is read
+	 * after `is-visible` is applied (it is 0 on a `display: none` element), so
+	 * this measures the tooltip actually about to be shown, not a stale size
+	 * from the last hover.
+	 */
+	private positionTooltip(point: { x: number; y: number }): void {
+		if (!this.tooltipEl) return;
 		this.tooltipEl.style.left = `${point.x}px`;
 		this.tooltipEl.style.top = `${point.y}px`;
 		this.tooltipEl.addClass('is-visible');
-		// .advanced-maps-embed clips with overflow: hidden so the map fills
-		// exactly the configured height. The default transform carries the
-		// tooltip 130% of its own height above the cursor, so a waypoint within
-		// that margin of the top edge would have its label pushed through the
-		// clip rather than just crowd the border — flip it below the cursor
-		// there instead. offsetHeight is read after `is-visible` is applied
-		// (it is 0 on a `display: none` element), so this is measuring the
-		// tooltip actually about to be shown, not a stale size from last hover.
 		this.tooltipEl.toggleClass('is-below', point.y < this.tooltipEl.offsetHeight * 1.3);
 	}
 
-	private hideWaypointTooltip(): void {
+	private hideTooltip(): void {
 		this.tooltipEl?.removeClass('is-visible');
 	}
 

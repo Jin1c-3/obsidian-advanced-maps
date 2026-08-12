@@ -78,6 +78,7 @@ const en = {
 	'command.fillFromLink': 'Set coordinates from a map link',
 	'command.searchPlace': 'Search for a place and set coordinates',
 	'command.reverseGeocode': 'Fill place name from coordinates',
+	'command.fillFromPhoto': 'Set coordinates from a photo',
 
 	/* ---- "set coordinates from a link" ---- */
 	'link.title': 'Set coordinates from a map link',
@@ -119,6 +120,14 @@ const en = {
 	'notice.reverseGeocode.samePropertyAsCoords':
 		'Advanced Maps: Place property and Coordinate property are both "{property}" — set them to different ' +
 		'properties in settings, or this would overwrite the coordinate with the place name.',
+
+	/* ---- fill coordinates from a photo ---- */
+	'notice.photo.none': '"{file}" has no linked photo with a location',
+	'notice.photo.done': '{property}: {coords}, from the photo',
+	'notice.photo.failed': 'Advanced Maps: could not read a location from that photo — {reason}',
+
+	/* ---- the photo a map pin stands for ---- */
+	'photo.openNote': 'Open note',
 
 	/* ---- settings: external maps ---- */
 	'settings.external.heading': 'Open in external map',
@@ -264,6 +273,29 @@ const en = {
 	'settings.tracks.markers.desc':
 		'A start and an end pin on every track, direction arrows along it, and — on inline maps — a waypoint’s ' +
 		'own name on hover.',
+
+	/* ---- settings: photos ----
+	 * A group of its own beside the track knobs above: a track comes from a
+	 * file the note points at on purpose, a photo's location comes along for
+	 * free with a file kept for an unrelated reason, and `setting.photos.desc`
+	 * exists to say plainly what that free ride does and does not do. */
+	'setting.photos': 'Photos',
+	'setting.photos.desc':
+		"Draws a linked photo's own location on the map, read from its EXIF GPS tags — the same way a linked " +
+		'.gpx file draws a track. A photo is only ever read, never written to, and nothing about it leaves the ' +
+		'vault.',
+	'setting.showPhotos': 'Show photos on the map',
+	'setting.showPhotos.desc': "Draws a pin at a linked photo's own coordinate, wherever its EXIF GPS tags name one.",
+	'setting.photoThumbnails': 'Show photo thumbnails',
+	'setting.photoThumbnails.desc':
+		"Uses each photo's own embedded thumbnail as its map icon, in place of a plain dot.",
+	'setting.photoDatum': 'Photo coordinate system',
+	'setting.photoDatum.desc':
+		"EXIF GPS coordinates are WGS-84 by specification. Auto believes a photo's own GPSMapDatum tag when it " +
+		'states one, and falls back to WGS-84 otherwise.',
+	'setting.photoDatum.auto': "Auto — follow the photo's own GPSMapDatum, if it states one",
+	'setting.photoDatum.wgs84': 'WGS-84 — the EXIF specification',
+	'setting.photoDatum.gcj02': 'GCJ-02 — force it',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -326,6 +358,7 @@ const zh: Record<TranslationKey, string> = {
 	'command.fillFromLink': '从地图链接填写坐标',
 	'command.searchPlace': '搜索地点并填写坐标',
 	'command.reverseGeocode': '从坐标填写地名',
+	'command.fillFromPhoto': '从照片填写坐标',
 
 	'link.title': '从地图链接填写坐标',
 	'link.intro':
@@ -362,6 +395,12 @@ const zh: Record<TranslationKey, string> = {
 	'notice.reverseGeocode.done': '{property}：{value}',
 	'notice.reverseGeocode.samePropertyAsCoords':
 		'Advanced Maps：地名属性和坐标属性都是「{property}」——请在设置里把它们改成不同的属性，否则会用地名覆盖坐标。',
+
+	'notice.photo.none': '「{file}」没有带位置信息的链接照片',
+	'notice.photo.done': '{property}：{coords}（来自照片）',
+	'notice.photo.failed': 'Advanced Maps：无法从这张照片读取位置——{reason}',
+
+	'photo.openNote': '打开笔记',
 
 	'settings.external.heading': '用外部地图打开',
 	'settings.external.intro':
@@ -457,6 +496,21 @@ const zh: Record<TranslationKey, string> = {
 	'settings.tracks.markers.name': '显示轨迹标记',
 	'settings.tracks.markers.desc':
 		'每条轨迹的起点和终点图钉、沿线的方向箭头，以及——仅内联地图——悬停显示途经点自己的名称。',
+
+	'setting.photos': '照片',
+	'setting.photos.desc':
+		'把笔记里链接的照片自身的位置画到地图上，读取的是照片的 EXIF GPS 标签——和链接的 .gpx 文件画出轨迹是同一条路径。' +
+		'照片只会被读取，不会被写入，也没有任何内容离开仓库。',
+	'setting.showPhotos': '在地图上显示照片',
+	'setting.showPhotos.desc': '在链接照片自身 EXIF GPS 标签给出的坐标处画一个图钉。',
+	'setting.photoThumbnails': '显示照片缩略图',
+	'setting.photoThumbnails.desc': '用照片自带的缩略图作为地图上的图标，代替一个普通的圆点。',
+	'setting.photoDatum': '照片坐标系',
+	'setting.photoDatum.desc':
+		'EXIF GPS 坐标按规范应为 WGS-84。自动会在照片自己的 GPSMapDatum 标签给出坐标系时采信它，否则按 WGS-84 处理。',
+	'setting.photoDatum.auto': '自动 · 采信照片自己的 GPSMapDatum（如果有）',
+	'setting.photoDatum.wgs84': 'WGS-84 · EXIF 规范',
+	'setting.photoDatum.gcj02': 'GCJ-02 · 强制指定',
 };
 
 const LOCALES = { en, zh } as const;

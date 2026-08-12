@@ -9,6 +9,7 @@ import {
 } from 'obsidian';
 import { TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
+import type { PhotoDatum } from './exif';
 import { GEOCODE_PROVIDERS, KEY_STORES, type GeocodeProvider, type KeyStore } from './geocode';
 import { getLocale, t, type TranslationKey } from './i18n';
 import { mapViewNames, type BaseSpec } from './map-block';
@@ -49,6 +50,12 @@ export interface AdvancedMapsSettings {
 	elevationProfile: boolean;
 	/** Start/end pins, direction arrows, and — inline only — a waypoint's name on hover. */
 	trackMarkers: boolean;
+	/** A linked photo's own EXIF coordinate, drawn the same way a one-point track is. */
+	showPhotos: boolean;
+	/** Its own embedded thumbnail as the map icon, in place of a plain dot. */
+	photoThumbnails: boolean;
+	/** Which datum a photo's raw EXIF coordinate is trusted to be in. */
+	photoDatum: PhotoDatum;
 	/** "Open in map" — the map launched from a note's ⋮ menu. */
 	basePath: string;
 	viewName: string;
@@ -102,6 +109,9 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	trackStats: true,
 	elevationProfile: true,
 	trackMarkers: true,
+	showPhotos: true,
+	photoThumbnails: true,
+	photoDatum: 'auto',
 	basePath: '',
 	viewName: '',
 	coordsProperty: 'coords',
@@ -154,6 +164,12 @@ const BASE_PATH_PLACEHOLDER = 'places.base';
  * unattended move has to call it.
  */
 export const AMAP_SECRET_ID = 'advanced-maps-amap';
+
+/** The three literals `photoDatum` may hold. `exif.ts` exports the type but
+ *  not this array — it has no reason of its own to iterate its options — so
+ *  it is restated here, the same way `CUSTOM_DATUMS` lives in `maplinks.ts`
+ *  rather than being re-derived from `CustomDatum`. */
+const PHOTO_DATUMS: readonly PhotoDatum[] = ['auto', 'wgs84', 'gcj02'];
 
 /** Every settings key, so a definition cannot name one that does not exist. */
 type Key = keyof AdvancedMapsSettings;
@@ -363,26 +379,33 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 * row written as `{ name: '', desc }` renders nothing at all. Measured, not
 	 * assumed. `searchable: false` because it is context, not a setting to find.
 	 */
+	/**
+	 * The nameless row under a heading that says what the group is for —
+	 * pulled out of `group()` below so the photos group, whose translation
+	 * keys do not fit that method's `settings.${key}.intro` composition (see
+	 * the photos group itself, in `getSettingDefinitions`), can still share
+	 * the one rendering path.
+	 */
+	private introItem(intro: string): SettingDefinition<ControlKey> {
+		return {
+			name: '',
+			searchable: false,
+			render: (setting: Setting) => {
+				setting.settingEl.empty();
+				setting.settingEl.addClass('advanced-maps-intro');
+				setting.settingEl.createEl('p', { cls: 'setting-item-description', text: intro });
+			},
+		};
+	}
+
 	private group(
 		key: 'coord' | 'open' | 'external' | 'search' | 'locate' | 'tracks',
 		items: SettingDefinition<ControlKey>[]
 	) {
-		const intro = t(`settings.${key}.intro`);
 		return {
 			type: 'group' as const,
 			heading: t(`settings.${key}.heading`),
-			items: [
-				{
-					name: '',
-					searchable: false,
-					render: (setting: Setting) => {
-						setting.settingEl.empty();
-						setting.settingEl.addClass('advanced-maps-intro');
-						setting.settingEl.createEl('p', { cls: 'setting-item-description', text: intro });
-					},
-				},
-				...items,
-			],
+			items: [this.introItem(t(`settings.${key}.intro`)), ...items],
 		};
 	}
 
@@ -550,6 +573,8 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		for (const store of KEY_STORES) keyStores[store] = t(`search.keyStore.${store}`);
 		const openTargets: Record<string, string> = {};
 		for (const target of OPEN_TARGETS) openTargets[target] = t(`open.target.${target}`);
+		const photoDatums: Record<string, string> = {};
+		for (const datum of PHOTO_DATUMS) photoDatums[datum] = t(`setting.photoDatum.${datum}`);
 
 		return [
 			this.group('coord', [
@@ -733,6 +758,26 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				this.toggle('settings.tracks.profile.name', 'settings.tracks.profile.desc', 'elevationProfile'),
 				this.toggle('settings.tracks.markers.name', 'settings.tracks.markers.desc', 'trackMarkers'),
 			]),
+
+			// A group of its own beside the track knobs above, rather than folded
+			// into that group: a track comes from a file the note points at on
+			// purpose, a photo's location comes along for free with a file kept for
+			// an unrelated reason, and that difference is exactly what the intro
+			// line below exists to say plainly.
+			{
+				type: 'group' as const,
+				heading: t('setting.photos'),
+				items: [
+					this.introItem(t('setting.photos.desc')),
+					this.toggle('setting.showPhotos', 'setting.showPhotos.desc', 'showPhotos'),
+					this.toggle('setting.photoThumbnails', 'setting.photoThumbnails.desc', 'photoThumbnails'),
+					{
+						name: t('setting.photoDatum'),
+						desc: t('setting.photoDatum.desc'),
+						control: { type: 'dropdown', key: 'photoDatum', options: photoDatums },
+					},
+				],
+			},
 		];
 	}
 
@@ -799,6 +844,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		if (key === 'openIn' && !(OPEN_TARGETS as readonly unknown[]).includes(next)) {
 			next = DEFAULT_SETTINGS.openIn;
 		}
+		if (key === 'photoDatum' && !(PHOTO_DATUMS as readonly unknown[]).includes(next)) {
+			next = DEFAULT_SETTINGS.photoDatum;
+		}
 		// Both lists go back through the same readers that made them whole on the
 		// way out, so what lands in data.json is what the next version will read —
 		// an unknown provider or datum cannot be stored by going through here.
@@ -833,6 +881,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			case 'trackStats':
 			case 'elevationProfile':
 			case 'trackMarkers':
+			case 'showPhotos':
+			case 'photoThumbnails':
+			case 'photoDatum':
 				// The point of a toggle you can see the result of is seeing the result.
 				this.plugin.refreshTracks();
 				break;

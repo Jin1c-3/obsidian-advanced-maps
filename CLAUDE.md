@@ -161,6 +161,369 @@ Auto-fit covers markers _and_ tracks, and stands down when the view pins a
 `center` or a `defaultZoom`, or once the user pans or zooms. The ⛶ control
 re-frames on demand and ignores all of that.
 
+## Coordinates from a photo's EXIF
+
+A photo is **"a track file with one Point in it."** `exif.ts` is a fourth pure
+reader beside `coords.ts` and `parse.ts` — no `obsidian` import, on the 90 %
+coverage list — and `photoTrack()` hands back exactly the `ParsedTrack` shape
+GPX/GeoJSON/KML/TCX already produce, so nothing downstream has to learn a
+photo exists. `PHOTO_EXTS` (`jpg`, `jpeg`, `png`, `webp`, `heic`, `heif`,
+`avif`) sits beside `TRACK_EXTS` wherever `resolveTracks` decides "is this
+ours", and a photo rides the identical pipeline "How tracks find their way
+onto the map" already describes:
+
+```
+resolveTracks(note) -> TFile[]  ->  TrackCache.load(file, photoDatum) -> ParsedTrack
+  -> projectedFeatures -> trackFeatures -> one GeoJSON source, N layers
+```
+
+The one addition to that pipeline is the `photoDatum` argument, because unlike
+a GPX file's coordinate system, a photo's is a plugin **setting** rather than
+something the file states unambiguously — see "The datum" below.
+
+### The head-read
+
+EXIF sits in the first few KB of even a multi-megabyte photo, so `TrackCache`
+never reads a whole photo to find it. Measured on a real 3,052,138-byte Xiaomi
+motion photo: APP1(Exif) is the very first segment, its own declared length is
+3988 bytes counted from the length field at offset 4, and everything EXIF
+states in that file — GPS, orientation, the IFD1 thumbnail included — ends at
+byte 3992, **0.13 % of the file**. `PHOTO_HEAD_BYTES` is 65536, 16× that
+measured figure: headroom for a camera that writes a larger maker-note or a
+bigger thumbnail ahead of GPS, without ever approaching the whole photo.
+
+That figure was checked from the other direction rather than trusted to
+arithmetic, and the arithmetic is what was wrong the first time: feeding the
+real file to `parseExif` truncated at **every length from 0 to 8192**, the
+shortest prefix that yields the coordinate is **1831 bytes** and the shortest
+that yields the thumbnail is **3992** — which is where the APP1 segment
+actually ends, not the 3998 a hand count of the same bytes first produced.
+
+`readHead()` in `track-cache.ts` gets there with a ranged `fetch` against
+`app.vault.getResourcePath(file)`, which hands back an `app://` URL Obsidian
+itself serves. A `Range` header on it really does seek — measured live — and
+answers **200 with no `Content-Range`**, but the body is already cut down to
+the requested length, so this never checks for 206. The range asked for is
+always `bytes=0-(n-1)`: a range that merely runs past EOF answers with the
+whole file and no error, but one that **starts** past EOF throws
+`TypeError: Failed to fetch` outright, so `end` is clamped against
+`file.stat.size` up front rather than trusted to the file always being at
+least `PHOTO_HEAD_BYTES` long. Measured, 50 concurrent reads of that same 3 MB
+photo: `vault.readBinary` cost 711 ms and 152.6 MB allocated; the ranged read
+cost 100 ms and 0.2 MB.
+
+`requestUrl` cannot stand in for `fetch` here — it throws "ClientRequest only
+supports http: and https: protocols" on an `app://` URL, measured live, and it
+also cannot be given a `Range` header. `fetch` trips
+`eslint-plugin-obsidianmd`'s `no-restricted-globals`, which is severity _warn_
+and left as a plain, unsuppressed warning rather than an `eslint-disable`
+comment: this repo's own lint config
+(`eslint-comments/no-restricted-disable`) refuses to let
+`no-restricted-globals` be disabled at all, by name, so _attempting_ to
+silence it here would itself be a lint **error**, and `npm run lint` (bare
+`eslint .`) only fails on those, not on a warning.
+
+Any failure at all — a platform that ignores or refuses `Range`, an `app://`
+scheme a build blocks, anything — falls back to a plain `vault.readBinary` and
+a slice, so a photo's coordinate is never lost to _how_ it was read.
+Degrading is free: a platform that ignores `Range` and hands back the whole
+file, and one that genuinely cannot do ranged reads at all, run through the
+exact same fallback code. **Not verified on mobile** — said here rather than
+assumed, same as the rest of this section's measurements were taken on
+desktop.
+
+### The datum
+
+EXIF coordinates are WGS-84 by specification, and that is the default —
+`photoDatum: 'auto'` — but it was settled by measurement, not by trusting the
+spec blindly. The real Xiaomi 15 photo above states `GPSProcessingMethod`
+`"network"` — the most suspicious case worth checking, since a network-derived
+fix is exactly the kind a Chinese-market device might quietly hand back
+already shifted — and states no `GPSMapDatum` at all. Its raw value, drawn
+**unshifted** on OpenFreeMap Liberty (WGS-84) tiles, lands exactly where the
+photo was taken.
+
+**"高德 also opens it correctly" is not independent evidence of anything**,
+and is worth writing down as a trap for whoever checks this next: opening the
+same coordinate in 高德 through `externalMapUrl('amap', …)` "looks right"
+_by construction_, because that function applies `wgs2gcj` to whatever it is
+given before building the URL — `120.123615,30.267174` against the raw
+`120.118832,30.269453`. A tool that always converts cannot tell you the input
+was already right; it can only fail to compound an error that was not there.
+The two facts _together_ — unshifted on WGS-84 tiles lands correctly, and the
+converted value is what a GCJ-02 app is handed — are what confirm the photo's
+own coordinate is WGS-84, not either fact alone.
+
+**Confirmed a second time, against a GPX track of the same walk.** The
+argument above rests on one photo and on knowing where it was taken, which is
+a fact no future reader will have. A note carrying both a `.gpx` and seven
+photos of the same afternoon at the zoo settles it without needing that: match
+each photo to the track point nearest it **in time** — every one within 35 s
+except one at 756 s — and compare positions.
+
+| photo  | Δt    | to the track | if the photo were GCJ-02 |
+| ------ | ----- | ------------ | ------------------------ |
+| 135758 | 27 s  | 22.8 m       | 524.6 m                  |
+| 143930 | 16 s  | 11.3 m       | 527.7 m                  |
+| 145200 | 6 s   | 40.7 m       | 500.0 m                  |
+| 154734 | −35 s | 3.4 m        | 521.4 m                  |
+
+All seven land 3.4–40.7 m from the track. Read the same photos as GCJ-02 and
+`gcj2wgs` moves every one of them 500–532 m away from a track they were
+demonstrably walking along. Two independent devices' idea of the same
+positions agreeing to a few tens of metres is what a shared datum looks like;
+nothing about it depends on recognising a building in a picture.
+
+One phone is still not proof for every phone a reader owns, which is exactly
+why `photoDatum` is a setting and not a hard-coded assumption: `'auto'` trusts a
+photo's own `GPSMapDatum` when it names GCJ-02 (`/gcj/i`), `'wgs84'` and
+`'gcj02'` force it either way regardless of what the tags say.
+
+### The thumbnail is the whole album
+
+`readHead()`'s one 4 KB-ish read yields the coordinate _and_ the map album's
+icon together — IFD1's thumbnail is inside the same head that carries GPS, so
+there is no second read, no second file open, no separate "now build the
+album" pass. On the real photo: the coordinate and a 1953-byte, 240×320 JPEG
+thumbnail both came out of the identical `readHead(file, PHOTO_HEAD_BYTES)`
+call. `TrackRecord.photo` carries that thumbnail (and the EXIF orientation it
+was written under) straight through the cache, and `ensurePhotoImages()` in
+`layers.ts` is what turns it into a registered `map.addImage` bitmap — see
+"Layer order" and the traps below for how that reaches the map without
+`drawTracks()` becoming asynchronous.
+
+### Zoom-dependent density is symbol collision, not clustering
+
+`photoLayerSpec`'s `icon-allow-overlap`/`icon-ignore-placement` are both
+**`false`** — the deliberate opposite of the `true` the endpoint and arrow
+layers set (see "Start/end markers, direction and waypoint names" for why
+those two are `true`: a loop route puts a start and an end pin on the same
+pixel and both must survive). A photo album is the opposite problem: zoomed
+out, dozens of thumbnails at the same rough spot _should_ thin, and letting
+MapLibre's own symbol collision detection drop the ones that would overlap —
+then bring them back the moment zooming in gives them room — is what makes
+the falloff free. Nothing here computes a zoom-dependent count; it only has to
+not fight MapLibre's default. `symbol-sort-key: ['get', 'amIndex']` gives
+survivorship a rule rather than leaving it arbitrary, so which notes' photos
+win a crowded cluster is at least stable across redraws of the same data.
+
+Measured, on the inline map of a note carrying seven zoo photos, counting
+`queryRenderedFeatures` per layer rather than reading a screenshot:
+
+| zoom  | thumbnails drawn | dots (photos in view) |
+| ----- | ---------------- | --------------------- |
+| 12.57 | 1                | 7                     |
+| 15.57 | 4                | 7                     |
+| 17.57 | 1                | 2                     |
+
+The falloff is real and it goes both ways. The last row is worth reading twice:
+only two photos are in view at that zoom and only one thumbnail draws, which
+looks like over-thinning until you notice those two are
+`MVIMG_20260426_152018.jpg` and `MVIMG_20260426_152018 1.jpg` — the same
+picture at the same coordinate. Two icons on one pixel is exactly the case
+collision is for, and one of them winning is the right answer, not a lost
+photo.
+
+The road not taken: a `cluster: true` GeoJSON source gives count badges for
+free, and was rejected for two concrete reasons rather than a vague
+preference. First, clustering needs its **own**, Point-only source — a
+cluster replaces the individual features inside it with a single synthetic
+aggregate point, which cannot share `SRC` with lines and named waypoints the
+way `amRole: 'photo'` does today, and giving photos a source of their own is
+exactly the hazard `HIT_SRC`'s own comment in `constants.ts` already warns
+about for a different layer: a foreign layer still referencing a source when
+`removeTrackLayers()` calls `removeSource(SRC)` makes that call throw.
+Second, a cluster feature is MapLibre's own synthetic point and carries none
+of the original features' properties — `amIndex`, `amPhoto`, `amPath`, all of
+it — so there would be nothing left to draw a thumbnail from, or a note's own
+colour, once a cluster had formed.
+
+### Hovering gives the note, clicking gives the photo
+
+A track's pins and lines all mean the same thing — "this note is here" — so
+every one of them hovers to the note's card and clicks to the note. A photo
+splits that in two, because one note routinely holds a dozen of them: the zoo
+note this was measured on carries a `.gpx` and seven photos, and "open the
+note" answers a click on any of the seven identically, throwing away the only
+thing the click actually said.
+
+So **hover is the note and click is the photo**, and neither half is out of
+reach from the other: the hover card is the native `popupManager` one, exactly
+as it is for a track (measured on that note — hovering a photo opened
+`周末动物园 / actors 于靖怿 / place 动物园 / 时长 2 小时`), and `PhotoModal`
+carries an "open note" row back the other way. A mod-click keeps Obsidian's
+own meaning, the image file in a new tab, since that is the one case where a
+leaf is what the reader asked for.
+
+**A modal, and not `openLinkText(photo)`.** The cheaper answer is wrong for a
+reason already written down two sections of this file away: clicking a map is
+what makes the map's leaf active, so anything opened in the active leaf
+replaces the map. `openNote()` answers that for notes by routing through the
+pane a following map is following; a photo has no such pane, because nobody is
+following an image. A modal is the only shape that cannot take the map's leaf,
+and it was measured not taking it — the base leaf was still `bases:moments.base`
+with the modal open. The "open note" row then goes through `openNote()` like
+every other note-opening click in this plugin, so it inherits the following
+rule rather than restating it: measured, on a map that was **not** following,
+it replaced the map pane exactly as a click on a pin already does, which is the
+untouched behaviour and not a new one.
+
+**Both photo layers are bound, not just the one with a picture on it.**
+`PHOTO_LAYER` renders nothing for a photo whose image is not registered — none
+in the file, still decoding, or `photoThumbnails` off — so a click bound only
+to it leaves exactly the dot-only photos inert. `PHOTO_DOT_LAYER` moved out of
+`layers.ts` into `constants.ts` for this, and its comment there records that
+its original "deliberately not exported" reasoning was backwards.
+
+### An inline map draws its host note's photos
+
+`![[track.gpx]]` shows the pictures taken along that track, because the walk
+and the photos of it are the same afternoon and belong on the same map.
+
+The route in is the one thing worth writing down, because there is exactly
+one and it is not the obvious one. A photo can never arrive as the embedded
+file: Obsidian's own embed registry already owns `bmp png jpg jpeg gif svg
+webp avif` (read off `app.embedRegistry.embedByExtension` on a running app),
+and `registerTrackEmbeds` claims only extensions nothing else has. So
+`TrackEmbed`'s own `this.file` is always a track, and the photos come from
+the **note the embed is written in** — `context.sourcePath`, which Obsidian
+passes and which was measured rather than assumed by wrapping the registered
+creator live: the context is `{app, linktext, sourcePath, containerEl,
+displayMode, showInline, depth}`. Both halves of the plugin then read the
+same list, `resolveTracks`, filtered to its photo half, so the inline map and
+the base map can never disagree about which photos a note has.
+
+**They stay out of `this.rec`.** `renderStats()` and `elevationProfile()`
+both measure `this.rec.features`, and a photo folded in there would add
+distance between points nobody walked between and a sawtooth to the profile
+out of whatever altitude each phone recorded. Measured on the zoo note after
+the change: `rec.features.length === 1` (the LineString alone), the bar still
+reading 3.1 km / ↑84 m / 2:04:36 / 54:44, seven photos on the map beside it.
+`setHitData` gets the track-only collection for the same reason — the profile
+hover corridor is a line, and a Point has nothing to contribute to it.
+
+**No "open note" row in the pop-up here**, unlike the base-view case: the
+note this photo belongs to is the note the embed is written in, already on
+screen around the map, so the row would offer to take you where you are.
+`PhotoModal` draws it only when handed a callback, and this hands it none.
+
+**One click can arrive twice.** `map.on('click', layer, …)` is registered and
+dispatched _per layer_, so a pointer over two layers of one source fires
+`open()` twice for a single `originalEvent`. That was always true — an arrow
+sits on the line it describes — and cost nothing while every layer opened the
+same note twice over. A photo is where it becomes visible, since the thumbnail
+and the dot beneath it are one feature and would open two modals stacked on
+each other. `handledClick` remembers the last `originalEvent` and is the whole
+fix. Measured: two `open()` calls with the same event object, one modal.
+
+### Traps, same register as "Non-obvious things to leave alone"
+
+Every one of these was a real, specific way to get a photo silently wrong.
+Read this before touching any of the files it names.
+
+1. **`ENDPOINT_LAYER`'s filter had to be narrowed from a bare `['has', 'amRole']`
+   to explicit `start`/`end` equality.** A photo's own Point carries
+   `amRole: 'photo'` on the very same source, and `has` does not care which
+   value is there — left as `has`, every photo grows a green start pin of its
+   own, because the `icon-image` `match` expression falls back to `START_ICON`
+   for anything it does not recognise. `photoDotLayerSpec` and `photoLayerSpec`
+   both filter on `['==', ['get', 'amRole'], 'photo']` from the start, for the
+   identical reason stated the other way round.
+2. **`POINT_LAYER`'s `['!', ['has', 'amRole']]` correctly excludes a photo —
+   and that alone is not enough.** A photo with no decoded thumbnail yet (or
+   none at all) would draw _nothing_, since it is excluded from the waypoint
+   circles and has no icon to show either. `PHOTO_DOT_LAYER` exists purely to
+   cover that gap: a plain circle, drawn the instant a photo's Point reaches
+   the map, with `PHOTO_LAYER`'s icon layered on top of it once (and unless)
+   a bitmap is registered.
+3. **`removeTrackLayers()` removes `PHOTO_DOT_LAYER`/`PHOTO_LAYER`, but
+   deliberately does _not_ loop over every registered `map.addImage` photo
+   bitmap.** This function runs on a settings toggle and a re-parsed file, not
+   only a style teardown, and `draw()` re-adds the two layers right after —
+   dropping a layer does not touch `addImage`'s own table, so the next
+   `draw()` picks the same decoded bitmaps back up with nothing to redecode.
+   The ordering hazard is the same one `HIT_SRC`'s own comment documents: any
+   layer still referencing `SRC` when `removeSource(SRC)` runs makes that call
+   throw, which is why photos share `SRC` rather than getting a source of
+   their own in the first place (see "the road not taken" above).
+4. **`refreshTracks()` resets `this.trackLinks` before doing anything else.**
+   `resolveTracks()`'s memo is keyed on a note's `CachedMetadata` object, which
+   a settings change does not touch — so flipping **Show photos** and calling
+   `layer.sync()`/`embed.refresh()` without first dropping the memo would keep
+   drawing (or omitting) every photo exactly as before, until the vault
+   happened to change under each note on its own. This is the settings-side
+   twin of the "How tracks find their way" section's own memo-invalidation
+   rule; toggling `showPhotos` is not a file change and needed its own trigger.
+5. **`map.addImage` for a decoded thumbnail is asynchronous —
+   `Blob → createImageBitmap → canvas → getImageData` — unlike
+   `ensureTrackIcons()`'s three hand-drawn shapes, which are synchronous by
+   design.** `drawTracks()` stays a synchronous function every existing caller
+   already assumes: `ensurePhotoImages()` returns nothing to await, registers
+   bitmaps as they land, and leans on `PHOTO_DOT_LAYER` to keep a photo
+   visible in the meantime. A feature whose image is not registered yet is a
+   dot, never a gap.
+6. **EXIF Orientation (IFD0 0x0112) applies to the _thumbnail_, not just the
+   full photo, and `drawPhotoIcon()` has to correct for it before the
+   cover-fit crop, not after.** A portrait phone photo's embedded thumbnail is
+   commonly stored sideways; `applyOrientation()` rotates onto an _upright_
+   scratch canvas first specifically so the cover-fit math that follows can
+   read the photo's true (rotated) width and height rather than its stored
+   one — doing the crop first and the rotation after gets the aspect ratio of
+   the crop itself wrong for four of the eight orientation values.
+7. **`photoDatum` has to be threaded through both `TrackCache.isFresh()`/
+   `load()` and `TrackLayer.signature()`, the same way `system` already is —
+   and missing either half is invisible until it is the very reason a reader
+   changed the setting.** A photo whose EXIF states no datum defaults to
+   WGS-84 under `auto`; if it was actually written in GCJ-02, the pin sits
+   ~500 m off, and flipping **Photo coordinate system** to GCJ-02 has to (a)
+   actually reload that photo's cached coordinate — `isFresh()`'s mtime-only
+   check has no way to know the setting changed, so it compares
+   `TrackRecord.photoDatum` against the current setting too — and (b) actually
+   reach the map — `signature()`'s upload-skip gate has to see the datum as
+   well, or the corrected coordinate sits computed in `this.data` forever with
+   no `setData()` call to carry it to MapLibre. Both are needed together: (a)
+   without (b) reloads a coordinate the map never shows; (b) without (a) never
+   even reloads it. Inline embeds have neither gate — `TrackEmbed.build()` and
+   `.refresh()` both call `tracks.load()` unconditionally, every time — so
+   this was specific to `TrackLayer` (base map views) and easy to miss while
+   testing on an embed.
+8. **`PHOTO_ICON_MAX` bounds how many decoded bitmaps stay registered with one
+   map, evicted oldest-still-unwanted first — "as many photos as are on
+   screen", never "as many as the base has".** A base with thousands of
+   photos would otherwise grow the style's image table without limit, with
+   every one of those bitmaps staying decoded in GPU memory for the life of
+   the map. Eviction only ever drops an id nothing currently on screen is
+   asking for, so panning back to a photo just left never waits on a
+   redecode — and per `PHOTO_DOT_LAYER`'s own reasoning, an evicted photo does
+   not vanish, it just goes back to being a plain dot until it is wanted again.
+
+### What was not measured
+
+Honestly, not everything here was checked against a running Obsidian:
+
+- **Mobile.** `readHead()`'s ranged `fetch` is untested on mobile, same as its
+  own doc comment says — the desktop numbers above may not hold there at all.
+- **A real HEIC/HEIF/AVIF file, live.** The ISOBMFF `meta`→`iinf`→`iloc` box
+  walker is covered by `tests/exif.test.ts`'s synthetic fixtures and was
+  independently fuzz-tested against a second, hand-built fixture (not reusing
+  the test suite's own builders) in review — but no live pass has opened a
+  real photo from an iPhone or a modern Android camera through a running
+  Obsidian. The container-parsing logic is trusted on unit tests and
+  independent review, not on a real file, for these three formats specifically.
+- **A busy, multi-hundred-photo album.** The collision-based thinning in
+  "Zoom-dependent density" above is measured now, but at the scale of seven
+  photos on one note, not seven hundred across a base. `PHOTO_ICON_MAX` (240)
+  in particular has never been reached, so its eviction path — `removeImage`
+  on the least recently wanted icon — has been read and not run.
+- Live verification against a real vault confirmed the coordinate math
+  exactly — the 高德/GCJ-02 conversion matched a standalone `wgs2gcj` call to
+  the last digit, both through the live map and independently — but could not
+  confirm 高德's own raster tiles rendering visually in that particular test
+  environment, for reasons unrelated to this plugin's own code (the tile
+  fetch returned 200 in ~1.4 s outside Electron; nothing in `dev:errors`
+  pointed at this plugin). Noted here as an environment gap in what got
+  checked, not as a finding about the feature.
+
 ## Coordinate systems (GCJ-02 / BD-09)
 
 Chinese tile providers do not serve WGS-84. 高德 and 腾讯 serve **GCJ-02**, 百度

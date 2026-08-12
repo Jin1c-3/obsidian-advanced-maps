@@ -6,6 +6,42 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.12.0]
+
+### Added
+
+- **A geotagged photo now draws its own pin.** Link or embed a `.jpg`, `.png`,
+  `.webp`, `.heic`, `.heif` or `.avif` carrying an EXIF GPS tag and it draws
+  through the exact pipeline a `.gpx` already does — one point, in the note's
+  own colour, on every map view whose base includes that note. Only the first
+  few kilobytes of the file are ever read, and nothing about it leaves the
+  vault.
+- **A photo's own embedded thumbnail is its map icon.** Decoded once and
+  reused, cover-fit into a rounded square with the same halo idiom the other
+  track markers use, and correctly rotated for a portrait photo's EXIF
+  orientation. Falls back to a plain dot until the thumbnail has decoded, or
+  when the tags carried none. Zoomed out, a crowd of nearby photos thins on
+  its own through MapLibre's own symbol collision detection rather than
+  piling into an unreadable stack, and comes back on zooming in. **Show photos
+  on the map** and **Show photo thumbnails** turn either half off.
+- **An inline `![[track.gpx]]` map draws its note's photos too**, so a walk and
+  the pictures taken on it are one map. The distance, ascent and elevation
+  profile under it still measure the track alone.
+- **Hovering a photo shows its note's card; clicking it shows the photo.** A
+  note can hold a dozen photos, so opening the note would throw away which one
+  was clicked — the card is the same one a track already shows on hover, and
+  the pop-up carries an **Open note** row back the other way. A pop-up rather
+  than a tab on purpose: clicking a map makes that map's pane the active one,
+  so opening the picture in a pane would replace the map you clicked. Hold
+  Ctrl/Cmd to get the image file in a new tab anyway.
+- **_Set coordinates from a photo_** reads the same tag straight into a note's
+  coordinate property, for a note that should carry its own coordinate rather
+  than only draw the photo's.
+- **Photo coordinate system** setting, default **Auto**: EXIF GPS coordinates
+  are WGS-84 by specification, and Auto believes a photo's own `GPSMapDatum`
+  tag when it states GCJ-02, falling back to WGS-84 otherwise — measured
+  against a real phone's export rather than assumed.
+
 ## [1.11.0]
 
 ### Added
@@ -340,7 +376,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.11.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.0...HEAD
+[1.12.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.11.0...1.12.0
 [1.11.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.1...1.11.0
 [1.10.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.0...1.10.1
 [1.10.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.9.0...1.10.0

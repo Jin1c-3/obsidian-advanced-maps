@@ -22,6 +22,7 @@ export default defineConfig({
 			// the view wrappers need a live Bases map to mean anything.
 			include: [
 				'src/coords.ts',
+				'src/exif.ts',
 				'src/parse.ts',
 				'src/geometry.ts',
 				'src/geolink.ts',

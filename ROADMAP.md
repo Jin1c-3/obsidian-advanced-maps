@@ -57,6 +57,23 @@ directly above this one — is probably the same mechanism a waypoint's name
 under the cursor should go through too, rather than two separate answers to
 "how does this plugin add something to a popup it does not own."
 
+### Photo thumbnails on hover, on a base map
+
+A third twin of the same gap. A photo pin's own thumbnail shows on hover today
+— see CLAUDE.md's "Coordinates from a photo's EXIF" — but only on an inline
+`![[photo.jpg]]` embed, for the identical reason a waypoint's name is
+embed-only: hovering a track (or, now, a photo) on a **base** view already
+opens the row's own popup through `hover()` in `track-layer.ts` calling
+`popupManager.showPopup`, and a second, independent tooltip on that same hover
+risks fighting it — two floating boxes, or one hiding the other — with
+`PopupManager` owning DOM this plugin has no handle on.
+
+Not a fourth answer to "how does this plugin add something to a popup it does
+not own" — it is the same open question as the two entries above it, and
+whatever eventually answers one almost certainly answers all three: a
+per-track statistics line, a waypoint's name, and a photo's own thumbnail are
+all "one more thing this plugin wants inside a card it did not build."
+
 ## Worth doing
 
 ### Adding a coordinate to an existing note from the map
@@ -70,17 +87,6 @@ Needs a note picker — a `FuzzySuggestModal`, which this plugin does not have y
 — and `processFrontMatter`. The coordinate must be un-shifted exactly once; zero
 and two look identical on screen and land the pin ~500 m out.
 
-### Coordinates from a photo's EXIF
-
-A photo embedded in a note usually knows where it was taken. Reading its GPS
-tags would fill the note's coordinate property from a picture already in the
-vault — the thing every travel app calls "check in", arriving from the direction
-this plugin already works in.
-
-It is the shape this repo is best at: a pure binary reader with no dependency,
-`vault.readBinary` for the input, tests in the same PR. Neither Map View nor the
-built-in Maps does it.
-
 ### Lighting up where you have been
 
 Filling in the provinces or cities a vault has notes in — the "footprint map"
@@ -90,10 +96,15 @@ which is the same seam the tracks already use.
 Naming a coordinate is no longer the missing half: `reverseRequest`/
 `parseReverse` in `geocode.ts` and the _Fill place name from coordinates_
 command answer "what is at this point" today, through the same two providers
-place search already uses. What is still undone is the one part that was never
-about geocoding — the boundary polygons, which should be a GeoJSON file **the
-reader keeps in their vault** rather than data bundled into the plugin, and the
-fill layer that draws them.
+place search already uses. Where a coordinate itself comes from is also wider
+than it was: a geotagged photo now reaches a coordinate through the exact same
+pipeline a note's own `coords` property does — see CLAUDE.md's "Coordinates
+from a photo's EXIF" — so a footprint built from every note's coordinate could
+just as well be built from every photo's, without a second reader to write.
+What is still undone is the one part that was never about geocoding — the
+boundary polygons, which should be a GeoJSON file **the reader keeps in their
+vault** rather than data bundled into the plugin, and the fill layer that draws
+them.
 
 ### Import a KML's placemarks as notes
 

@@ -54,6 +54,33 @@
 	transform: translate(-50%, 30%);
 }
 
+/* The same tooltip, showing a photo instead of a waypoint's name — see
+ * embed.ts's hoverPhoto(). white-space: nowrap from the base rule would keep
+ * a long file name from ever wrapping under a fixed-width thumbnail, so it is
+ * turned back off here; the rest of the base rule (position, background,
+ * border, the is-below flip) is shared as-is. */
+.advanced-maps-waypoint-tooltip.advanced-maps-photo-tooltip {
+	max-width: 160px;
+	text-align: center;
+	white-space: normal;
+}
+
+.advanced-maps-photo-tooltip-img {
+	display: block;
+	width: auto;
+	height: auto;
+	max-width: 160px;
+	max-height: 160px;
+	margin: 0 auto;
+	border-radius: var(--radius-s);
+}
+
+.advanced-maps-photo-tooltip-name {
+	margin-top: var(--size-2-1);
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
 /* Distance/ascent/duration bar and elevation profile under an inline map.
  * Deliberately a sibling of .advanced-maps-embed rather than a child of it:
  * that box has a fixed height and `overflow: hidden` so the map fills exactly
@@ -294,4 +321,40 @@
 	min-width: 10em;
 	font-family: var(--font-monospace);
 	font-size: var(--font-ui-smaller);
+}
+
+/* The photo behind a map pin, at a size worth looking at. Sized off the
+ * viewport rather than the image: a phone photo is several thousand pixels
+ * wide and would otherwise open a modal larger than the screen, while a small
+ * one must not be stretched up to fill a box it cannot fill sharply. */
+.advanced-maps-photo-modal {
+	width: min(900px, 94vw);
+	max-width: none;
+}
+
+.advanced-maps-photo-modal-image {
+	display: block;
+	width: auto;
+	height: auto;
+	max-width: 100%;
+	max-height: 70vh;
+	margin: 0 auto;
+	border-radius: var(--radius-s);
+}
+
+.advanced-maps-photo-modal-note {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-1);
+	margin: var(--size-4-3) auto 0;
+}
+
+/* setIcon draws an SVG at its own size; match it to the label beside it. */
+.advanced-maps-photo-modal-icon {
+	display: inline-flex;
+}
+
+.advanced-maps-photo-modal-icon .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
 }

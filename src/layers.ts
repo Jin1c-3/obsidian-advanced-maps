@@ -1,7 +1,20 @@
 import { setIcon } from 'obsidian';
 import type { FeatureCollection } from 'geojson';
-import { ARROW_LAYER, ENDPOINT_LAYER, LINE_LAYER, MARKER_LAYER, POINT_LAYER, SRC, TRACK_KNOBS } from './constants';
+import {
+	ARROW_LAYER,
+	ENDPOINT_LAYER,
+	LINE_LAYER,
+	MARKER_LAYER,
+	PHOTO_DOT_LAYER,
+	PHOTO_ICON_MAX,
+	PHOTO_ICON_PX,
+	PHOTO_LAYER,
+	POINT_LAYER,
+	SRC,
+	TRACK_KNOBS,
+} from './constants';
 import { toTileSpace, type CoordSystem } from './coords';
+import type { ExifThumbnail } from './exif';
 import { t } from './i18n';
 import type { LngLatBounds, LocateControl, MapControl, MapLibreMap } from './types/obsidian-internals';
 
@@ -184,7 +197,13 @@ const endpointLayerSpec = {
 	id: ENDPOINT_LAYER,
 	type: 'symbol',
 	source: SRC,
-	filter: ['has', 'amRole'],
+	// Explicit start/end, not the bare `['has', 'amRole']` this shipped with —
+	// a photo's own Point carries `amRole: 'photo'` (see PHOTO_LAYER below) on
+	// the very same source, and `has` does not care which value is there. Left
+	// as `has`, every photo would additionally match this filter and grow a
+	// green start pin of its own, since the icon-image `match` expression below
+	// falls back to START_ICON for anything it does not recognise.
+	filter: ['any', ['==', ['get', 'amRole'], 'start'], ['==', ['get', 'amRole'], 'end']],
 	layout: {
 		'icon-image': ['match', ['get', 'amRole'], 'start', START_ICON, 'end', END_ICON, START_ICON],
 		// Collision detection defaults on for a symbol layer (unlike the circle
@@ -218,6 +237,76 @@ const arrowLayerSpec = {
 		'icon-rotation-alignment': 'map',
 		'icon-allow-overlap': true,
 		'icon-ignore-placement': true,
+		'icon-size': 1,
+	},
+	paint: {},
+};
+
+/*
+ * A photo is "a track file with one Point in it" (exif.ts / track-cache.ts's
+ * loadPhoto), sharing SRC with every other track feature and tagged
+ * `amRole: 'photo'` on arrival — see geometry.ts's `trackFeatures`. Two
+ * layers draw it, not one, because a photo's own thumbnail is a decoded
+ * bitmap that may not exist yet (still downloading, still decoding, the file
+ * carried none, or `photoThumbnails` is off), and "not there yet" still has
+ * to look like *something* other than a gap in the map:
+ *
+ *   PHOTO_DOT_LAYER — a plain circle, always drawn the moment a photo's Point
+ *   reaches the map. It lives in constants.ts beside PHOTO_LAYER, and its
+ *   comment there records why it stopped being private to this file the
+ *   moment anything wanted to bind a click to a photo.
+ *
+ *   PHOTO_LAYER — a symbol layer on top of it, `icon-image: ['get', 'amPhoto']`,
+ *   which MapLibre simply does not render for a feature whose `amPhoto` names
+ *   an image that is not registered. That silence is exactly the fallback
+ *   this wants: the dot underneath keeps showing until (and unless) the icon
+ *   above it has something to draw.
+ */
+
+const photoDotLayerSpec = {
+	id: PHOTO_DOT_LAYER,
+	type: 'circle',
+	source: SRC,
+	filter: ['==', ['get', 'amRole'], 'photo'],
+	paint: {
+		// The note's own colour, same idiom as every other point this source
+		// draws — a photo belongs to the note that links or embeds it, exactly
+		// as a track does.
+		'circle-color': ['get', 'amColor'],
+		'circle-radius': 6,
+		'circle-stroke-width': 2,
+		'circle-stroke-color': '#ffffff',
+	},
+};
+
+const photoLayerSpec = {
+	id: PHOTO_LAYER,
+	type: 'symbol',
+	source: SRC,
+	filter: ['==', ['get', 'amRole'], 'photo'],
+	layout: {
+		'icon-image': ['get', 'amPhoto'],
+		// The *opposite* of the endpoint/arrow layers' collision settings above,
+		// and for the opposite reason. Those two never want MapLibre to drop one
+		// of a pair sitting on the same pixel; a photo album zoomed out *should*
+		// thin, and letting MapLibre's own symbol collision detection drop the
+		// icons that would overlap — then bring them back as soon as zooming in
+		// gives them room — is what makes the density falloff free: nothing
+		// here computes a zoom-dependent count, it only has to not fight the
+		// default. Do not "fix" this to `true`; that is what turns the album
+		// back into an unreadable pile at a low zoom.
+		'icon-allow-overlap': false,
+		'icon-ignore-placement': false,
+		// Collision survivorship needs a rule or it is arbitrary — an unrelated
+		// paint change, or the draw list simply being rebuilt in a different
+		// order, would otherwise reshuffle which photos happen to still be
+		// showing at a given zoom for no reason a reader could find. Sorted by
+		// `amIndex` (the note a photo belongs to, not the photo itself — see
+		// TrackFeatureProps), so which notes' photos win a crowded cluster is at
+		// least stable across redraws of the same data, with ties (several
+		// photos from the same note) falling back to the source array's own
+		// order, which trackFeatures() builds deterministically every time.
+		'symbol-sort-key': ['get', 'amIndex'],
 		'icon-size': 1,
 	},
 	paint: {},
@@ -420,6 +509,14 @@ export function addTrackLayers(map: MapLibreMap): void {
 	map.addLayer(arrowLayerSpec, before);
 	map.addLayer(pointLayerSpec, before);
 	map.addLayer(endpointLayerSpec, before);
+	// Photos last, so they land visually on top of the plain waypoint dots and
+	// the start/end pins: a photo sitting exactly on one of those is the more
+	// specific, more interesting thing for a reader to see, the same reasoning
+	// that already puts the endpoint pins above the plain waypoint circles.
+	// Still anchored to the same `before` as everything else — a pin on a
+	// photo's own note is no more or less clickable than a pin on a track's.
+	map.addLayer(photoDotLayerSpec, before);
+	map.addLayer(photoLayerSpec, before);
 }
 
 /**
@@ -454,7 +551,7 @@ export function fitTo(map: MapLibreMap, bounds: LngLatBounds, padding: number, m
 export function removeTrackLayers(map: MapLibreMap): void {
 	if (!map.getStyle) return;
 	try {
-		for (const id of [LINE_LAYER, ARROW_LAYER, POINT_LAYER, ENDPOINT_LAYER]) {
+		for (const id of [LINE_LAYER, ARROW_LAYER, POINT_LAYER, ENDPOINT_LAYER, PHOTO_DOT_LAYER, PHOTO_LAYER]) {
 			if (map.getLayer(id)) map.removeLayer(id);
 		}
 		if (map.getSource(SRC)) map.removeSource(SRC);
@@ -464,6 +561,14 @@ export function removeTrackLayers(map: MapLibreMap): void {
 		for (const id of [START_ICON, END_ICON, ARROW_ICON]) {
 			if (map.hasImage(id)) map.removeImage(id);
 		}
+		// Deliberately NOT a third loop over every registered photo image here.
+		// This runs on refresh() too — a settings toggle or a re-parsed file,
+		// not just a style teardown — and draw() re-adds the two layers right
+		// after. A decoded thumbnail is expensive to re-derive and cheap to
+		// leave registered: dropping PHOTO_LAYER does not touch map.addImage's
+		// own table, so the next draw() picks the same bitmaps back up with
+		// nothing to redecode. See ensurePhotoImages() for how that table is
+		// actually bounded and evicted.
 	} catch {
 		/* style already torn down */
 	}
@@ -483,13 +588,24 @@ export function removeTrackLayers(map: MapLibreMap): void {
  * change — a recolour, a track file edit, a theme swap — happened to force a
  * redraw anyway. That is the exact class of bug guard #8 in "Non-obvious
  * things to leave alone" already documents for paint and framing.
+ *
+ * `photoThumbnails` follows the identical reasoning for a fifth/sixth layer:
+ * it is a plain settings toggle, not a change to which files are drawn (that
+ * is `showPhotos`, upstream in resolveTracks — see main.ts), so it has to
+ * reach an already-open map the moment it is flipped rather than waiting for
+ * some unrelated redraw to notice. Turning it off hides PHOTO_LAYER only —
+ * PHOTO_DOT_LAYER underneath is not a `showMarkers`-style extra, it is the
+ * fallback every photo already needs whenever its thumbnail is not on the map
+ * for any other reason (see the layer's own comment above), so it stays
+ * visible and unconditioned by this flag.
  */
 export function applyTrackPaint(
 	map: MapLibreMap,
 	weight: number,
 	opacity: number,
 	stroke: string,
-	showMarkers: boolean
+	showMarkers: boolean,
+	photoThumbnails: boolean
 ): void {
 	if (map.getLayer(LINE_LAYER)) {
 		map.setPaintProperty(LINE_LAYER, 'line-width', weight);
@@ -509,5 +625,295 @@ export function applyTrackPaint(
 		map.setLayoutProperty(id, 'visibility', showMarkers ? 'visible' : 'none');
 		map.setPaintProperty(id, 'icon-opacity', opacity);
 		map.setLayoutProperty(id, 'icon-size', iconSize);
+	}
+	if (map.getLayer(PHOTO_DOT_LAYER)) {
+		// Not scaled by `weight` the way POINT_LAYER's radius is — a photo dot is
+		// not part of the track line's own visual weight, it is a fallback for a
+		// marker that has its own fixed size (PHOTO_ICON_PX) once its thumbnail
+		// is ready, so a fixed radius is what keeps the two from disagreeing.
+		map.setPaintProperty(PHOTO_DOT_LAYER, 'circle-stroke-color', stroke);
+		map.setPaintProperty(PHOTO_DOT_LAYER, 'circle-opacity', opacity);
+	}
+	if (map.getLayer(PHOTO_LAYER)) {
+		map.setLayoutProperty(PHOTO_LAYER, 'visibility', photoThumbnails ? 'visible' : 'none');
+	}
+}
+
+/* ---- the photo album: decoding and registering thumbnails ----
+ *
+ * `map.addImage` needs a synchronous `ImageData`, exactly like the three
+ * hand-drawn track icons above — but unlike a plain canvas path fill, there is
+ * no synchronous way to get pixels out of a JPEG thumbnail's compressed bytes.
+ * `createImageBitmap` is the one door in, and it is a promise, so this whole
+ * corner of the file is async where `ensureTrackIcons` is not (trap 5 in the
+ * spec this shipped against). `drawTracks()` stays synchronous regardless:
+ * `ensurePhotoImages` returns nothing for a caller to await, registers images
+ * as they land, and leans on PHOTO_DOT_LAYER (above) to keep every photo
+ * visible in the meantime. MapLibre repaints on its own the moment
+ * `addImage` lands — nothing here has to ask it to.
+ */
+
+/** What one photo needs to become a registered `map.addImage` bitmap. `id` is
+ *  whatever `photoImageId()` (track-cache.ts) already stamped onto the
+ *  feature as `amPhoto` — passing it back in here rather than recomputing it
+ *  is what keeps the two sides from ever landing on different strings for the
+ *  same photo. */
+export interface PhotoIconSource {
+	id: string;
+	thumbnail: ExifThumbnail;
+	orientation: number;
+}
+
+/**
+ * Per-map bookkeeping, oldest-registered-and-still-wanted first: which photo
+ * image ids this function believes it has registered on a given map, so a
+ * repeat call can tell "already there" from "needs decoding" without an
+ * enumeration API MapLibreMap does not declare (there is no `listImages()`
+ * here — see types/obsidian-internals.d.ts).
+ *
+ * A WeakMap keyed by the map itself rather than a field on `TrackLayer` or
+ * `TrackEmbed`: both call this against their own map, and neither would have
+ * anywhere natural to remember to clear it — the WeakMap does that for free
+ * once the map itself is garbage.
+ *
+ * This can drift from the map's own truth after a style reload wipes every
+ * registered image out from under it (a theme or background switch): entries
+ * here would still claim to be registered when they no longer are. That is
+ * harmless rather than a bug to chase — every decision this file makes still
+ * asks `map.hasImage(id)` first, which answers correctly regardless of what
+ * this table believes, so a stale entry only costs a redundant `removeImage`
+ * attempt (already wrapped in a catch below) before the next redraw's decode
+ * re-populates it.
+ */
+const photoImageOrder = new WeakMap<MapLibreMap, Map<string, true>>();
+
+/** Ids currently mid-decode on a given map, so a second `ensurePhotoImages`
+ *  call arriving before the first one's `createImageBitmap` has resolved —
+ *  `refresh()` firing twice in quick succession, say — does not start a
+ *  second decode chain for the same photo. */
+const photoImagePending = new WeakMap<MapLibreMap, Set<string>>();
+
+/** Whatever is cheaply checkable about "is there still a live style behind
+ *  this map" — the same question `removeTrackLayers()` above answers with a
+ *  bare `if (!map.getStyle) return`, wrapped in a `try` here too because a
+ *  torn-down map can throw calling the method at all, not just answering it. */
+function mapAlive(map: MapLibreMap): boolean {
+	try {
+		return typeof map.getStyle === 'function' && !!map.getStyle();
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * The standard EXIF-orientation canvas fix-up for values 1–8 (1, or anything
+ * this file has never seen, is left untouched — a no-op transform is the
+ * correct answer for "upright already" and for "undocumented tag" alike).
+ * `w`/`h` are always the *un-rotated* source dimensions; the transform matrix
+ * itself does the axis-swapping for 5–8 rather than the caller pre-swapping
+ * them, which is the version of this recipe that is easy to get subtly wrong
+ * in one of the four rotated cases and not notice on a photo that happens to
+ * be near-square.
+ */
+function applyOrientation(ctx: CanvasRenderingContext2D, orientation: number, w: number, h: number): void {
+	switch (orientation) {
+		case 2:
+			ctx.transform(-1, 0, 0, 1, w, 0);
+			break;
+		case 3:
+			ctx.transform(-1, 0, 0, -1, w, h);
+			break;
+		case 4:
+			ctx.transform(1, 0, 0, -1, 0, h);
+			break;
+		case 5:
+			ctx.transform(0, 1, 1, 0, 0, 0);
+			break;
+		case 6:
+			ctx.transform(0, 1, -1, 0, h, 0);
+			break;
+		case 7:
+			ctx.transform(0, -1, -1, 0, h, w);
+			break;
+		case 8:
+			ctx.transform(0, -1, 1, 0, 0, w);
+			break;
+		default:
+			break;
+	}
+}
+
+function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+	ctx.beginPath();
+	ctx.moveTo(x + r, y);
+	ctx.arcTo(x + w, y, x + w, y + h, r);
+	ctx.arcTo(x + w, y + h, x, y + h, r);
+	ctx.arcTo(x, y + h, x, y, r);
+	ctx.arcTo(x, y, x + w, y, r);
+	ctx.closePath();
+}
+
+/**
+ * One decoded thumbnail, drawn square at `PHOTO_ICON_PX` (× `ICON_SCALE`, the
+ * same retina-style oversampling `ensureTrackIcons`'s three hand-drawn shapes
+ * use) with rounded corners and a halo border in the page's own background
+ * colour. CLAUDE.md's "an axis-aligned filled square reads as a broken image"
+ * was written about the endpoint marker this file used to draw, but the same
+ * eye reads a hard-edged photo the same way, sitting beside Obsidian's own
+ * rounded controls — rounding the corners is what answers it here, in place
+ * of the ring-vs-disc trick that answers it for start/end.
+ *
+ * Cover-fit, not letterboxed: a portrait phone photo and a landscape one
+ * should both read as "a photo of the place" at a glance, not as
+ * different-shaped tiles with grey bars down the sides, so the shorter axis
+ * is scaled to fill the icon and the overflow on the longer one is clipped
+ * away by the same rounded-rect path the border is stroked along.
+ */
+function drawPhotoIcon(bitmap: ImageBitmap, orientation: number): ImageData {
+	const halo = resolveCssColor('var(--background-primary)');
+	const swapped = orientation >= 5 && orientation <= 8;
+	const srcW = bitmap.width;
+	const srcH = bitmap.height;
+
+	// Pass 1: the thumbnail the right way up, at its own (possibly rotated)
+	// aspect ratio — a separate canvas rather than drawing the rotation
+	// straight into the final square, because the cover-fit math below needs
+	// to know the *upright* width and height to centre the crop correctly.
+	const upright = createEl('canvas');
+	upright.width = swapped ? srcH : srcW;
+	upright.height = swapped ? srcW : srcH;
+	const uctx = upright.getContext('2d');
+	if (!uctx) throw new Error('Advanced Maps: no 2D canvas context for a photo thumbnail');
+	applyOrientation(uctx, orientation, srcW, srcH);
+	uctx.drawImage(bitmap, 0, 0);
+
+	// Pass 2: cover-fit into the square icon, clipped to a rounded rect.
+	const px = PHOTO_ICON_PX * ICON_SCALE;
+	const canvas = createEl('canvas');
+	canvas.width = px;
+	canvas.height = px;
+	const ctx = canvas.getContext('2d');
+	if (!ctx) throw new Error('Advanced Maps: no 2D canvas context for a photo thumbnail');
+
+	const strokeWidth = 2 * ICON_SCALE;
+	const radius = px * 0.22;
+	roundedRectPath(ctx, strokeWidth / 2, strokeWidth / 2, px - strokeWidth, px - strokeWidth, radius);
+	ctx.save();
+	ctx.clip();
+	const scale = Math.max(px / upright.width, px / upright.height);
+	const dw = upright.width * scale;
+	const dh = upright.height * scale;
+	ctx.drawImage(upright, (px - dw) / 2, (px - dh) / 2, dw, dh);
+	ctx.restore();
+
+	// The border is stroked along the same inset rounded-rect the clip used,
+	// so it sits exactly on the visible edge of the photo rather than outside
+	// or on top of it.
+	roundedRectPath(ctx, strokeWidth / 2, strokeWidth / 2, px - strokeWidth, px - strokeWidth, radius);
+	ctx.lineWidth = strokeWidth;
+	ctx.strokeStyle = halo;
+	ctx.stroke();
+
+	return ctx.getImageData(0, 0, px, px);
+}
+
+/** The async half of one photo's icon: decode, draw, register — and, at every
+ *  point past the first `await`, check that there is still a map and a style
+ *  to register against before touching either. */
+async function decodePhotoIcon(
+	map: MapLibreMap,
+	id: string,
+	thumbnail: ExifThumbnail,
+	orientation: number
+): Promise<void> {
+	const pending = photoImagePending.get(map) ?? new Set<string>();
+	photoImagePending.set(map, pending);
+	pending.add(id);
+	try {
+		// `new Uint8Array(thumbnail.bytes)` rather than the bytes themselves: a
+		// `Uint8Array` sliced out of a `SharedArrayBuffer`-backed source types as
+		// `Uint8Array<ArrayBufferLike>`, which `BlobPart` (TS 5.9's lib.dom)
+		// refuses — going through the array-like constructor overload allocates
+		// a fresh, plain `ArrayBuffer`-backed copy that `Blob` accepts.
+		const blob = new Blob([new Uint8Array(thumbnail.bytes)], { type: 'image/jpeg' });
+		const bitmap = await createImageBitmap(blob);
+		let imageData: ImageData;
+		try {
+			imageData = drawPhotoIcon(bitmap, orientation);
+		} finally {
+			bitmap.close();
+		}
+		// Everything above this line ran across at least one microtask, often
+		// two — plenty of time for the note this photo belongs to to close, for
+		// a theme or background switch to wipe the style, or for the plugin
+		// itself to unload. None of that throws; all of it leaves nothing safe
+		// to register against, which is exactly what `mapAlive` is for.
+		if (!mapAlive(map)) return;
+		if (map.hasImage(id)) return; // a second call already won this id first
+		map.addImage(id, imageData, { pixelRatio: ICON_SCALE });
+		const order = photoImageOrder.get(map) ?? new Map<string, true>();
+		photoImageOrder.set(map, order);
+		order.delete(id);
+		order.set(id, true); // most-recently-registered, for the LRU walk below
+	} catch (e) {
+		console.warn(`Advanced Maps: could not decode a photo thumbnail (${id}) —`, e instanceof Error ? e.message : e);
+	} finally {
+		pending.delete(id);
+	}
+}
+
+/**
+ * Register every not-yet-registered thumbnail in `records` that `wanted`
+ * still asks for, and evict the least-recently-`wanted` registered image once
+ * more than `PHOTO_ICON_MAX` are on the map at once.
+ *
+ * The two-parameter split exists because a caller's natural unit of "what
+ * might need decoding" — every photo record its `TrackRecord`s currently hold
+ * — is not always identical to "what this exact draw needs on screen right
+ * now": `wanted` is what actually gates both starting a decode and surviving
+ * eviction, so a caller can safely pass a broader `records` list (say, every
+ * photo the base's rows resolved to) without this function doing wasted work
+ * for one the current draw does not carry.
+ *
+ * Fire-and-forget by design (see the section comment above): this returns
+ * `void`, never a `Promise`, so nothing about `drawTracks()`'s own
+ * synchronous contract changes by calling this beside it.
+ */
+export function ensurePhotoImages(
+	map: MapLibreMap,
+	records: readonly PhotoIconSource[],
+	wanted: ReadonlySet<string>
+): void {
+	if (!mapAlive(map)) return;
+	const order = photoImageOrder.get(map) ?? new Map<string, true>();
+	photoImageOrder.set(map, order);
+	const pending = photoImagePending.get(map);
+
+	for (const record of records) {
+		if (!wanted.has(record.id)) continue;
+		if (map.hasImage(record.id)) {
+			order.delete(record.id);
+			order.set(record.id, true); // touch: most-recently-wanted
+			continue;
+		}
+		if (pending?.has(record.id)) continue; // already decoding
+		void decodePhotoIcon(map, record.id, record.thumbnail, record.orientation);
+	}
+
+	if (order.size <= PHOTO_ICON_MAX) return;
+	// Oldest-first, skipping anything this call still wants: an id is only
+	// ever evicted once nothing currently on screen is asking for it, so
+	// panning back to a photo just left never has to wait for a redecode —
+	// and, per PHOTO_DOT_LAYER's own comment, an evicted photo does not
+	// vanish from the map, it just goes back to being a plain dot.
+	for (const id of order.keys()) {
+		if (order.size <= PHOTO_ICON_MAX) break;
+		if (wanted.has(id)) continue;
+		try {
+			if (map.hasImage(id)) map.removeImage(id);
+		} catch {
+			/* style already torn down, or something else already removed it */
+		}
+		order.delete(id);
 	}
 }

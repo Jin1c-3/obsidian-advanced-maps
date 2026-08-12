@@ -33,7 +33,7 @@ import {
 	TFile,
 } from 'obsidian';
 import type { CachedMetadata, Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
-import { FOCUS_RETRY_MS, FOCUS_TRIES, TRACK_EXTS } from './constants';
+import { FOCUS_RETRY_MS, FOCUS_TRIES, PHOTO_EXTS, TRACK_EXTS } from './constants';
 import { formatLatLng, parseLatLng } from './coords';
 import { TrackEmbed } from './embed';
 import { t } from './i18n';
@@ -102,6 +102,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.registerPlaceSearch();
 		this.registerLocate();
 		this.registerReverseGeocode();
+		this.registerFillFromPhoto();
 		// Its own listener rather than a line inside the one the locator already
 		// has on `file-open`: that one is about writing to the note, this one is
 		// about moving a camera, and neither should be able to break the other.
@@ -276,6 +277,13 @@ export default class AdvancedMapsPlugin extends Plugin {
 	}
 
 	refreshTracks(): void {
+		// showPhotos is read inside resolveTracks() itself, but resolveTracks()'s
+		// answer is memoised per note against its CachedMetadata object — which a
+		// settings change does not touch. Left in place, flipping "Show photos"
+		// would keep drawing (or omitting) every photo exactly as before until the
+		// vault next changed under each note, which is the same trap the memo
+		// avoids for a track file's own edits, just from the settings side instead.
+		this.trackLinks = new WeakMap();
 		for (const layer of this.layers) {
 			layer.sync().catch((e) => console.error('Advanced Maps: could not redraw tracks', e));
 		}
@@ -300,9 +308,17 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	/* ---- tracks ---- */
 
+	/** Whether this extension is one `resolveTracks` will pick up: a track
+	 *  format outright, or a photo format with **Show photos** on. Gating the
+	 *  photo half here rather than after the fact is what makes the memo below
+	 *  self-correct on a toggle: see `refreshTracks()`. */
+	private isTrackFile(extension: string): boolean {
+		return TRACK_EXTS.has(extension) || (this.settings.showPhotos && PHOTO_EXTS.has(extension));
+	}
+
 	/**
-	 * The track files a note points at — or the file itself, so a base that
-	 * queries `file.ext == "gpx"` works too.
+	 * The track and photo files a note points at — or the file itself, so a
+	 * base that queries `file.ext == "gpx"` (or `"jpg"`) works too.
 	 *
 	 * Reading the metadata cache rather than the query result means the base's
 	 * own filters keep working untouched: no need to widen a filter just to let
@@ -317,9 +333,15 @@ export default class AdvancedMapsPlugin extends Plugin {
 	 * means the line on the base map and nothing rendered in the note. The
 	 * reported symptom of having no way to say the second one was two maps in
 	 * one note, one of them unwanted (issue #6).
+	 *
+	 * A photo — `PHOTO_EXTS`, gated on `settings.showPhotos` — is resolved the
+	 * same way and through the exact same three lists, on the same reasoning:
+	 * an EXIF coordinate belongs to the note that carries the photo, the same
+	 * way a track's geometry does, and the reader who links a photo without
+	 * embedding it presumably wants it on the map and not duplicated inline.
 	 */
 	resolveTracks(file: TFile): TFile[] {
-		if (TRACK_EXTS.has(file.extension)) return [file];
+		if (this.isTrackFile(file.extension)) return [file];
 		if (file.extension !== 'md') return [];
 		const cache = this.app.metadataCache.getFileCache(file);
 		if (!cache) return [];
@@ -328,7 +350,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// re-indexing a note hands back a *new* CachedMetadata, which is a miss.
 		// Worth the memo because this is per row of the base and Bases replaces its
 		// result set on any vault change — several hundred link resolutions per
-		// redraw, to recompute an answer that only moves when a note does.
+		// redraw, to recompute an answer that only moves when a note does. It says
+		// nothing about `showPhotos`, which is why toggling that setting goes
+		// through `refreshTracks()` dropping the whole memo rather than through
+		// this function noticing the setting changed.
 		const memo = this.trackLinks.get(cache);
 		if (memo) return memo;
 
@@ -338,7 +363,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// both, which is what makes the identity check enough to de-duplicate.
 		for (const ref of [...(cache.embeds ?? []), ...(cache.links ?? []), ...(cache.frontmatterLinks ?? [])]) {
 			const dest = this.app.metadataCache.getFirstLinkpathDest(ref.link, file.path);
-			if (dest && TRACK_EXTS.has(dest.extension) && !out.includes(dest)) out.push(dest);
+			if (dest && this.isTrackFile(dest.extension) && !out.includes(dest)) out.push(dest);
 		}
 		this.trackLinks.set(cache, out);
 		return out;
@@ -354,7 +379,14 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.ownedExtensions = [...TRACK_EXTS].filter((ext) => !registry.isExtensionRegistered(ext));
 		if (this.ownedExtensions.length === 0) return;
 		registry.registerExtensions(this.ownedExtensions, (context, file) => {
-			const embed = new TrackEmbed(context.containerEl, this, file);
+			// `sourcePath` is the note the embed sits in, which is what lets an
+			// inline map draw that note's photos beside its track. Obsidian passes
+			// it — measured, by wrapping the registered creator on a running app:
+			// the context is `{app, linktext, sourcePath, containerEl, displayMode,
+			// showInline, depth}`. Read defensively anyway, since it is one of the
+			// keys `EmbedContext` declares as unknown rather than promised.
+			const source = typeof context.sourcePath === 'string' ? context.sourcePath : '';
+			const embed = new TrackEmbed(context.containerEl, this, file, source);
 			this.embeds.add(embed);
 			return embed;
 		});
@@ -936,6 +968,83 @@ export default class AdvancedMapsPlugin extends Plugin {
 			const reason = e instanceof GeocodeError ? e.message : e instanceof Error ? e.message : String(e);
 			new Notice(t('notice.reverseGeocode.failed', { reason }));
 		}
+	}
+
+	/* ---- coordinates from a photo ---- */
+
+	/**
+	 * The photo files a note points at, through the same three-list scan
+	 * `resolveTracks` uses — but never gated on `settings.showPhotos`, and never
+	 * memoised. Filling a note's coordinate from a photo is a distinct ask from
+	 * drawing that photo on the map: a reader with photo thumbnails turned off
+	 * should still be able to pull a coordinate out of one, and this only runs
+	 * once per command invocation rather than once per redraw, so there is
+	 * nothing here worth caching the way the display path is.
+	 */
+	private resolvePhotos(file: TFile): TFile[] {
+		const cache = this.app.metadataCache.getFileCache(file);
+		if (!cache) return [];
+		const out: TFile[] = [];
+		for (const ref of [...(cache.embeds ?? []), ...(cache.links ?? []), ...(cache.frontmatterLinks ?? [])]) {
+			const dest = this.app.metadataCache.getFirstLinkpathDest(ref.link, file.path);
+			if (dest && PHOTO_EXTS.has(dest.extension) && !out.includes(dest)) out.push(dest);
+		}
+		return out;
+	}
+
+	/**
+	 * Deliberately not behind **Enable location**, for the same reason the
+	 * link-paste command is not: it raises no permission prompt and records
+	 * nothing about where this device is. The coordinate it fills in came from
+	 * the photo's own EXIF tags, not from asking the device anything.
+	 */
+	private registerFillFromPhoto(): void {
+		this.addCommand({
+			id: 'fill-coords-from-photo',
+			name: t('command.fillFromPhoto'),
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || file.extension !== 'md') return false;
+				if (this.resolvePhotos(file).length === 0) return false;
+				if (!checking) void this.fillCoordsFromPhoto(file);
+				return true;
+			},
+		});
+	}
+
+	/**
+	 * The first of the note's own photos that carries a usable GPS tag wins —
+	 * read in the same order `resolvePhotos` answers them, which is the order
+	 * they appear in the note. Goes through `TrackCache.load()` rather than
+	 * `exif.ts` directly, so this reads a photo's coordinate through the exact
+	 * same head-read, EXIF parse and datum conversion the map's own album uses,
+	 * with nothing duplicated: `photoWgs84` inside `loadPhoto` is what already
+	 * turns the tags into the WGS-84 point sitting on `rec.features[0]`.
+	 *
+	 * `TrackCache.load()` never throws — a read failure lands on `rec.error`
+	 * and an empty `features`, the same "not a failure, just nothing found"
+	 * shape a photo with no GPS tags gets. The two are told apart here only to
+	 * choose which notice to show once every photo has been tried: a read that
+	 * actually failed is worth saying so about, but only if no other photo in
+	 * the note answered.
+	 */
+	private async fillCoordsFromPhoto(file: TFile): Promise<void> {
+		const photos = this.resolvePhotos(file);
+		let readError: string | null = null;
+		for (const photo of photos) {
+			const rec = await this.tracks.load(photo, this.settings.photoDatum);
+			const geometry = rec.features[0]?.geometry;
+			if (geometry && geometry.type === 'Point') {
+				const [lng, lat] = geometry.coordinates;
+				const coords = formatLatLng(lat, lng);
+				await this.writeCoords(file, coords);
+				new Notice(t('notice.photo.done', { property: this.settings.coordsProperty, coords }));
+				return;
+			}
+			if (rec.error && readError === null) readError = rec.error;
+		}
+		if (readError !== null) new Notice(t('notice.photo.failed', { reason: readError }));
+		else new Notice(t('notice.photo.none', { file: file.basename }));
 	}
 
 	/* ---- location ---- */

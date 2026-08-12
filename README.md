@@ -26,6 +26,7 @@ library, no runtime dependencies.
 | A trip note is about six places, and a note holds one coordinate.   | One line embeds a map of the notes around it. Drag a note in and it appears.      |
 | A share link, and you have to dig the numbers out — in which datum? | Paste it. WGS-84 comes out, whatever went in.                                     |
 | Filling in coordinates by hand.                                     | Search a place name, or take it from where you are — on desktop too.              |
+| A geotagged photo just sits in the vault, its location unread.      | Draws its own pin from its EXIF GPS tags, its own thumbnail as the icon.          |
 
 ## Requirements
 
@@ -55,6 +56,48 @@ which way it went. Named waypoints show their name on hover, inline. **Show trac
 markers** turns all of it off.
 
 ![A GPX track across a causeway: a green disc where it started, a red ring where it ended, and arrows along the line pointing the way it was walked](docs/track-markers.png)
+
+## Photos
+
+A photo with a GPS tag is a track with one point in it, so it gets a pin the
+same way a `.gpx` gets a line — link or embed a `.jpg`, `.png`, `.webp`,
+`.heic`, `.heif` or `.avif` that carries one, and any map view whose base
+includes that note draws it. The photo's own embedded thumbnail becomes its
+icon on the map once it has decoded; a plain dot stands in until then, and
+whenever the tags carried no thumbnail at all.
+
+![Six photos around West Lake, each drawn as its own thumbnail at the coordinate its EXIF names — none of these notes carries a coordinate property of its own](docs/photo-map.png)
+
+Zoomed out, a cluster of nearby photos thins on its own rather than piling
+into an unreadable stack, and comes back the moment you zoom in far enough to
+give them room. **Show photos on the map** and **Show photo thumbnails** turn
+either half off; **Photo coordinate system** says what datum an unlabelled
+photo's coordinate is written in — WGS-84 by default, which is both what the
+EXIF specification calls for and what real phones measured against it turned
+out to write.
+
+An inline `![[track.gpx]]` map draws the photos of the note it sits in, so a
+walk and the pictures taken on it are one map. The distance, ascent and
+elevation profile underneath still measure the track alone.
+
+![An inline map of a causeway walk with three of the note's photos drawn along the line, and distance, ascent and an elevation profile below it](docs/photo-embed.png)
+
+Hovering a photo shows its note's card, the same one hovering a track shows.
+Clicking it shows the photo, full size, with an **Open note** row underneath —
+one note often holds a dozen photos, and opening the note would throw away
+which of them you pointed at. It opens in a pop-up rather than a tab because
+clicking a map makes that map's pane the active one, so opening the picture in
+a pane would replace the map you clicked on. Hold Ctrl/Cmd to get the image
+file in a new tab anyway.
+
+![A photo opened from the map: the picture at full size in a pop-up over the map, its file name above it and an "open note" row below](docs/photo-popup.png)
+
+_Set coordinates from a photo_ reads the same tag straight into a note's
+`coords` property, for a note that should carry its own coordinate rather than
+only draw the photo's.
+
+Only the first few kilobytes of a photo are ever read — never the picture
+itself, and never the vault. A photo is read, never written to.
 
 ## Inline maps
 

@@ -340,6 +340,68 @@ describe('trackFeatures', () => {
 		for (const feature of out) expect('amName' in feature.properties).toBe(false);
 	});
 
+	it('carries a photo point’s amRole, amPhoto and amPath through unchanged', () => {
+		const input: Input = [
+			{
+				type: 'Feature',
+				properties: { amRole: 'photo', amPhoto: 'advanced-maps-photo-assets/a.jpg', amPath: 'assets/a.jpg' },
+				geometry: { type: 'Point', coordinates: [120.1, 30.2] },
+			},
+		];
+		const [out] = trackFeatures(input, '#0f0', 0);
+		expect(out.properties).toEqual({
+			amColor: '#0f0',
+			amIndex: 0,
+			amRole: 'photo',
+			amPhoto: 'advanced-maps-photo-assets/a.jpg',
+			amPath: 'assets/a.jpg',
+		});
+		// A photo is a Point, so lineEndpoints() answers null for it — no
+		// synthetic start/end pair grows out of a photo the way one does for a
+		// line, which the length check below is what proves.
+		expect(trackFeatures(input, '#0f0', 0)).toHaveLength(1);
+	});
+
+	it('carries a photo point with no thumbnail (amPhoto absent) through with amRole/amPath alone', () => {
+		const input: Input = [
+			{
+				type: 'Feature',
+				properties: { amRole: 'photo', amPath: 'assets/no-thumb.heic' },
+				geometry: { type: 'Point', coordinates: [1, 1] },
+			},
+		];
+		const [out] = trackFeatures(input, '#000', 3);
+		expect(out.properties).toEqual({
+			amColor: '#000',
+			amIndex: 3,
+			amRole: 'photo',
+			amPath: 'assets/no-thumb.heic',
+		});
+		expect('amPhoto' in out.properties).toBe(false);
+	});
+
+	it('never mistakes a real waypoint for a photo just because it sits beside amRole-shaped junk', () => {
+		// An ordinary waypoint's properties never carry amRole at all — this
+		// pins the negative: no name, no amRole, no amPhoto/amPath leak in.
+		const input: Input = [
+			{ type: 'Feature', properties: { name: 'Pavilion' }, geometry: { type: 'Point', coordinates: [2, 2] } },
+		];
+		const [out] = trackFeatures(input, '#fff', 0);
+		expect(out.properties).toEqual({ amColor: '#fff', amIndex: 0, amName: 'Pavilion' });
+	});
+
+	it('drops a non-string amPhoto/amPath rather than passing a garbage value through', () => {
+		const input: Input = [
+			{
+				type: 'Feature',
+				properties: { amRole: 'photo', amPhoto: 42, amPath: null },
+				geometry: { type: 'Point', coordinates: [0, 0] },
+			},
+		];
+		const [out] = trackFeatures(input, '#fff', 0);
+		expect(out.properties).toEqual({ amColor: '#fff', amIndex: 0, amRole: 'photo' });
+	});
+
 	it('yields two synthetic endpoints for a MultiLineString too', () => {
 		const input: Input = [
 			{

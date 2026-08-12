@@ -1,6 +1,27 @@
 /** File extensions this plugin knows how to draw. */
 export const TRACK_EXTS = new Set(['gpx', 'geojson', 'kml', 'tcx']);
 
+/** File extensions this plugin will pull an EXIF GPS coordinate out of — see
+ *  exif.ts. A photo is drawn through the exact same pipeline a track is: it
+ *  becomes a one-Point ParsedTrack, so everywhere that already branches on
+ *  TRACK_EXTS to decide "is this ours" needs PHOTO_EXTS beside it. */
+export const PHOTO_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'avif']);
+
+/**
+ * How much of a photo file to read before giving up on finding EXIF in it.
+ *
+ * Measured on a real 3,052,138-byte Xiaomi motion photo: APP1(Exif) is the
+ * very first segment, its own declared length is 3988 bytes counted from the
+ * length field itself at offset 4, and everything EXIF states in that file —
+ * GPS, orientation, the IFD1 thumbnail included — ends at byte 3992, 0.13% of
+ * the file. Confirmed from the other direction by truncation: 1831 bytes is
+ * the shortest prefix that yields the coordinate and 3992 the shortest that
+ * yields the thumbnail. 65536 is 16x that measured figure:
+ * headroom for a camera that writes a larger maker-note or a bigger embedded
+ * thumbnail ahead of GPS, without ever reading anywhere near the whole photo.
+ */
+export const PHOTO_HEAD_BYTES = 65536;
+
 /* This plugin's own source and layer ids. The native marker layer is
  * "marker-pins" on the "markers" source; tracks go in below it so a pin sitting
  * on its own track stays clickable. */
@@ -11,7 +32,47 @@ export const POINT_LAYER = 'advanced-maps-track-points';
  *  layers sharing the track source rather than a source of their own. */
 export const ENDPOINT_LAYER = 'advanced-maps-track-endpoints';
 export const ARROW_LAYER = 'advanced-maps-track-arrows';
+/** A photo's own layer — one Point per photo, sharing SRC (a photo is never
+ *  given a source of its own; see HIT_SRC's comment above for the exact
+ *  hazard that would create in removeTrackLayers()). Covers both a decoded
+ *  thumbnail icon and, until one is ready or when the photo has none, a plain
+ *  dot — POINT_LAYER's own filter excludes anything carrying amRole, which a
+ *  photo always does. */
+export const PHOTO_LAYER = 'advanced-maps-photos';
+/**
+ * The plain circle drawn under every photo, whether or not its thumbnail has
+ * decoded yet — see `photoDotLayerSpec` in layers.ts for why two layers draw
+ * one photo.
+ *
+ * It lived in layers.ts as a deliberately unexported private, on the reasoning
+ * that `PHOTO_LAYER` was "the id whoever binds interactions to a photo
+ * actually needs". Binding those interactions is what proved that wrong, and
+ * exactly backwards: `PHOTO_LAYER` renders nothing at all for a photo whose
+ * image is not registered — no thumbnail in the file, still decoding, or
+ * `photoThumbnails` off — so a click bound only to it would leave precisely
+ * the photos that are *only* a dot unclickable, which is the same set that is
+ * hardest to tell apart from a track's own waypoints in the first place.
+ */
+export const PHOTO_DOT_LAYER = 'advanced-maps-photo-dots';
 export const MARKER_LAYER = 'marker-pins';
+
+/**
+ * A photo's `map.addImage` id is this prefix plus the photo file's own vault
+ * path — see track-cache.ts's `photoImageId`, the one place that formula is
+ * written, so whoever registers the decoded bitmap and whoever's `icon-image`
+ * expression looks it up can never drift apart on what the id is.
+ */
+export const PHOTO_ICON_PREFIX = 'advanced-maps-photo-';
+/** CSS px a thumbnail icon draws at on the map. */
+export const PHOTO_ICON_PX = 48;
+/**
+ * How many decoded thumbnails one map keeps registered with `map.addImage` at
+ * once. A bound rather than "as many as there are photos": a base with
+ * thousands of them would otherwise grow the style's image table without
+ * limit, and every one of those bitmaps stays decoded in GPU memory for the
+ * life of the map.
+ */
+export const PHOTO_ICON_MAX = 240;
 
 /* The elevation-profile hover link (inline embeds only — see embed.ts).
  * HIT_SRC/HIT_LAYER is a private copy of the track geometry under an

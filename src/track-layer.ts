@@ -5,7 +5,16 @@
 import { Keymap, Menu } from 'obsidian';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { PaneType, TFile } from 'obsidian';
-import { ARROW_LAYER, ENDPOINT_LAYER, LINE_LAYER, POINT_LAYER, SRC, type TrackKnob } from './constants';
+import {
+	ARROW_LAYER,
+	ENDPOINT_LAYER,
+	LINE_LAYER,
+	PHOTO_DOT_LAYER,
+	PHOTO_LAYER,
+	POINT_LAYER,
+	SRC,
+	type TrackKnob,
+} from './constants';
 import {
 	knownMode,
 	projectCenter,
@@ -20,15 +29,18 @@ import { getLocale, t } from './i18n';
 import {
 	applyTrackPaint,
 	drawTracks,
+	ensurePhotoImages,
 	fitTo,
 	FitControl,
 	FollowControl,
 	guardLocateControl,
 	removeTrackLayers,
 	type LocateGuard,
+	type PhotoIconSource,
 } from './layers';
 import { customMapLabel, customMapUrl, customMaps, enabledBuiltins, externalMapUrl, resolveBuiltins } from './maplinks';
-import { projectedFeatures } from './track-cache';
+import { PhotoModal } from './photo-modal';
+import { photoImageId, projectedFeatures } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type {
 	BasesData,
@@ -148,6 +160,9 @@ export class TrackLayer {
 	private held: FocusTarget | null = null;
 	/** …and whose popup to open, held until the row it belongs to arrives. */
 	private pendingPopup: FocusTarget | null = null;
+	/** The last DOM event `open()` acted on — see there for why one click can
+	 *  arrive twice. */
+	private handledClick: MouseEvent | null = null;
 
 	constructor(
 		private readonly plugin: AdvancedMapsPlugin,
@@ -764,9 +779,19 @@ export class TrackLayer {
 	 * Paint and framing are deliberately *not* in here. They are cheap and they
 	 * run on every sync regardless, so this only has to answer one question —
 	 * "are these the same features as the ones already up?".
+	 *
+	 * `photoDatum` is in the same bucket as `system`: neither one is visible in
+	 * a track file's own path or mtime, so a change to either has to be spelled
+	 * out here by hand or `sync()`'s upload-skip gate cannot see it. Missing it
+	 * looks fine right up until a photo whose EXIF stated no datum is *why* the
+	 * reader flipped the setting — `sync()`'s own `isFresh()` check, below, now
+	 * reloads it under the new datum and `build()` puts the corrected coordinate
+	 * in `this.data`, but without this line the redraw is still skipped, since
+	 * path+mtime+color are unchanged — the map keeps showing the old pin having
+	 * done all the work to compute the new one.
 	 */
 	private signature(items: DrawItem[], system: CoordSystem): string {
-		const parts: string[] = [system];
+		const parts: string[] = [system, this.plugin.settings.photoDatum];
 		for (const item of items) {
 			parts.push(item.color);
 			// mtime, so a track edited in place counts as different even though its
@@ -785,10 +810,11 @@ export class TrackLayer {
 		const pending = new Set<TFile>();
 		for (const item of items) {
 			for (const trackFile of item.trackFiles) {
-				if (!this.plugin.tracks.isFresh(trackFile)) pending.add(trackFile);
+				if (!this.plugin.tracks.isFresh(trackFile, this.plugin.settings.photoDatum)) pending.add(trackFile);
 			}
 		}
-		if (pending.size > 0) await Promise.all([...pending].map((f) => this.plugin.tracks.load(f)));
+		if (pending.size > 0)
+			await Promise.all([...pending].map((f) => this.plugin.tracks.load(f, this.plugin.settings.photoDatum)));
 		if (this.detached || !view.map) return;
 
 		await styleReady(view.map);
@@ -822,6 +848,7 @@ export class TrackLayer {
 		}
 
 		this.applyPaint();
+		this.ensurePhotoIcons(items);
 		this.bindInteractions();
 		this.fit(false);
 
@@ -845,8 +872,38 @@ export class TrackLayer {
 			this.knob('trackWeight'),
 			this.knob('trackOpacity') / 100,
 			this.resolve('var(--background-primary)'),
-			this.plugin.settings.trackMarkers
+			this.plugin.settings.trackMarkers,
+			this.plugin.settings.photoThumbnails
 		);
+	}
+
+	/**
+	 * Decodes and registers every photo thumbnail the current result set
+	 * carries, keyed by the identical `photoImageId()` formula `loadPhoto()`
+	 * (track-cache.ts) already stamped onto each feature as `amPhoto` — the
+	 * one thing that keeps the two sides landing on the same id. `wanted` is
+	 * every id in the current draw, which is also what `ensurePhotoImages`
+	 * uses to decide what is safe to evict once `PHOTO_ICON_MAX` is crossed:
+	 * a base with fewer photos on screen than that cap never evicts anything.
+	 *
+	 * Run every sync(), same as `applyPaint()` beside it — cheap (a map lookup
+	 * per track file, no decoding of its own) and it has to reach a base view
+	 * that is already open the moment a row's photo comes into the result set,
+	 * not wait for some unrelated redraw.
+	 */
+	private ensurePhotoIcons(items: DrawItem[]): void {
+		const map = this.view.map;
+		if (!map) return;
+		const records: PhotoIconSource[] = [];
+		for (const item of items) {
+			for (const trackFile of item.trackFiles) {
+				const rec = this.plugin.tracks.get(trackFile.path);
+				const thumbnail = rec?.photo?.thumbnail;
+				if (!rec?.photo || !thumbnail) continue;
+				records.push({ id: photoImageId(trackFile.path), thumbnail, orientation: rec.photo.orientation });
+			}
+		}
+		ensurePhotoImages(map, records, new Set(records.map((r) => r.id)));
 	}
 
 	/* ---- interaction ---- */
@@ -860,7 +917,14 @@ export class TrackLayer {
 		// hover-shows-the-note-popup behaviour of the line and the waypoint dots
 		// "for free" — same source, same amIndex, so itemFrom() resolves them the
 		// same way it resolves everything else.
-		for (const layer of [LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER]) {
+		//
+		// The two photo layers are here for the hover half of exactly that, and
+		// both of them are, not just the one that draws a thumbnail: a photo with
+		// no decoded icon renders on PHOTO_DOT_LAYER alone (see its comment in
+		// constants.ts), and binding only PHOTO_LAYER would leave that photo
+		// inert. `open()` is what tells the two apart on the way out — a photo
+		// opens the photo, everything else opens the note.
+		for (const layer of [LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER, PHOTO_DOT_LAYER, PHOTO_LAYER]) {
 			map.on('click', layer, (ev: MapMouseEvent) => this.open(ev));
 			map.on('mousemove', layer, (ev: MapMouseEvent) => this.hover(ev));
 			map.on('mouseenter', layer, () => map.getCanvas().addClass('is-over-marker'));
@@ -877,11 +941,54 @@ export class TrackLayer {
 		return typeof index === 'number' ? (this.items[index] ?? null) : null;
 	}
 
+	/**
+	 * One click, one thing opened.
+	 *
+	 * `map.on('click', layer, …)` is registered per layer and dispatched per
+	 * layer, so a pointer over two of this source's layers at once fires this
+	 * twice for one `originalEvent`. That has always been possible — a
+	 * direction arrow sits on the line it describes — and cost nothing while
+	 * every layer opened the same note twice. A photo makes it visible: the
+	 * thumbnail on PHOTO_LAYER and the dot beneath it on PHOTO_DOT_LAYER are
+	 * the same feature, and two modals would open on top of each other.
+	 */
 	private open(ev: MapMouseEvent): void {
 		const item = this.itemFrom(ev);
 		if (!item) return;
+		if (ev.originalEvent) {
+			if (this.handledClick === ev.originalEvent) return;
+			this.handledClick = ev.originalEvent;
+		}
 		const mod = ev.originalEvent ? Keymap.isModEvent(ev.originalEvent) : false;
-		this.openNote(item.file.path, mod);
+		const props = ev.features?.[0]?.properties;
+		const path = props && props.amRole === 'photo' && typeof props.amPath === 'string' ? props.amPath : '';
+		if (path) this.openPhoto(path, item, mod);
+		else this.openNote(item.file.path, mod);
+	}
+
+	/**
+	 * A photo pin opens the photo; its note stays one click further away, in
+	 * the card that hovering the same pin already shows and in the modal's own
+	 * "open note" row. A mod-click keeps Obsidian's own meaning — the image
+	 * file, in a new tab — because that is the one case where the reader has
+	 * asked for a leaf and no map is about to be replaced by it.
+	 *
+	 * A path that no longer resolves falls back to the note rather than to
+	 * nothing: the pin was drawn from a record that was accurate when it was
+	 * built, and a file deleted since is a reason to show its note, not to make
+	 * the click dead.
+	 */
+	private openPhoto(path: string, item: DrawItem, mod: PaneType | boolean): void {
+		const file = this.view.app.vault.getFileByPath(path);
+		if (!file) {
+			this.openNote(item.file.path, mod);
+			return;
+		}
+		if (mod) {
+			void this.view.app.workspace.openLinkText(path, item.file.path, mod);
+			return;
+		}
+		new PhotoModal(this.view.app, file, () => this.openNote(item.file.path, false)).open();
 	}
 
 	/**

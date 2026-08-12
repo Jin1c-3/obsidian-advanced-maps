@@ -156,9 +156,25 @@ export interface TrackFeatureProps extends Record<string, unknown> {
 	amIndex: number;
 	/** A waypoint's own name, Point geometries only. See `trackFeatures` for why. */
 	amName?: string;
-	/** Set on the two synthetic points `trackFeatures` adds per line; absent on
-	 *  everything real, which is what `layers.ts`'s point-layer filter tells apart. */
-	amRole?: 'start' | 'end';
+	/**
+	 * `'start'`/`'end'` are set on the two synthetic points `trackFeatures` adds
+	 * per line; absent on everything real, which is what `layers.ts`'s
+	 * point-layer filter tells apart. `'photo'` is different: it is not minted
+	 * here but carried through from the parsed feature itself (see
+	 * `trackFeatures` below) — a photo is "a track file with one Point in it"
+	 * (exif.ts), and that Point already knows it is a photo before it ever
+	 * reaches this function.
+	 */
+	amRole?: 'start' | 'end' | 'photo';
+	/** The `map.addImage` id a photo's decoded thumbnail is (or will be)
+	 *  registered under. Point geometries only, and only when `amRole ===
+	 *  'photo'` and the photo actually had a thumbnail — see
+	 *  `PHOTO_ICON_PREFIX` in constants.ts and `photoImageId` in
+	 *  track-cache.ts, the one place that formula is written. */
+	amPhoto?: string;
+	/** The photo file's own vault path. Point geometries only, alongside
+	 *  `amPhoto` — this is what a click or hover on a photo marker opens. */
+	amPath?: string;
 }
 
 /**
@@ -173,6 +189,16 @@ export interface TrackFeatureProps extends Record<string, unknown> {
  * invite a future hover handler to bind it to the wrong thing: a name that
  * describes the whole track, attached to whichever point the cursor happens to
  * be nearest.
+ *
+ * `amRole`/`amPhoto`/`amPath` are carried the same Point-only way, but *read*
+ * off the incoming feature rather than derived here — a photo stamps all
+ * three of these onto its own single Point before it ever reaches this
+ * function (see track-cache.ts's `loadPhoto`), and `projectedFeatures()` in
+ * track-cache.ts carries them across whatever coordinate-system shift comes
+ * next. This is simply the one place both draw paths already read a Point's
+ * properties into `TrackFeatureProps`, so it is where a photo's properties
+ * join a waypoint's `name` on the way through, rather than a second pass over
+ * the feature list elsewhere that would only invite the two to drift.
  *
  * Both `TrackLayer.build()` (base views) and `TrackEmbed.draw()` (inline
  * embeds) call this rather than building their own feature list, which is what
@@ -189,6 +215,14 @@ export function trackFeatures(
 		if (feature.geometry.type === 'Point') {
 			const name = feature.properties?.name;
 			if (typeof name === 'string' && name !== '') props.amName = name;
+			// 'photo' is the only amRole an incoming feature ever carries —
+			// 'start'/'end' are minted below, never read — so this cannot collide
+			// with the synthetic points this same function adds per line.
+			if (feature.properties?.amRole === 'photo') props.amRole = 'photo';
+			const photo = feature.properties?.amPhoto;
+			if (typeof photo === 'string' && photo !== '') props.amPhoto = photo;
+			const path = feature.properties?.amPath;
+			if (typeof path === 'string' && path !== '') props.amPath = path;
 		}
 		out.push({ type: 'Feature', geometry: feature.geometry, properties: props });
 
