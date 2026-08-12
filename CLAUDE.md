@@ -1540,6 +1540,13 @@ placeholders match across languages.
 
 ## Releasing
 
+**Write the changelog section first.** `release-notes.mjs` cuts the release body
+out of `CHANGELOG.md` and exits non-zero when the tag has no `## [x.y.z]`
+section of its own, so a tag pushed ahead of its changelog entry fails the
+release job — after the checks have passed, which makes it look like something
+broke rather than like something is missing. Add the section and the two
+`[Unreleased]`/`[x.y.z]` compare links at the bottom, then:
+
 ```bash
 npm version patch|minor|major   # version-bump.mjs syncs manifest.json + versions.json
 git push --follow-tags
@@ -1548,3 +1555,9 @@ git push --follow-tags
 The tag triggers `.github/workflows/release.yml`, which re-runs every check,
 refuses to continue if the tag and `manifest.json` disagree, and publishes a
 release with `main.js`, `manifest.json` and `styles.css` attached.
+
+Recovering from that failure is cheap, and was: the job dies at the release-notes
+step, _before_ the release is created, so there is nothing published to clean up.
+Commit the changelog, `git tag -f`, `git push -f origin <tag>`. Check
+`gh release list` first — once a release exists, moving its tag underneath it is
+a different and worse situation.
