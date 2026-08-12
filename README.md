@@ -6,12 +6,12 @@
 **English** · [简体中文](README.zh-CN.md)
 
 Adds to Obsidian's built-in **Maps** view instead of replacing it: GPX tracks,
-Chinese coordinate systems, inline maps, and three ways to fill in a note's
-coordinates. Everything the built-in view already does — markers, icons, colours,
-tiles, popups — stays the built-in view doing it. No Leaflet, no vendored map
-library, no runtime dependencies.
+geotagged photos, Chinese coordinate systems, inline maps, and four ways to fill
+in a note's coordinates. Everything the built-in view already does — markers,
+icons, colours, tiles, popups — stays the built-in view doing it. No Leaflet, no
+vendored map library, no runtime dependencies.
 
-![A Bases map view on a mainland basemap: a 13.6 km GPX loop drawn from a note's embed, with each note's pin in its own colour](docs/map-view.png)
+![A Bases map view on a mainland basemap: an afternoon's GPX loop through a zoo, the photos taken along it drawn as their own thumbnails where their EXIF says they were taken, each note's pin in its own colour](docs/map-view.png)
 
 ## What it fixes
 
@@ -66,7 +66,7 @@ includes that note draws it. The photo's own embedded thumbnail becomes its
 icon on the map once it has decoded; a plain dot stands in until then, and
 whenever the tags carried no thumbnail at all.
 
-![Six photos around West Lake, each drawn as its own thumbnail at the coordinate its EXIF names — none of these notes carries a coordinate property of its own](docs/photo-map.png)
+![The zoo walk from the top of this page on satellite imagery: the note carries one coordinate of its own, and its five photos are drawn as their own thumbnails wherever their EXIF says they were taken](docs/photo-map.jpg)
 
 Zoomed out, a cluster of nearby photos thins on its own rather than piling
 into an unreadable stack, and comes back the moment you zoom in far enough to
@@ -80,7 +80,7 @@ An inline `![[track.gpx]]` map draws the photos of the note it sits in, so a
 walk and the pictures taken on it are one map. The distance, ascent and
 elevation profile underneath still measure the track alone.
 
-![An inline map of a causeway walk with three of the note's photos drawn along the line, and distance, ascent and an elevation profile below it](docs/photo-embed.png)
+![An inline map of the same walk with the note's own photos drawn along the line, and distance, ascent and an elevation profile below it](docs/photo-embed.png)
 
 Hovering a photo shows its note's card, the same one hovering a track shows.
 Clicking it shows the photo, full size, with an **Open note** row underneath —
@@ -90,7 +90,7 @@ clicking a map makes that map's pane the active one, so opening the picture in
 a pane would replace the map you clicked on. Hold Ctrl/Cmd to get the image
 file in a new tab anyway.
 
-![A photo opened from the map: the picture at full size in a pop-up over the map, its file name above it and an "open note" row below](docs/photo-popup.png)
+![A photo opened from the map: the picture at full size in a pop-up over the map, its file name above it and an "open note" row below](docs/photo-popup.jpg)
 
 _Set coordinates from a photo_ reads the same tag straight into a note's
 `coords` property, for a note that should carry its own coordinate rather than
@@ -317,9 +317,10 @@ way a note's text is not.
 ## Attribution
 
 The screenshots were taken against third-party basemaps and search services to
-show what the plugin does; each image carries its source. The demo vault behind
-them is synthetic — the places and the trail are openly published data, and
-nothing personal is shown.
+show what the plugin does; each image carries its source. The demo notes behind
+them are synthetic, and the West Lake places and trail are openly published data.
+The zoo photographs and the track through them are the author's own — one
+afternoon, animals in a public zoo — and nothing else personal is shown.
 
 The plugin ships no map data of its own. It draws whatever tiles the view is
 configured with, and their copyright and licensing are the tile provider's and

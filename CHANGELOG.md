@@ -6,6 +6,14 @@ where they do not.
 
 ## [Unreleased]
 
+### Changed
+
+- The plugin description now names photos and counts four ways to fill a
+  coordinate, rather than three.
+- The screenshots of the photo features are a real walk with real photos taken
+  along it, instead of synthetic placeholder images, and the README's lead
+  image is one of them.
+
 ## [1.12.0]
 
 ### Added
