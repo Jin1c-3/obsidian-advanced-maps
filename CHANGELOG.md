@@ -6,6 +6,43 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.11.0]
+
+### Added
+
+- **A ⊹ button on every map, beside zoom-to-fit, for _Follow the active
+  note_.** Press it and that map pans to whichever note you switch to and
+  opens its popup — wherever the map is open. It is per map rather than per
+  plugin, so a map beside the note you are writing can follow while the one
+  you are reading in another tab sits still. Not remembered once a map is
+  closed.
+
+### Changed
+
+- **Following is no longer sidebar-only.** It was gated on the map being
+  outside the main area, which held for a map sharing a tab group with the
+  note — hidden the moment that note opens — and got the layout people
+  actually use exactly backwards: a note in one tab group and a map in the
+  next one over is the follow layout, and it is all main area. No rule about
+  where a map sits separates the two, so the button decides instead.
+- **Follow the active note** is now **New maps follow the active note**: the
+  setting is the state a map starts in rather than a switch over all of them.
+  If you had it on, maps in the main area will now start out following too;
+  the button turns any of them off.
+- The README is about a third shorter in both languages, with screenshots for
+  the track start/end markers and the "around this note" map, which were
+  described in prose only.
+
+### Fixed
+
+- **A following map no longer takes the keyboard.** Its popup opened with
+  focus, so every switch between notes pulled the caret out of the editor and
+  onto the link inside the popup — which made the feature unusable in the
+  split layout it exists for. The popup still opens; the focus goes back.
+- **Clicking a pin on a following map no longer replaces the map with the
+  note.** It opens in the pane that map is following. A map you are not
+  following is unchanged.
+
 ## [1.10.1]
 
 ### Fixed
@@ -303,7 +340,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.11.0...HEAD
+[1.11.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.1...1.11.0
 [1.10.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.0...1.10.1
 [1.10.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.9.0...1.10.0
 [1.9.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.8.0...1.9.0
