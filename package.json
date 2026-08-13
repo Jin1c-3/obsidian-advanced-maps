@@ -1,6 +1,6 @@
 {
   "name": "obsidian-advanced-maps",
-  "version": "1.12.2",
+  "version": "1.13.0",
   "description": "Extends Obsidian's built-in Maps view: GPX/GeoJSON/KML/TCX tracks and geotagged photos drawn from your notes, inline ![[track.gpx]] maps, GCJ-02/BD-09 basemap alignment, and coordinates from a map link, a place search, a photo or your device.",
   "main": "main.js",
   "license": "MIT",
