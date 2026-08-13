@@ -6,6 +6,25 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.13.0]
+
+### Added
+
+- **Pins that share a spot fan apart once the map is zoomed in far enough.**
+  Notes written about one address hold one coordinate between them, and pins on
+  one coordinate are one pin — the top note opens and the rest cannot be
+  reached at all. Measured on a real 292-pin base: 30 coordinates carried more
+  than one note and the busiest carried nine. Past zoom 15 they now open onto a
+  ring around the spot they share, one pin each, hoverable and clickable
+  separately; below it they close back into a single pin, since at that scale
+  the ring would say something untrue about where they are. The hover card
+  follows the pin it belongs to rather than staying at the middle of the ring.
+
+  Drawn on screen only, with the native marker layer's own `icon-offset`:
+  nothing is written, no coordinate is moved, and the right-click menu, "Copy
+  coordinates" and auto-framing all still answer what the notes actually hold.
+  **Fan out pins that share a spot** (on by default) turns it off.
+
 ## [1.12.2]
 
 A correctness and robustness release: no new settings and nothing new on
@@ -441,7 +460,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.2...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.0...HEAD
+[1.13.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.2...1.13.0
 [1.12.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.1...1.12.2
 [1.12.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.0...1.12.1
 [1.12.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.11.0...1.12.0
