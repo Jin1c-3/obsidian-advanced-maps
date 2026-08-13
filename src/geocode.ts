@@ -79,8 +79,9 @@ const NOMINATIM_USER_AGENT = 'obsidian-advanced-maps (https://github.com/Jin1c-3
 
 /**
  * The usage policy asks for an identifying User-Agent and no more than one
- * request a second; the modal's quiet period covers the rate, and this covers
- * the identification.
+ * request a second. This covers the identification; the rate is held by the
+ * one caller that can produce a burst — `search-modal.ts`, whose module-wide
+ * clock spaces request *starts* a second apart on top of its quiet period.
  *
  * User-Agent only. Setting `Referer` as well looks harmless and is not:
  * Electron refuses the whole request with `net::ERR_BLOCKED_BY_CLIENT`, and

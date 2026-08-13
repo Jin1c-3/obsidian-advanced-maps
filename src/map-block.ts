@@ -79,7 +79,7 @@ export function pointerFilter(coordsProperty?: string): unknown {
 /** The view to copy from: the one named in settings, or the base's first map view. */
 export function pickMapView(base: BaseSpec, viewName?: string): BaseView | undefined {
 	const views = base.views ?? [];
-	if (viewName) return views.find((v) => v && v.name === viewName);
+	if (viewName) return views.find((v) => v && v.type === 'map' && v.name === viewName);
 	return views.find((v) => v && v.type === 'map');
 }
 
@@ -87,14 +87,21 @@ export function findView(base: BaseSpec, name: string): BaseView | undefined {
 	return (base.views ?? []).find((v) => v && v.name === name);
 }
 
+/** Whether an Around-view name is free, already usable, or occupied by another view type. */
+export function aroundViewState(base: BaseSpec, name: string): 'missing' | 'map' | 'occupied' {
+	const existing = findView(base, name);
+	if (!existing) return 'missing';
+	return existing.type === 'map' ? 'map' : 'occupied';
+}
+
 /**
  * Every map view a base holds, by name — what the settings dropdown offers.
  *
- * Map views only, because that is the whole of what the setting picks: a table
- * named there would be found by `pickMapView`, which matches on the name alone,
- * and then opened as the map it is not. A view with no name cannot be referred
- * to at all, by this setting or by an `![[base#view]]` embed, so it is left out
- * rather than offered as a blank line.
+ * Map views only, because that is the whole of what the setting picks. This and
+ * `pickMapView` deliberately use the same type+name predicate, so a stale or
+ * hand-edited setting cannot open a table as the map it is not. A view with no
+ * name cannot be referred to at all, by this setting or by an `![[base#view]]`
+ * embed, so it is left out rather than offered as a blank line.
  */
 export function mapViewNames(base: BaseSpec): string[] {
 	const names: string[] = [];

@@ -24,12 +24,15 @@ import { boundsOf, styleReady, trackFeatures, trackKnob, type TrackFeatureProps 
 import { t } from './i18n';
 import {
 	applyTrackPaint,
+	cancelPhotoImages,
 	drawTracks,
 	ensurePhotoImages,
 	fitTo,
 	guardLocateControl,
+	photoIconSource,
 	removeTrackLayers,
 	type LocateGuard,
+	type PhotoIconSource,
 } from './layers';
 import {
 	elevationProfile,
@@ -44,9 +47,12 @@ import {
 	type TrackStats,
 } from './stats';
 import { PhotoModal } from './photo-modal';
-import { photoImageId, projectedFeatures, type TrackRecord } from './track-cache';
+import { projectedFeatures, type TrackRecord } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type { BasesMapView, MapLibreMap, MapMouseEvent } from './types/obsidian-internals';
+
+/** One of the host note's photos, and what its EXIF head parsed to. */
+type PhotoEntry = { file: TFile; rec: TrackRecord };
 
 export class TrackEmbed extends Component {
 	private rootEl: HTMLElement | null = null;
@@ -61,6 +67,10 @@ export class TrackEmbed extends Component {
 	private locate: LocateGuard | null = null;
 	private framed = false;
 	private dead = false;
+	/** Only the newest asynchronous build/refresh may commit its data. */
+	private operationRevision = 0;
+	/** A settings/file refresh requested while initializeMap still owns the map. */
+	private refreshPending = false;
 	/** Guards map.on(), which survives style.load and refresh() — see
 	 *  bindInteractions() for why binding twice would be wrong. */
 	private interactionsBound = false;
@@ -109,24 +119,40 @@ export class TrackEmbed extends Component {
 	 * of "distance" between points nobody walked between, and a sawtooth
 	 * elevation profile out of whatever altitude each phone happened to record.
 	 */
-	private photos: Array<{ file: TFile; rec: TrackRecord }> = [];
+	private photos: PhotoEntry[] = [];
+	/** The thumbnail candidates the last draw built — camera-independent, so
+	 *  `moveend` re-selects from these rather than rebuilding them. */
+	private photoIcons: PhotoIconSource[] = [];
 
-	private async loadPhotos(): Promise<void> {
-		this.photos = [];
-		if (!this.plugin.settings.showPhotos || !this.sourcePath) return;
+	/**
+	 * Everything one draw needs off disk. The track and the host note's photos
+	 * are independent reads, so they overlap rather than queueing behind each
+	 * other — a cold embed pays one I/O round trip, not two. Shared by `build()`
+	 * and `refresh()` so the two cannot drift on what a draw is fed.
+	 */
+	private async loadAll(): Promise<{ rec: TrackRecord; photos: PhotoEntry[] }> {
+		const [rec, photos] = await Promise.all([
+			this.plugin.tracks.load(this.file, this.plugin.settings.photoDatum),
+			this.loadPhotos(),
+		]);
+		return { rec, photos };
+	}
+
+	private async loadPhotos(): Promise<PhotoEntry[]> {
+		if (!this.plugin.settings.showPhotos || !this.sourcePath) return [];
 		const host = this.plugin.app.vault.getFileByPath(this.sourcePath);
-		if (!host) return;
+		if (!host) return [];
+		const datum = this.plugin.settings.photoDatum;
 		const files = this.plugin.resolveTracks(host).filter((f) => PHOTO_EXTS.has(f.extension));
 		const loaded = await Promise.all(
 			files.map(async (file) => ({
 				file,
-				rec: await this.plugin.tracks.load(file, this.plugin.settings.photoDatum),
+				rec: await this.plugin.tracks.load(file, datum),
 			}))
 		);
-		if (this.dead) return;
 		// A photo whose EXIF carried no coordinate parses to a record with no
 		// features and no error — not a failure, just a picture taken indoors.
-		this.photos = loaded.filter((p) => !p.rec.error && p.rec.features.length > 0);
+		return loaded.filter((p) => !p.rec.error && p.rec.features.length > 0);
 	}
 
 	/** The embed API calls this when the file is swapped underneath us. */
@@ -141,9 +167,15 @@ export class TrackEmbed extends Component {
 		return resolveSystem(this.plugin.settings.coordSystem, this.view?.mapConfig);
 	}
 
+	/** Height belongs to the embed container rather than to MapLibre, so it is
+	 *  set on the element both on first paint and on every settings refresh. */
+	private applyHeight(): void {
+		this.rootEl?.style.setProperty('--advanced-maps-embed-height', `${this.plugin.settings.embedHeight}px`);
+	}
+
 	override onload(): void {
 		this.rootEl = this.containerEl.createDiv('advanced-maps-embed');
-		this.rootEl.style.setProperty('--advanced-maps-embed-height', `${this.plugin.settings.embedHeight}px`);
+		this.applyHeight();
 
 		// Each MapLibre map holds a WebGL context and browsers cap how many can
 		// be alive at once, so a note full of tracks only builds what is on screen.
@@ -164,10 +196,18 @@ export class TrackEmbed extends Component {
 	}
 
 	private async build(): Promise<void> {
-		this.rec = await this.plugin.tracks.load(this.file, this.plugin.settings.photoDatum);
-		await this.loadPhotos();
-		if (this.dead || !this.rootEl) return;
-		if (this.rec.error) return this.fail(this.rec.error);
+		let loaded: { rec: TrackRecord; photos: PhotoEntry[] };
+		// A settings change while the lazy embed is still reading has no map for
+		// refresh() to redraw yet. Re-read before spending a WebGL context, rather
+		// than building once with stale settings and hoping a later event fixes it.
+		do {
+			this.refreshPending = false;
+			loaded = await this.loadAll();
+			if (this.dead || !this.rootEl) return;
+		} while (this.refreshPending);
+		this.rec = loaded.rec;
+		this.photos = loaded.photos;
+		if (loaded.rec.error) return this.fail(loaded.rec.error);
 
 		const view = this.plugin.createHeadlessView(this.rootEl);
 		if (!view) return this.fail(t('embed.mapsDisabled'));
@@ -181,6 +221,7 @@ export class TrackEmbed extends Component {
 		if (this.dead || !view.map) return;
 
 		this.map = view.map;
+		const revision = ++this.operationRevision;
 		// An inline map that eats the scroll wheel makes the note unreadable.
 		this.map.scrollZoom.disable();
 		// initializeMap adds the locate button on mobile whether or not there is a
@@ -199,19 +240,35 @@ export class TrackEmbed extends Component {
 		// A theme or background change replaces the style and takes the track
 		// with it; the built-in view only knows how to put its markers back.
 		this.map.on('style.load', () => {
-			this.draw().catch(() => {});
+			this.draw(this.operationRevision).catch(() => {});
 		});
 
-		await this.draw();
-		this.renderStats();
+		// refresh() may have been requested while initializeMap() was awaiting.
+		// Now that a real map exists it can run normally and owns the next revision.
+		if (this.refreshPending) {
+			this.refreshPending = false;
+			await this.refresh();
+			return;
+		}
+		await this.draw(revision);
+		if (revision === this.operationRevision && !this.dead) this.renderStats();
 	}
 
-	/** Re-read the file and start the layers over — the track itself changed. */
+	/** Re-read the file and start the layers over — the track or a visual setting changed. */
 	async refresh(): Promise<void> {
-		if (!this.map || this.dead) return;
-		this.rec = await this.plugin.tracks.load(this.file, this.plugin.settings.photoDatum);
-		await this.loadPhotos();
-		if (!this.map || this.dead) return;
+		if (this.dead) return;
+		// Applied before the map guard so a settings change also reaches an embed
+		// that is still below the fold and has not spent a WebGL context yet.
+		this.applyHeight();
+		if (!this.map) {
+			this.refreshPending = true;
+			return;
+		}
+		const revision = ++this.operationRevision;
+		const { rec, photos } = await this.loadAll();
+		if (revision !== this.operationRevision || !this.map || this.dead) return;
+		this.rec = rec;
+		this.photos = photos;
 		removeTrackLayers(this.map);
 		// removeTrackLayers() only knows about the four shared track layers —
 		// see HIT_SRC/CURSOR_SRC's own comment in constants.ts for why. Left
@@ -225,7 +282,8 @@ export class TrackEmbed extends Component {
 		removeHoverLayers(this.map);
 		this.locate?.replaceDot();
 		this.framed = false;
-		await this.draw();
+		await this.draw(revision);
+		if (revision !== this.operationRevision || this.dead) return;
 		// Also runs on every refresh(), not just the first build() — refresh() is
 		// what the two "track statistics" settings toggle through
 		// plugin.refreshTracks(), so a rebuild that only happened in build() would
@@ -233,14 +291,14 @@ export class TrackEmbed extends Component {
 		this.renderStats();
 	}
 
-	private async draw(): Promise<void> {
+	private async draw(revision: number): Promise<void> {
 		const map = this.map;
-		if (!map || this.dead) return;
+		if (!map || this.dead || revision !== this.operationRevision) return;
 		if (!this.rec || this.rec.error) return;
 		const view = this.view;
 		if (!view) return;
 		await styleReady(map);
-		if (!this.map || this.dead) return;
+		if (!this.map || this.dead || revision !== this.operationRevision) return;
 
 		const color = view.markerManager.resolveColor(this.plugin.settings.trackColor);
 		// index 0 for every feature, the track's and the host note's photos alike:
@@ -280,24 +338,10 @@ export class TrackEmbed extends Component {
 			settings.photoThumbnails
 		);
 
-		// `ensurePhotoImages` is what decodes each thumbnail — async, off
-		// `drawTracks`'s synchronous path, see layers.ts — and registers it under
-		// the exact id `loadPhoto()` already stamped onto the feature as
-		// `amPhoto`. A note with no photos calls it with an empty list, which is
-		// a no-op, and a photo whose EXIF carried no thumbnail simply has nothing
-		// to contribute: it stays the dot `PHOTO_DOT_LAYER` always draws.
-		const icons = this.photos.flatMap((p) =>
-			p.rec.photo?.thumbnail
-				? [
-						{
-							id: photoImageId(p.file.path),
-							thumbnail: p.rec.photo.thumbnail,
-							orientation: p.rec.photo.orientation,
-						},
-					]
-				: []
-		);
-		ensurePhotoImages(map, icons, new Set(icons.map((p) => p.id)));
+		// Thumbnail decoding stays async and bounded off drawTracks' synchronous
+		// path. A screen-space collision pass picks icons that have room to render;
+		// every other photo stays the dot PHOTO_DOT_LAYER always draws.
+		this.ensurePhotoIcons(system);
 
 		// The elevation-profile hover link's own style state — wiped by the same
 		// theme/background swap that just wiped the track, so re-created here
@@ -324,6 +368,26 @@ export class TrackEmbed extends Component {
 		fitTo(map, bounds, 16, trackKnob('fitMaxZoom', settings.fitMaxZoom));
 	}
 
+	/** `photoIconSource()` (layers.ts) is the one builder this and the base-view
+	 *  path share, so the two can never disagree about what an icon carries. */
+	private ensurePhotoIcons(system: CoordSystem): void {
+		const icons: PhotoIconSource[] = [];
+		for (const photo of this.photos) {
+			const icon = photoIconSource(photo.file.path, photo.rec, system);
+			if (icon) icons.push(icon);
+		}
+		this.photoIcons = icons;
+		if (this.map) ensurePhotoImages(this.map, icons);
+	}
+
+	/** The camera moved, so which icons have room changed — but nothing
+	 *  `photoIconSource()` produces depends on the camera, so `moveend` re-runs
+	 *  only the screen-space selection over what the last draw built. */
+	private reselectPhotoIcons(): void {
+		if (!this.map || this.photoIcons.length === 0) return;
+		ensurePhotoImages(this.map, this.photoIcons);
+	}
+
 	/**
 	 * Waypoint-name-on-hover, and the map-side half of the elevation-profile
 	 * hover link. Bound once per map — like the native marker interactions,
@@ -344,12 +408,21 @@ export class TrackEmbed extends Component {
 	 * place (its filter excludes anything carrying `amRole`, and a photo
 	 * carries `amRole: 'photo'` precisely so it doesn't draw twice — see
 	 * CLAUDE.md's "photo" trap #2), and PHOTO_LAYER draws nothing else.
+	 *
+	 * Bare `map.on()` here, deliberately, where `TrackLayer` routes every
+	 * listener through `MapEventBindings` and its matching `off()`. The hazard
+	 * that class exists for is a *native Bases* map outliving the plugin
+	 * instance and later having the same layer ids recreated under it. An
+	 * embed's map has no such second owner: it comes from a headless view built
+	 * for this embed alone, `onunload` destroys it, and `plugin.onunload`
+	 * unloads every live embed. The map and its listeners die together.
 	 */
 	private bindInteractions(): void {
 		if (this.interactionsBound) return;
 		const map = this.map;
 		if (!map) return;
 		this.interactionsBound = true;
+		map.on('moveend', () => this.reselectPhotoIcons());
 		map.on('mousemove', POINT_LAYER, (ev: MapMouseEvent) => this.hoverWaypoint(ev));
 		map.on('mouseleave', POINT_LAYER, () => this.hideTooltip());
 		// Both photo layers, not just the one carrying a picture: a photo with no
@@ -674,6 +747,7 @@ export class TrackEmbed extends Component {
 
 	override onunload(): void {
 		this.dead = true;
+		this.operationRevision++;
 		this.observer?.disconnect();
 		this.resizeObserver?.disconnect();
 		this.panelEl?.remove();
@@ -686,6 +760,7 @@ export class TrackEmbed extends Component {
 		this.tooltipEl = null;
 		this.locate?.restore();
 		this.locate = null;
+		if (this.map) cancelPhotoImages(this.map);
 		if (this.view) {
 			try {
 				this.view.destroyMap();

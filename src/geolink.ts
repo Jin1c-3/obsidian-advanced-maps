@@ -311,10 +311,13 @@ export function parseGeoLink(text: string): ParsedPoint | null {
 	const url = firstUrl(trimmed);
 	if (url) {
 		for (const [host, read] of HOSTS) {
-			if (!host.test(url.hostname)) continue;
-			const found = read(url);
-			if (found) return found;
+			if (host.test(url.hostname)) return read(url);
 		}
+		// A URL is provider-owned input. Do not reinterpret numbers in an
+		// unsupported path — or on an unknown host — as datum-free WGS-84 text.
+		// That is especially dangerous for Amap/Baidu, where a plausible pair can
+		// be hundreds of metres from the same digits in WGS-84.
+		return null;
 	}
 
 	// A geo: URI names its own CRS, so it answers for itself. Falling through to

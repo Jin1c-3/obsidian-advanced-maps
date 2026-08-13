@@ -54,6 +54,7 @@ src/
   view-options.ts    the two option groups and where they go
   track-cache.ts     parsed tracks, keyed by path, invalidated by mtime
   layers.ts          the track layers, drawing, framing, locate-button guard
+  map-events.ts      paired MapLibre on/off registrations        ← pure, tested
   i18n.ts            en / zh tables
   constants.ts       source and layer ids, track extensions, the track knobs
   types/obsidian-internals.d.ts   the undocumented surface this leans on
@@ -83,7 +84,13 @@ restores the untouched prototype.
 They all go through one `wrap()` helper that remembers how to put each method
 back, so `detach()` is a loop rather than a second list to keep in step with the
 first. Where the native code assigned the method as an own property itself,
-`wrap` restores the saved value instead of deleting.
+`wrap` restores the saved value instead of deleting. Direct `map.on()` listeners
+are the other half of the same lifecycle: every one goes through
+`MapEventBindings`, which remembers the exact event/layer/callback tuple and
+calls the matching `off()` on both `destroyMap` and `detach`. Removing a layer
+does not remove a layer-scoped MapLibre listener; without this, disabling and
+re-enabling the plugin on the same native map wakes the old handlers back up as
+soon as the new instance recreates the same layer ids.
 
 `updateMarkers` is the seam worth knowing about. The native view calls it once
 the map exists, again on every data change, and again on `styledata` after a new
@@ -223,14 +230,15 @@ comment: this repo's own lint config
 silence it here would itself be a lint **error**, and `npm run lint` (bare
 `eslint .`) only fails on those, not on a warning.
 
-Any failure at all — a platform that ignores or refuses `Range`, an `app://`
-scheme a build blocks, anything — falls back to a plain `vault.readBinary` and
-a slice, so a photo's coordinate is never lost to _how_ it was read.
-Degrading is free: a platform that ignores `Range` and hands back the whole
-file, and one that genuinely cannot do ranged reads at all, run through the
-exact same fallback code. **Not verified on mobile** — said here rather than
-assumed, same as the rest of this section's measurements were taken on
-desktop.
+Any failure at all — a platform that refuses `Range`, an `app://` scheme a
+build blocks, anything — falls back to a plain `vault.readBinary` and a slice,
+so a photo's coordinate is never lost to _how_ it was read. A platform that
+silently ignores the header cannot be distinguished from Obsidian's measured
+200 response (neither carries `Content-Range`), so that successful body is
+explicitly sliced too: it may still transfer the whole file, but this plugin
+never keeps or parses more than the requested head. **Not verified on mobile** —
+said here rather than assumed, same as the rest of this section's measurements
+were taken on desktop.
 
 ### The datum
 
@@ -488,14 +496,38 @@ Read this before touching any of the files it names.
    this was specific to `TrackLayer` (base map views) and easy to miss while
    testing on an embed.
 8. **`PHOTO_ICON_MAX` bounds how many decoded bitmaps stay registered with one
-   map, evicted oldest-still-unwanted first — "as many photos as are on
-   screen", never "as many as the base has".** A base with thousands of
-   photos would otherwise grow the style's image table without limit, with
-   every one of those bitmaps staying decoded in GPU memory for the life of
-   the map. Eviction only ever drops an id nothing currently on screen is
-   asking for, so panning back to a photo just left never waits on a
-   redecode — and per `PHOTO_DOT_LAYER`'s own reasoning, an evicted photo does
-   not vanish, it just goes back to being a plain dot until it is wanted again.
+   map — the viewport, never the whole base, decides what is wanted.** A base
+   with thousands of photos would otherwise grow the style's image table
+   without limit, with every bitmap staying decoded in GPU memory for the life
+   of the map. `moveend` projects every tile-space Point into container CSS
+   pixels and runs a fixed-size collision grid matching the 48 px symbol, so
+   only thumbnails with room to render are decoded; a hundred photos on one
+   pixel cost one bitmap, not a hundred. Source order is the stable tie-breaker
+   and four JPEGs decode concurrently. Every non-overlapping icon a real screen
+   can hold is allowed; 240 bounds only recently-left LRU icons kept warm (and
+   the conservative fallback when projection is unavailable), not the visible
+   set. The oldest unselected id is evicted once that spare cache crosses it.
+   Pending work reserves capacity before it finishes, and a decode that became
+   unwanted while `createImageBitmap` was running discards its pixels rather
+   than registering them. `detach()` and `destroyMap()` also call
+   `cancelPhotoImages`: a native map can outlive the plugin instance, so
+   `mapAlive()` alone is not a cancellation signal. Per `PHOTO_DOT_LAYER`'s own
+   reasoning, every non-admitted or evicted photo stays visible as a dot.
+
+   Two things about that `moveend` are worth keeping. **Only the selection is
+   re-run, never the candidate list.** Nothing `photoIconSource()` produces —
+   the id, the thumbnail, the orientation, the tile-space point — depends on
+   where the camera is, so both draw paths build the list once per sync/draw and
+   hold it (`TrackLayer.photoIcons`, `TrackEmbed.photoIcons`); a pan re-projects
+   what is already there. Rebuilding it per `moveend` means walking every row of
+   the base and every file it resolves on every pan, on a base that may hold no
+   photos at all. And **`photoIconSource()` in `layers.ts` is the one builder
+   both paths call**, for the same reason `trackFeatures()` is shared and
+   `photoImageId()` is exported rather than restated: two independent formulas
+   for what one photo's icon carries are exactly the pair that drifts. It
+   answers null for a photo with no thumbnail or no Point to place one at —
+   which is also why `PhotoIconSource.coordinates` is required rather than
+   optional, and why the selector has no unplaceable-record branch to bound.
 
 ### What was not measured
 
@@ -510,11 +542,12 @@ Honestly, not everything here was checked against a running Obsidian:
   real photo from an iPhone or a modern Android camera through a running
   Obsidian. The container-parsing logic is trusted on unit tests and
   independent review, not on a real file, for these three formats specifically.
-- **A busy, multi-hundred-photo album.** The collision-based thinning in
-  "Zoom-dependent density" above is measured now, but at the scale of seven
-  photos on one note, not seven hundred across a base. `PHOTO_ICON_MAX` (240)
-  in particular has never been reached, so its eviction path — `removeImage`
-  on the least recently wanted icon — has been read and not run.
+- **A busy, multi-hundred-photo album, live.** The collision-based thinning in
+  "Zoom-dependent density" above is measured at seven photos, not seven
+  hundred. Unit tests now cross `PHOTO_ICON_MAX`, verify screen-space collision,
+  an unbounded-by-240 visible set, bounded fallback and four-decode concurrency,
+  but a real map has still not exercised `removeImage` under sustained pan/zoom
+  pressure.
 - Live verification against a real vault confirmed the coordinate math
   exactly — the 高德/GCJ-02 conversion matched a standalone `wgs2gcj` call to
   the last digit, both through the live map and independently — but could not
@@ -906,9 +939,13 @@ Four things are load-bearing:
   on something. Only the `and` case can be appended to; every other shape — a
   bare expression, an `or`, a `not` — is nested under a fresh `and`, which means
   the same thing and cannot misread the original.
-- **An existing view by that name is never rewritten.** `withAroundView` answers
-  null, which is the signal to leave the base file alone entirely — so a view the
-  reader has since edited keeps its edits, and a second insert costs no write.
+- **An existing map view by that name is never rewritten.** `withAroundView`
+  answers null, which is the signal to leave the base file alone entirely — so
+  a map the reader has since edited keeps its edits, and a second insert costs
+  no write. A table/cards view occupying the name is different: embedding it
+  would silently produce the wrong view, so `aroundViewState` refuses with a
+  notice. The same check runs again inside `vault.process`, covering a rename
+  that races the first read.
 
 The base is re-read **inside** `vault.process` rather than reusing what
 `loadBase` parsed: there is an await between the two, and the base is a file
@@ -998,9 +1035,14 @@ providers' quirks be tested with no network at all.
   the array and surfaces `info` verbatim. `address` is documented as a string and
   arrives as an empty array when there is none.
 - **A SuggestModal fires per keystroke**, which is one request per character —
-  past what Nominatim's policy allows. `QUIET_MS` waits out the typing and a
-  superseded query resolves to nothing; answers are cached for the life of the
-  modal.
+  past what Nominatim's policy allows. `QUIET_MS` waits out the typing; a
+  revision increment happens before even the short-query and cache branches,
+  then is checked after both the debounce and the network await, so clearing
+  the box, taking a cached answer or receiving an older response all cancel the
+  superseded query. Nominatim request starts are additionally serialized at one
+  per second; answers are cached for the life of the modal. The Nominatim clock
+  is module-wide rather than a modal field, so closing and reopening the search
+  box cannot reset the provider's interval.
 
 **Do not add a `Referer` header.** It looks like ordinary politeness and
 Electron refuses the whole request with `net::ERR_BLOCKED_BY_CLIENT` — which,
@@ -1698,11 +1740,31 @@ All of them cost real debugging time. Read this before "simplifying" any of them
     to), so the whole memo is dropped on vault create/rename/delete. Keep those
     three listeners together with it.
 
+11. **`TrackCache.load()` snapshots path, extension and mtime before its first
+    await.** `TFile` is mutable; Obsidian updates its stat in place. Reading the
+    mtime after `cachedRead()` can therefore stamp old bytes with the new mtime,
+    after which `isFresh()` trusts them indefinitely. In-flight reads are keyed
+    by that immutable snapshot, identical requests share a promise, and
+    `invalidate()` bumps a generation even before an entry exists. Keep all
+    three pieces together: snapshot without generation still loses a modify
+    event during the first read; generation without dedup needlessly parses the
+    same large file once per simultaneous map.
+
+12. **Only the newest asynchronous draw may commit.** `TrackLayer.sync()` and
+    `TrackEmbed.refresh()` both cross file-I/O and style-ready awaits. Their
+    monotonic revisions are checked after each await, before replacing items,
+    source data, framing or statistics; destroy/unload increments the revision
+    too. An inline embed asked to refresh before `initializeMap()` has produced
+    a map records `refreshPending`, re-reads before construction when possible,
+    and runs the pending refresh immediately after initialization otherwise.
+    Without both halves, an old result can win by finishing last, or a settings
+    change during lazy build can disappear entirely.
+
 ## Testing
 
 `src/coords.ts`, `src/parse.ts`, `src/stats.ts`, `src/maplinks.ts`,
-`src/geometry.ts`, `src/locate.ts`, `src/view-options.ts`, `src/map-block.ts`,
-`src/geolink.ts`, `src/geocode.ts` and `src/i18n.ts` run outside Obsidian and are
+`src/geometry.ts`, `src/map-events.ts`, `src/locate.ts`, `src/view-options.ts`,
+`src/map-block.ts`, `src/geolink.ts`, `src/geocode.ts` and `src/i18n.ts` run outside Obsidian and are
 held above 90 % coverage in CI (the list lives in `vitest.config.ts`). Anything
 touching the coordinate maths, a parser, the statistics or the locator needs a
 test in the same PR.
@@ -1831,7 +1893,13 @@ doc comment:
 `onChange`: it trims, applies the two fallbacks that a cleared field has, checks
 the two dropdown values against their own lists, and then does the side effects —
 `reprojectAll`, `resetLocator`, `refreshTracks`, and `update()` for the Amap key
-row that states its own visibility.
+row that states its own visibility. Every visual track/embed key lives in the one
+typed `TRACK_REFRESH_KEYS` set rather than in a fall-through list of switch cases:
+Bases does not promise a data sync after plugin `data.json` changes, and an inline
+embed has no Bases data to prompt it at all, so colour, weight, opacity, fit zoom
+and embed height need the same explicit refresh the toggles already had. Height is
+applied before `TrackEmbed.refresh()`'s map guard, so an embed still below the fold
+resizes without first spending a WebGL context.
 
 ### The base and its view are picked, not typed
 
@@ -1879,9 +1947,11 @@ the `update()` afterwards. Five things hold it together:
   nothing fires when the pane is shown, so the moment to notice a view renamed in
   Bases is the moment the pane goes away, with nobody watching it re-render.
 
-Only map views are offered: `pickMapView` matches a configured name against
-_every_ view, so a table named there is found and then opened as the map it is
-not. `mapViewNames` in `map-block.ts` is the pure half of that, and is tested.
+Only map views are offered, and `pickMapView` applies the same type+name gate
+when it consumes the stored value. Both halves are needed: filtering only the
+dropdown still lets a stale or hand-edited `data.json` name a table and open it
+as the map it is not. `mapViewNames` and `pickMapView` in `map-block.ts` are the
+pure half of that, and are tested together.
 
 Both rows go through `setControlValue`, so the one write seam still holds.
 Measured on the real base with the settings window **open** — `update()` on a

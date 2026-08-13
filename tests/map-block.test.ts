@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	aroundView,
+	aroundViewState,
 	embedLink,
 	findView,
 	LINKED_FROM_NOTE,
@@ -30,8 +31,12 @@ describe('pickMapView', () => {
 		expect(pickMapView(BASE)?.name).toBe('map');
 	});
 
-	it('takes the named view, whatever its position', () => {
+	it('takes the named map view, whatever its position', () => {
 		expect(pickMapView(BASE, 'second map')?.name).toBe('second map');
+	});
+
+	it('does not open a named table as though it were a map', () => {
+		expect(pickMapView(BASE, 'events')).toBeUndefined();
 	});
 
 	it('answers undefined for a name nobody has, and for a base with no views', () => {
@@ -135,15 +140,24 @@ describe('findView', () => {
 	});
 });
 
+describe('aroundViewState', () => {
+	it('distinguishes a reusable map from a name occupied by another view type', () => {
+		expect(aroundViewState(BASE, 'map')).toBe('map');
+		expect(aroundViewState(BASE, 'events')).toBe('occupied');
+		expect(aroundViewState(BASE, 'Around')).toBe('missing');
+	});
+});
+
 describe('mapViewNames', () => {
 	it('names the map views, in the order the base holds them', () => {
 		expect(mapViewNames(BASE)).toEqual(['map', 'second map']);
 	});
 
 	it('leaves out every view the setting could not name', () => {
-		// A table would be found by `pickMapView`, which matches on the name alone,
-		// and then opened as the map it is not. A nameless view cannot be referred
-		// to at all — not by this setting and not by an `![[base#view]]` embed.
+		// `pickMapView` accepts only map views too; keeping the options under the
+		// same predicate prevents the dropdown and the opener from drifting. A
+		// nameless view cannot be referred to at all — not by this setting and not
+		// by an `![[base#view]]` embed.
 		expect(
 			mapViewNames({
 				views: [

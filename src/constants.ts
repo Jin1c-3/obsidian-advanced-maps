@@ -66,11 +66,9 @@ export const PHOTO_ICON_PREFIX = 'advanced-maps-photo-';
 /** CSS px a thumbnail icon draws at on the map. */
 export const PHOTO_ICON_PX = 48;
 /**
- * How many decoded thumbnails one map keeps registered with `map.addImage` at
- * once. A bound rather than "as many as there are photos": a base with
- * thousands of them would otherwise grow the style's image table without
- * limit, and every one of those bitmaps stays decoded in GPU memory for the
- * life of the map.
+ * How many decoded thumbnails outside the current screen-space selection one
+ * map keeps warm. Every selected visible icon is allowed; this bounds only the
+ * LRU cache behind it and the conservative fallback when projection is absent.
  */
 export const PHOTO_ICON_MAX = 240;
 

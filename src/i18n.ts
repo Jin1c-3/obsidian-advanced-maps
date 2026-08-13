@@ -19,6 +19,7 @@ const en = {
 	'notice.noCoords': '"{file}" has no {property}',
 	'notice.badCoords': '{property} of "{file}" is not a coordinate: {value}',
 	'notice.around.added': 'Added the "{view}" view to {path}',
+	'notice.around.nameOccupied': '“{view}” already names a non-map view in {path}',
 	'notice.around.writeFailed': 'Could not add the view to {path}: {error}',
 
 	/* ---- notices: location ---- */
@@ -310,6 +311,7 @@ const zh: Record<TranslationKey, string> = {
 	'notice.noCoords': '「{file}」没有 {property}',
 	'notice.badCoords': '「{file}」的 {property} 不是坐标：{value}',
 	'notice.around.added': '已在 {path} 中添加「{view}」视图',
+	'notice.around.nameOccupied': '{path} 中已有一个名为「{view}」的非地图视图',
 	'notice.around.writeFailed': '无法向 {path} 添加视图：{error}',
 
 	'notice.locate.working': '正在定位…',

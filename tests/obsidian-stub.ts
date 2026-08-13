@@ -86,11 +86,24 @@ export class Modal {
 	modalEl: HTMLElement = document.createElement('div');
 	titleEl: HTMLElement = document.createElement('div');
 	contentEl: HTMLElement = document.createElement('div');
-	constructor(public app: unknown) {}
+	constructor(public app: unknown) {
+		// Obsidian extends HTMLElement with these conveniences at runtime.
+		this.modalEl.addClass = (...classes: string[]) => this.modalEl.classList.add(...classes);
+	}
 	open(): void {}
 	close(): void {}
 	onOpen(): void {}
 	onClose(): void {}
+}
+
+export class SuggestModal<T> extends Modal {
+	emptyStateText = '';
+	setPlaceholder(_placeholder: string): void {}
+	getSuggestions(_query: string): T[] | Promise<T[]> {
+		return [];
+	}
+	renderSuggestion(_value: T, _el: HTMLElement): void {}
+	onChooseSuggestion(_value: T): void {}
 }
 
 export class TFile {
@@ -123,6 +136,10 @@ export function getLanguage(): string {
 	} catch {
 		return '';
 	}
+}
+
+export async function requestUrl(_options: unknown): Promise<{ status: number; json: unknown }> {
+	throw new Error('requestUrl is not stubbed; spy on it in the test');
 }
 
 export function parseFrontMatterAliases(frontmatter: Record<string, unknown> | null): string[] | null {

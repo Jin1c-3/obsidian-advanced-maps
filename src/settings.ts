@@ -175,6 +175,29 @@ const PHOTO_DATUMS: readonly PhotoDatum[] = ['auto', 'wgs84', 'gcj02'];
 type Key = keyof AdvancedMapsSettings;
 
 /**
+ * Settings whose visible result is owned by TrackLayer/TrackEmbed rather than
+ * by the settings pane itself. Kept as one typed list so a newly-added visual
+ * setting cannot be wired into one map path and forgotten in the other.
+ */
+const TRACK_REFRESH_KEYS: ReadonlySet<string> = new Set([
+	'trackColor',
+	'trackWeight',
+	'trackOpacity',
+	'fitMaxZoom',
+	'embedHeight',
+	'trackStats',
+	'elevationProfile',
+	'trackMarkers',
+	'showPhotos',
+	'photoThumbnails',
+	'photoDatum',
+] satisfies readonly Key[]);
+
+export function refreshesTracks(key: string): boolean {
+	return TRACK_REFRESH_KEYS.has(key);
+}
+
+/**
  * A row inside one of the two lists names its entry by index —
  * `customMaps.2.url` rather than a settings key of its own.
  *
@@ -878,15 +901,12 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				// Turning it on is a fresh statement of intent; forget any refusal.
 				this.plugin.resetLocator();
 				break;
-			case 'trackStats':
-			case 'elevationProfile':
-			case 'trackMarkers':
-			case 'showPhotos':
-			case 'photoThumbnails':
-			case 'photoDatum':
-				// The point of a toggle you can see the result of is seeing the result.
-				this.plugin.refreshTracks();
-				break;
 		}
+
+		// Beside the switch rather than instead of it, so a key can be both: a
+		// visual setting must reach maps that are already open, because Bases does
+		// not necessarily sync after plugin data.json changes and an inline embed
+		// has no Bases result set to prompt it at all.
+		if (refreshesTracks(key)) this.plugin.refreshTracks();
 	}
 }

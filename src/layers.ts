@@ -16,6 +16,7 @@ import {
 import { toTileSpace, type CoordSystem } from './coords';
 import type { ExifThumbnail } from './exif';
 import { t } from './i18n';
+import { photoImageId, projectedFeatures, type TrackRecord } from './track-cache';
 import type { LngLatBounds, LocateControl, MapControl, MapLibreMap } from './types/obsidian-internals';
 
 /**
@@ -530,14 +531,19 @@ export function addTrackLayers(map: MapLibreMap): void {
 export function drawTracks(map: MapLibreMap, data: FeatureCollection): boolean {
 	try {
 		const source = map.getSource(SRC);
-		if (source) {
-			source.setData(data);
-		} else {
+		if (source) source.setData(data);
+		else {
 			map.addSource(SRC, { type: 'geojson', data });
 			addTrackLayers(map);
 		}
 		return true;
 	} catch (e) {
+		// `addLayer` can lose a race with a style transition after addSource (or
+		// after only some of the six layers). Leaving that prefix behind makes the
+		// next call take the setData-only branch forever, so the missing layers can
+		// never recover. Roll the whole owned group back to one known state; the
+		// next style event/sync then rebuilds it from scratch.
+		removeTrackLayers(map);
 		console.warn('Advanced Maps: deferring track layers —', e instanceof Error ? e.message : e);
 		return false;
 	}
@@ -662,36 +668,159 @@ export interface PhotoIconSource {
 	id: string;
 	thumbnail: ExifThumbnail;
 	orientation: number;
+	/** Tile-space point, so viewport selection uses the same space as the map. */
+	coordinates: [number, number];
 }
 
 /**
- * Per-map bookkeeping, oldest-registered-and-still-wanted first: which photo
- * image ids this function believes it has registered on a given map, so a
- * repeat call can tell "already there" from "needs decoding" without an
- * enumeration API MapLibreMap does not declare (there is no `listImages()`
- * here — see types/obsidian-internals.d.ts).
+ * One photo's icon candidate, or null when it has nothing to put on the map.
  *
- * A WeakMap keyed by the map itself rather than a field on `TrackLayer` or
- * `TrackEmbed`: both call this against their own map, and neither would have
- * anywhere natural to remember to clear it — the WeakMap does that for free
- * once the map itself is garbage.
+ * The single builder both draw paths call — `TrackLayer.ensurePhotoIcons()` for
+ * a base view, `TrackEmbed`'s for an inline one — for the same reason
+ * `trackFeatures()` in geometry.ts is shared and `photoImageId()` is exported
+ * rather than restated: two independent formulas for what one photo's icon
+ * carries are exactly the pair that drifts, and a field added to
+ * `PhotoIconSource` would otherwise have to be remembered in two files.
  *
- * This can drift from the map's own truth after a style reload wipes every
- * registered image out from under it (a theme or background switch): entries
- * here would still claim to be registered when they no longer are. That is
- * harmless rather than a bug to chase — every decision this file makes still
- * asks `map.hasImage(id)` first, which answers correctly regardless of what
- * this table believes, so a stale entry only costs a redundant `removeImage`
- * attempt (already wrapped in a catch below) before the next redraw's decode
- * re-populates it.
+ * A record with no thumbnail, or whose EXIF carried no coordinate to place one
+ * at, answers null — it contributes no Point to the drawn collection either, so
+ * there is nothing an icon could attach to. Per `PHOTO_DOT_LAYER`'s own
+ * reasoning, a photo that gets no icon is never a gap: it is a dot.
  */
-const photoImageOrder = new WeakMap<MapLibreMap, Map<string, true>>();
+export function photoIconSource(path: string, rec: TrackRecord, system: CoordSystem): PhotoIconSource | null {
+	const photo = rec.photo;
+	if (!photo?.thumbnail) return null;
+	const point = projectedFeatures(rec, system).find((feature) => feature.geometry.type === 'Point');
+	if (point?.geometry.type !== 'Point') return null;
+	return {
+		id: photoImageId(path),
+		thumbnail: photo.thumbnail,
+		orientation: photo.orientation,
+		coordinates: [point.geometry.coordinates[0], point.geometry.coordinates[1]] as [number, number],
+	};
+}
 
-/** Ids currently mid-decode on a given map, so a second `ensurePhotoImages`
- *  call arriving before the first one's `createImageBitmap` has resolved —
- *  `refresh()` firing twice in quick succession, say — does not start a
- *  second decode chain for the same photo. */
-const photoImagePending = new WeakMap<MapLibreMap, Set<string>>();
+/** Four JPEG decodes at a time keeps a large base from turning one sync into a
+ *  burst of hundreds of `createImageBitmap` jobs. */
+export const PHOTO_DECODE_CONCURRENCY = 4;
+
+interface PhotoDecodeState {
+	active: number;
+	pending: Set<string>;
+	queued: Map<string, PhotoIconSource>;
+	/** The collision-selected on-screen ids this map currently wants. */
+	wanted: Set<string>;
+	/**
+	 * Which photo image ids this file believes it has registered on this map,
+	 * oldest-registered-and-still-wanted first, so a repeat call can tell
+	 * "already there" from "needs decoding" without an enumeration API
+	 * `MapLibreMap` does not declare (there is no `listImages()` here — see
+	 * types/obsidian-internals.d.ts).
+	 *
+	 * This can drift from the map's own truth after a style reload wipes every
+	 * registered image out from under it (a theme or background switch): entries
+	 * here would still claim to be registered when they no longer are. That is
+	 * harmless rather than a bug to chase — every decision this file makes still
+	 * asks `map.hasImage(id)` first, which answers correctly regardless of what
+	 * this table believes, so a stale entry only costs a redundant `removeImage`
+	 * attempt (already wrapped in a catch below) before the next redraw's decode
+	 * re-populates it.
+	 */
+	order: Map<string, true>;
+}
+
+/**
+ * Per-map bookkeeping, keyed by the map itself rather than held as a field on
+ * `TrackLayer` or `TrackEmbed`: both call this against their own map, and
+ * neither would have anywhere natural to remember to clear it — the WeakMap
+ * does that for free once the map itself is garbage.
+ */
+const photoDecodeStates = new WeakMap<MapLibreMap, PhotoDecodeState>();
+
+function photoDecodeState(map: MapLibreMap): PhotoDecodeState {
+	let state = photoDecodeStates.get(map);
+	if (!state) {
+		state = { active: 0, pending: new Set(), queued: new Map(), wanted: new Set(), order: new Map() };
+		photoDecodeStates.set(map, state);
+	}
+	return state;
+}
+
+/** Stop queued work for a map that no longer belongs to this plugin instance.
+ * Active createImageBitmap calls cannot be cancelled, but clearing `wanted`
+ * makes their post-await gate discard the result instead of registering it. */
+export function cancelPhotoImages(map: MapLibreMap): void {
+	const state = photoDecodeStates.get(map);
+	if (!state) return;
+	state.wanted.clear();
+	state.queued.clear();
+}
+
+/**
+ * Choose the icons that can actually survive MapLibre's collision pass.
+ *
+ * MapLibre cannot collision-test an icon whose image has not been registered,
+ * so asking `queryRenderedFeatures(PHOTO_LAYER)` creates a chicken-and-egg
+ * problem. Projecting each Point and reserving one `PHOTO_ICON_PX` square is
+ * the cheap equivalent for this fixed-size, unrotated symbol layer. Source
+ * order stays the tie-breaker, matching the layer's stable sort intent.
+ *
+ * A small grid makes this O(n): each accepted icon occupies one cell and only
+ * its neighbouring cells can overlap the next candidate. Exact duplicate
+ * coordinates therefore decode once, not hundreds of times. The visible set
+ * is bounded naturally by map area divided by icon area; `PHOTO_ICON_MAX`
+ * limits only the off-screen warm cache, never what a real screen can show.
+ */
+export function selectPhotoIconIds(map: MapLibreMap, records: readonly PhotoIconSource[]): Set<string> {
+	const fallback = (): Set<string> => new Set(records.slice(0, PHOTO_ICON_MAX).map((record) => record.id));
+
+	try {
+		if (typeof map.project !== 'function') return fallback();
+		const canvas = typeof map.getCanvas === 'function' ? map.getCanvas() : undefined;
+		const container = typeof map.getContainer === 'function' ? map.getContainer() : undefined;
+		const width = container?.clientWidth || canvas?.clientWidth || canvas?.width || 0;
+		const height = container?.clientHeight || canvas?.clientHeight || canvas?.height || 0;
+		if (width <= 0 || height <= 0) return fallback();
+
+		const selected = new Set<string>();
+		// One accepted icon per cell, never a list: two points in the same cell are
+		// within `collisionSize` on both axes by construction, so the second of them
+		// always collides with the first and is never stored beside it.
+		const cells = new Map<string, { x: number; y: number }>();
+		// MapLibre's default icon-padding is 2 CSS px on every edge.
+		const collisionSize = PHOTO_ICON_PX + 4;
+		const half = collisionSize / 2;
+		for (const record of records) {
+			const point = map.project(record.coordinates);
+			if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+			if (point.x < -half || point.y < -half || point.x > width + half || point.y > height + half) continue;
+
+			const cx = Math.floor(point.x / collisionSize);
+			const cy = Math.floor(point.y / collisionSize);
+			let collides = false;
+			for (let dx = -1; dx <= 1 && !collides; dx++) {
+				for (let dy = -1; dy <= 1 && !collides; dy++) {
+					const accepted = cells.get(`${cx + dx},${cy + dy}`);
+					if (
+						accepted &&
+						Math.abs(point.x - accepted.x) < collisionSize &&
+						Math.abs(point.y - accepted.y) < collisionSize
+					) {
+						collides = true;
+					}
+				}
+			}
+			if (collides) continue;
+			selected.add(record.id);
+			cells.set(`${cx},${cy}`, point);
+		}
+		return selected;
+	} catch {
+		// A map midway through construction or teardown may reject projection.
+		// Keep the operation useful and bounded; moveend retries once it settles.
+		return fallback();
+	}
+}
 
 /** Whatever is cheaply checkable about "is there still a live style behind
  *  this map" — the same question `removeTrackLayers()` above answers with a
@@ -820,15 +949,8 @@ function drawPhotoIcon(bitmap: ImageBitmap, orientation: number): ImageData {
 /** The async half of one photo's icon: decode, draw, register — and, at every
  *  point past the first `await`, check that there is still a map and a style
  *  to register against before touching either. */
-async function decodePhotoIcon(
-	map: MapLibreMap,
-	id: string,
-	thumbnail: ExifThumbnail,
-	orientation: number
-): Promise<void> {
-	const pending = photoImagePending.get(map) ?? new Set<string>();
-	photoImagePending.set(map, pending);
-	pending.add(id);
+async function decodePhotoIcon(map: MapLibreMap, record: PhotoIconSource): Promise<void> {
+	const { id, thumbnail, orientation } = record;
 	try {
 		// `new Uint8Array(thumbnail.bytes)` rather than the bytes themselves: a
 		// `Uint8Array` sliced out of a `SharedArrayBuffer`-backed source types as
@@ -849,71 +971,95 @@ async function decodePhotoIcon(
 		// itself to unload. None of that throws; all of it leaves nothing safe
 		// to register against, which is exactly what `mapAlive` is for.
 		if (!mapAlive(map)) return;
+		// Panning or a newer sync may have replaced the viewport selection while
+		// this JPEG was decoding. The work cannot be cancelled, but registering its
+		// GPU image can — unwanted photos stay as dots.
+		if (!photoDecodeStates.get(map)?.wanted.has(id)) return;
 		if (map.hasImage(id)) return; // a second call already won this id first
 		map.addImage(id, imageData, { pixelRatio: ICON_SCALE });
-		const order = photoImageOrder.get(map) ?? new Map<string, true>();
-		photoImageOrder.set(map, order);
+		const { order } = photoDecodeState(map);
 		order.delete(id);
 		order.set(id, true); // most-recently-registered, for the LRU walk below
 	} catch (e) {
 		console.warn(`Advanced Maps: could not decode a photo thumbnail (${id}) —`, e instanceof Error ? e.message : e);
-	} finally {
-		pending.delete(id);
+	}
+}
+
+function pumpPhotoDecodes(map: MapLibreMap, state: PhotoDecodeState): void {
+	while (state.active < PHOTO_DECODE_CONCURRENCY && state.queued.size > 0) {
+		const next = state.queued.entries().next().value;
+		if (!next) return;
+		const [id, record] = next;
+		state.queued.delete(id);
+		if (!state.wanted.has(id) || state.pending.has(id) || map.hasImage(id)) continue;
+		state.active++;
+		state.pending.add(id);
+		void decodePhotoIcon(map, record).finally(() => {
+			state.pending.delete(id);
+			state.active--;
+			if (mapAlive(map)) pumpPhotoDecodes(map, state);
+		});
 	}
 }
 
 /**
- * Register every not-yet-registered thumbnail in `records` that `wanted`
- * still asks for, and evict the least-recently-`wanted` registered image once
- * more than `PHOTO_ICON_MAX` are on the map at once.
+ * Keep a bounded, viewport-driven thumbnail cache for one map.
  *
- * The two-parameter split exists because a caller's natural unit of "what
- * might need decoding" — every photo record its `TrackRecord`s currently hold
- * — is not always identical to "what this exact draw needs on screen right
- * now": `wanted` is what actually gates both starting a decode and surviving
- * eviction, so a caller can safely pass a broader `records` list (say, every
- * photo the base's rows resolved to) without this function doing wasted work
- * for one the current draw does not carry.
+ * `records` may contain every photo resolved by a large base; projection and
+ * screen-space collision select only icons that can visibly survive. Every
+ * selected on-screen icon is admitted, only `PHOTO_DECODE_CONCURRENCY` JPEGs
+ * decode at once, and at most `PHOTO_ICON_MAX` registered ids outside the
+ * current selection survive as spare LRU capacity. A Point never loses its dot
+ * while its icon is queued, decoding, unselected or evicted.
  *
  * Fire-and-forget by design (see the section comment above): this returns
- * `void`, never a `Promise`, so nothing about `drawTracks()`'s own
- * synchronous contract changes by calling this beside it.
+ * `void`, never a `Promise`, so nothing about `drawTracks()`'s own synchronous
+ * contract changes by calling this beside it.
  */
-export function ensurePhotoImages(
-	map: MapLibreMap,
-	records: readonly PhotoIconSource[],
-	wanted: ReadonlySet<string>
-): void {
+export function ensurePhotoImages(map: MapLibreMap, records: readonly PhotoIconSource[]): void {
 	if (!mapAlive(map)) return;
-	const order = photoImageOrder.get(map) ?? new Map<string, true>();
-	photoImageOrder.set(map, order);
-	const pending = photoImagePending.get(map);
+	const state = photoDecodeState(map);
+	const order = state.order;
+	const selected = selectPhotoIconIds(map, records);
 
-	for (const record of records) {
-		if (!wanted.has(record.id)) continue;
-		if (map.hasImage(record.id)) {
-			order.delete(record.id);
-			order.set(record.id, true); // touch: most-recently-wanted
-			continue;
-		}
-		if (pending?.has(record.id)) continue; // already decoding
-		void decodePhotoIcon(map, record.id, record.thumbnail, record.orientation);
-	}
-
-	if (order.size <= PHOTO_ICON_MAX) return;
-	// Oldest-first, skipping anything this call still wants: an id is only
-	// ever evicted once nothing currently on screen is asking for it, so
-	// panning back to a photo just left never has to wait for a redecode —
-	// and, per PHOTO_DOT_LAYER's own comment, an evicted photo does not
-	// vanish from the map, it just goes back to being a plain dot.
+	// Reconcile our LRU with MapLibre after a style reload, then count how much
+	// of it sits *outside* the current selection — the spare warm cache, and the
+	// only thing PHOTO_ICON_MAX bounds. Icons just outside the viewport stay warm
+	// while there is room; only capacity pressure evicts them.
 	for (const id of order.keys()) {
-		if (order.size <= PHOTO_ICON_MAX) break;
-		if (wanted.has(id)) continue;
-		try {
-			if (map.hasImage(id)) map.removeImage(id);
-		} catch {
-			/* style already torn down, or something else already removed it */
-		}
-		order.delete(id);
+		if (!map.hasImage(id)) order.delete(id);
 	}
+	let spare = 0;
+	for (const id of order.keys()) if (!selected.has(id)) spare++;
+	for (const record of records) {
+		if (!selected.has(record.id) || !map.hasImage(record.id)) continue;
+		order.delete(record.id);
+		order.set(record.id, true); // touch: most-recently-wanted
+	}
+
+	for (const id of order.keys()) {
+		if (spare <= PHOTO_ICON_MAX) break;
+		if (selected.has(id)) continue;
+		try {
+			map.removeImage(id);
+			order.delete(id);
+			spare--;
+		} catch {
+			// Keep it counted; retry after the style transition settles.
+		}
+	}
+
+	// A queued decode has not spent anything yet, so panning away cancels it
+	// outright. An active createImageBitmap cannot be cancelled, but its result
+	// checks `state.wanted` before registering.
+	state.wanted = selected;
+	for (const id of state.queued.keys()) {
+		if (!selected.has(id)) state.queued.delete(id);
+	}
+	for (const record of records) {
+		if (!selected.has(record.id) || map.hasImage(record.id)) continue;
+		if (state.pending.has(record.id) || state.queued.has(record.id)) continue;
+		state.queued.set(record.id, record);
+	}
+	pumpPhotoDecodes(map, state);
 }

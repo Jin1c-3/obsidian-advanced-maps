@@ -26,21 +26,24 @@ import {
 } from './coords';
 import { boundsOf, styleReady, trackFeatures, trackKnob, type TrackFeatureProps } from './geometry';
 import { getLocale, t } from './i18n';
+import { MapEventBindings } from './map-events';
 import {
 	applyTrackPaint,
+	cancelPhotoImages,
 	drawTracks,
 	ensurePhotoImages,
 	fitTo,
 	FitControl,
 	FollowControl,
 	guardLocateControl,
+	photoIconSource,
 	removeTrackLayers,
 	type LocateGuard,
 	type PhotoIconSource,
 } from './layers';
 import { customMapLabel, customMapUrl, customMaps, enabledBuiltins, externalMapUrl, resolveBuiltins } from './maplinks';
 import { PhotoModal } from './photo-modal';
-import { photoImageId, projectedFeatures } from './track-cache';
+import { projectedFeatures } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type {
 	BasesData,
@@ -127,6 +130,9 @@ function override<T extends object, K extends keyof T>(obj: T, key: K, make: (or
 
 export class TrackLayer {
 	private items: DrawItem[] = [];
+	/** The thumbnail candidates the last sync built — camera-independent, so
+	 *  `moveend` re-selects from these rather than rebuilding them. */
+	private photoIcons: PhotoIconSource[] = [];
 	private data: FeatureCollection<Geometry, TrackFeatureProps> | null = null;
 	private userMoved = false;
 	private interactionsBound = false;
@@ -147,6 +153,8 @@ export class TrackLayer {
 	private markerFeatures: MarkerFeature[] | null = null;
 	/** How to put back every method wrapped for the life of this layer. */
 	private readonly restorers: Array<() => void> = [];
+	/** Every listener put directly on a MapLibre map, paired with its exact `off`. */
+	private readonly mapEvents = new MapEventBindings();
 	/** Reached past the wrapper by `hover()`, which already holds tile-space coordinates. */
 	private origShowPopup: BasesMapView['popupManager']['showPopup'] | null = null;
 	private locate: LocateGuard | null = null;
@@ -154,6 +162,8 @@ export class TrackLayer {
 	private appliedSystem: CoordSystem | null = null;
 	/** The signature of what is currently on the map; null once nothing is. */
 	private drawn: string | null = null;
+	/** Monotonic data operation. Only the newest sync may commit to the map. */
+	private syncRevision = 0;
 	/** Where to point the camera, held until there is a camera to point. */
 	private pendingFocus: FocusTarget | null = null;
 	/** …and where it was pointed, held for as long as this map lives. */
@@ -329,10 +339,19 @@ export class TrackLayer {
 		});
 
 		this.wrap(view, 'destroyMap', (orig) => () => {
+			this.syncRevision++;
+			if (view.map) cancelPhotoImages(view.map);
+			// MapLibre listeners belong to the map, not to the wrapped view methods.
+			// Remove them before the native view tears the map down; on recreation,
+			// onMapCreated() registers one fresh set against the new instance.
+			this.mapEvents.clear();
 			this.fitControl = null;
+			this.followControl = null;
 			this.interactionsBound = false;
+			this.handledClick = null;
 			this.userMoved = false;
 			this.data = null;
+			this.photoIcons = [];
 			this.drawn = null;
 			this.markerFeatures = null;
 			this.appliedSystem = null;
@@ -453,8 +472,15 @@ export class TrackLayer {
 	detach(): void {
 		if (this.detached) return;
 		this.detached = true;
+		this.syncRevision++;
 		const view = this.view;
 
+		// A native Bases map can stay alive while this plugin instance goes away.
+		// Layer-scoped MapLibre listeners survive removeLayer(), so remove them
+		// before a later plugin instance recreates the same layer ids. Async photo
+		// decodes need their own cancellation because the map remains alive.
+		this.mapEvents.clear();
+		if (view.map) cancelPhotoImages(view.map);
 		this.removeLayers();
 		for (const control of [this.fitControl, this.followControl]) {
 			if (!control || !view.map) continue;
@@ -472,6 +498,11 @@ export class TrackLayer {
 		this.origShowPopup = null;
 		this.locate?.restore();
 		this.locate = null;
+		this.interactionsBound = false;
+		this.handledClick = null;
+		this.pendingFocus = null;
+		this.pendingPopup = null;
+		this.held = null;
 
 		this.plugin.layers.delete(this);
 	}
@@ -490,7 +521,7 @@ export class TrackLayer {
 		// A new style is a blank slate: every source and layer is gone. The
 		// built-in view puts its markers back, so put the tracks back too rather
 		// than riding on its one-shot `styledata` handler.
-		map.on('style.load', () => {
+		this.mapEvents.on(map, 'style.load', () => {
 			this.sync().catch((e) => console.error('Advanced Maps: could not redraw tracks', e));
 		});
 
@@ -504,7 +535,7 @@ export class TrackLayer {
 		// Registered here, after the native handler, so it runs in the same
 		// dispatch and puts the camera back before a frame is drawn — the started
 		// animation is cancelled by the new camera command rather than watched.
-		map.on('load', () => {
+		this.mapEvents.on(map, 'load', () => {
 			if (this.held && !this.userMoved) this.aim(this.held, false);
 		});
 
@@ -513,7 +544,12 @@ export class TrackLayer {
 		const mark = (ev?: { originalEvent?: unknown }) => {
 			if (ev && ev.originalEvent) this.userMoved = true;
 		};
-		for (const name of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) map.on(name, mark);
+		for (const name of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) {
+			this.mapEvents.on(map, name, mark);
+		}
+		// Fit, pan and zoom all end here. Re-run the screen-space collision pass;
+		// dots remain for every photo that has no room for a thumbnail.
+		this.mapEvents.on(map, 'moveend', () => this.reselectPhotoIcons());
 
 		// Asked for before there was a map to ask — "open in map" gets its layer
 		// back from the leaf a beat before the view builds its map, measured.
@@ -802,6 +838,7 @@ export class TrackLayer {
 	}
 
 	async sync(data?: BasesData): Promise<void> {
+		const revision = ++this.syncRevision;
 		const view = this.view;
 		if (this.detached || !view.map) return;
 
@@ -815,10 +852,10 @@ export class TrackLayer {
 		}
 		if (pending.size > 0)
 			await Promise.all([...pending].map((f) => this.plugin.tracks.load(f, this.plugin.settings.photoDatum)));
-		if (this.detached || !view.map) return;
+		if (revision !== this.syncRevision || this.detached || !view.map) return;
 
 		await styleReady(view.map);
-		if (this.detached || !view.map) return;
+		if (revision !== this.syncRevision || this.detached || !view.map) return;
 
 		const map = view.map;
 		// Always adopted, even when the redraw below is skipped: Bases recreates
@@ -878,32 +915,42 @@ export class TrackLayer {
 	}
 
 	/**
-	 * Decodes and registers every photo thumbnail the current result set
-	 * carries, keyed by the identical `photoImageId()` formula `loadPhoto()`
-	 * (track-cache.ts) already stamped onto each feature as `amPhoto` — the
-	 * one thing that keeps the two sides landing on the same id. `wanted` is
-	 * every id in the current draw, which is also what `ensurePhotoImages`
-	 * uses to decide what is safe to evict once `PHOTO_ICON_MAX` is crossed:
-	 * a base with fewer photos on screen than that cap never evicts anything.
+	 * Build the thumbnail candidates for the current result set, then let
+	 * `ensurePhotoImages` project their tile-space Points and keep only a stable,
+	 * non-overlapping screen-space set. `photoIconSource()` (layers.ts) is the
+	 * one builder both draw paths share, so a base map and an inline one can
+	 * never disagree about what a photo icon carries.
 	 *
-	 * Run every sync(), same as `applyPaint()` beside it — cheap (a map lookup
-	 * per track file, no decoding of its own) and it has to reach a base view
-	 * that is already open the moment a row's photo comes into the result set,
-	 * not wait for some unrelated redraw.
+	 * Run every sync, which is what catches rows entering and leaving the base.
+	 * The Point source still carries every photo, so everything outside the
+	 * selection remains a coloured dot.
 	 */
 	private ensurePhotoIcons(items: DrawItem[]): void {
-		const map = this.view.map;
-		if (!map) return;
+		const system = this.system();
 		const records: PhotoIconSource[] = [];
 		for (const item of items) {
 			for (const trackFile of item.trackFiles) {
 				const rec = this.plugin.tracks.get(trackFile.path);
-				const thumbnail = rec?.photo?.thumbnail;
-				if (!rec?.photo || !thumbnail) continue;
-				records.push({ id: photoImageId(trackFile.path), thumbnail, orientation: rec.photo.orientation });
+				const icon = rec && photoIconSource(trackFile.path, rec, system);
+				if (icon) records.push(icon);
 			}
 		}
-		ensurePhotoImages(map, records, new Set(records.map((r) => r.id)));
+		this.photoIcons = records;
+		const map = this.view.map;
+		if (map) ensurePhotoImages(map, records);
+	}
+
+	/**
+	 * The camera moved, so which icons have room changed — but the candidates
+	 * did not. Nothing `photoIconSource()` produces depends on the camera, and a
+	 * base's whole row walk on every pan is real work on a large vault, so
+	 * `moveend` re-runs only the screen-space selection over what the last
+	 * sync built.
+	 */
+	private reselectPhotoIcons(): void {
+		const map = this.view.map;
+		if (!map || this.photoIcons.length === 0) return;
+		ensurePhotoImages(map, this.photoIcons);
 	}
 
 	/* ---- interaction ---- */
@@ -925,10 +972,10 @@ export class TrackLayer {
 		// inert. `open()` is what tells the two apart on the way out — a photo
 		// opens the photo, everything else opens the note.
 		for (const layer of [LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER, PHOTO_DOT_LAYER, PHOTO_LAYER]) {
-			map.on('click', layer, (ev: MapMouseEvent) => this.open(ev));
-			map.on('mousemove', layer, (ev: MapMouseEvent) => this.hover(ev));
-			map.on('mouseenter', layer, () => map.getCanvas().addClass('is-over-marker'));
-			map.on('mouseleave', layer, () => {
+			this.mapEvents.onLayer(map, 'click', layer, (ev: MapMouseEvent) => this.open(ev));
+			this.mapEvents.onLayer(map, 'mousemove', layer, (ev: MapMouseEvent) => this.hover(ev));
+			this.mapEvents.onLayer(map, 'mouseenter', layer, () => map.getCanvas().addClass('is-over-marker'));
+			this.mapEvents.onLayer(map, 'mouseleave', layer, () => {
 				map.getCanvas().removeClass('is-over-marker');
 				this.view.popupManager.hidePopup();
 			});

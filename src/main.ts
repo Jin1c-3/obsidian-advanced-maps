@@ -41,8 +41,8 @@ import { GeocodeError, needsKey, parseReverse, reverseRequest } from './geocode'
 import { LinkModal } from './link-modal';
 import { formatFix, isBlank, Locator } from './locate';
 import {
+	aroundViewState,
 	embedLink,
-	findView,
 	pickMapView,
 	pointerFilter,
 	withAroundView,
@@ -774,14 +774,33 @@ export default class AdvancedMapsPlugin extends Plugin {
 		loaded: { base: BaseSpec; view: BaseView; file: TFile },
 		name: string
 	): Promise<boolean> {
-		if (findView(loaded.base, name)) return true;
+		// The name can be taken before the write and again during it — the file is
+		// re-read inside vault.process — so both checks answer through one refusal
+		// rather than stating the same notice twice.
+		const occupied = (): false => {
+			new Notice(t('notice.around.nameOccupied', { view: name, path: loaded.file.path }));
+			return false;
+		};
+		const initial = aroundViewState(loaded.base, name);
+		if (initial === 'map') return true;
+		if (initial === 'occupied') return occupied();
+
 		const filter = pointerFilter(this.settings.coordsProperty);
+		const result: { outcome: 'added' | 'map' | 'occupied' } = { outcome: 'added' };
 		try {
 			// Awaited, so the catch below can actually see a failed write. Left
 			// floating, the rejection escaped as an unhandled promise and the
 			// notice this try/catch exists to show never appeared.
 			await this.app.vault.process(loaded.file, (data) => {
 				const fresh = (parseYaml(data) as BaseSpec) ?? {};
+				const current = aroundViewState(fresh, name);
+				if (current !== 'missing') {
+					// The file can change between loadBase() and process(). Keep an
+					// existing map untouched, but never embed a table/cards view just
+					// because it won the requested name in that interval.
+					result.outcome = current;
+					return data;
+				}
 				const source = pickMapView(fresh, this.settings.viewName) ?? loaded.view;
 				const next = withAroundView(fresh, source, name, filter);
 				return next ? stringifyYaml(next) : data;
@@ -795,7 +814,8 @@ export default class AdvancedMapsPlugin extends Plugin {
 			);
 			return false;
 		}
-		new Notice(t('notice.around.added', { view: name, path: loaded.file.path }));
+		if (result.outcome === 'occupied') return occupied();
+		if (result.outcome === 'added') new Notice(t('notice.around.added', { view: name, path: loaded.file.path }));
 		return true;
 	}
 

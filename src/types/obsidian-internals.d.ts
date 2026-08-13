@@ -307,6 +307,7 @@ export interface MapLibreMap {
 	on(type: string, listener: (ev: any) => void): void;
 	on(type: string, layerId: string, listener: (ev: any) => void): void;
 	off(type: string, listener: (ev: any) => void): void;
+	off(type: string, layerId: string, listener: (ev: any) => void): void;
 	getCenter(): LngLat | null;
 	setCenter(center: LngLat): void;
 	getZoom?(): number;
@@ -316,9 +317,13 @@ export interface MapLibreMap {
 	jumpTo?(options: { center?: [number, number]; zoom?: number }): void;
 	getBounds(): LngLatBounds;
 	fitBounds(bounds: LngLatBounds, options?: { padding?: number; maxZoom?: number; animate?: boolean }): void;
+	/** Coordinate to CSS pixels inside the map container. Public MapLibre API;
+	 * optional only because every undocumented runtime edge is shape-checked. */
+	project?(coordinate: [number, number] | LngLat): { x: number; y: number };
 	/** Pixel back to a coordinate — in tile space, like everything the map holds. */
 	unproject(point: [number, number]): LngLat;
 	getCanvas(): HTMLCanvasElement;
+	getContainer?(): HTMLElement;
 	resize(): void;
 	/** Where MapLibre keeps the controls it has been handed, the locate one included. */
 	_controls?: unknown[];

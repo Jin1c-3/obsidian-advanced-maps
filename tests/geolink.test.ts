@@ -194,6 +194,11 @@ describe('parseGeoLink: refusals', () => {
 		expect(parseGeoLink('https://apis.map.qq.com/uri/v1/marker?title=x')).toBeNull();
 	});
 
+	it('does not relabel numbers in an unsupported provider URL as WGS-84', () => {
+		expect(parseGeoLink('https://www.amap.com/unsupported/30.2609,120.1470')).toBeNull();
+		expect(parseGeoLink('https://example.com/place/30.2609,120.1470')).toBeNull();
+	});
+
 	it('survives a URL the platform will not parse', () => {
 		expect(parseGeoLink('http://[not-a-host/maps')).toBeNull();
 	});

@@ -18,13 +18,23 @@ import { geocodeRequest, GeocodeError, parseGeocode, type GeocodeProvider, type 
 import { t } from './i18n';
 
 /** Long enough to outlast typing, short enough not to feel broken. */
-const QUIET_MS = 450;
+export const QUIET_MS = 450;
+/** Nominatim's public service asks clients to stay at or below one request/second. */
+export const NOMINATIM_INTERVAL_MS = 1000;
 const MIN_QUERY = 2;
+/** Provider-wide rather than per modal: closing/reopening the search box must
+ *  not reset Nominatim's one-request-per-second interval. */
+let nextNominatimAt = 0;
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 export class PlaceSearchModal extends SuggestModal<Place> {
 	private readonly cache = new Map<string, Place[]>();
-	/** The most recent query; anything older resolves to nothing. */
-	private latest = '';
+	/** Incremented for every invocation — including short and cached queries — so
+	 *  every new keystroke cancels debounce waits and in-flight responses alike. */
+	private revision = 0;
 
 	constructor(
 		app: App,
@@ -40,28 +50,38 @@ export class PlaceSearchModal extends SuggestModal<Place> {
 	}
 
 	async getSuggestions(query: string): Promise<Place[]> {
+		const revision = ++this.revision;
 		const q = query.trim();
 		if (q.length < MIN_QUERY) return [];
 
 		const remembered = this.cache.get(q);
 		if (remembered) return remembered;
 
-		this.latest = q;
-		await sleep(QUIET_MS);
-		// Someone kept typing. Their request is already on its way; this one would
-		// only race it to the list.
-		if (this.latest !== q) return [];
+		await delay(QUIET_MS);
+		if (revision !== this.revision) return [];
+
+		if (this.provider === 'nominatim') {
+			const wait = Math.max(0, nextNominatimAt - Date.now());
+			if (wait > 0) await delay(wait);
+			if (revision !== this.revision) return [];
+			nextNominatimAt = Date.now() + NOMINATIM_INTERVAL_MS;
+		}
 
 		try {
 			// Ask for names in the reader's own language: Nominatim will answer
 			// "杭州市" rather than "Hangzhou" when told to.
 			const request = geocodeRequest(this.provider, q, { key: this.key, language: getLanguage() || 'en' });
 			const response = await requestUrl({ url: request.url, headers: request.headers, throw: false });
+			// A newer query can arrive while the network request is in flight. Its
+			// response owns the list; do not cache, display or report errors from this
+			// one after it has been superseded.
+			if (revision !== this.revision) return [];
 			if (response.status >= 400) throw new GeocodeError(`HTTP ${response.status}`);
 			const places = parseGeocode(this.provider, response.json);
 			this.cache.set(q, places);
 			return places;
 		} catch (e) {
+			if (revision !== this.revision) return [];
 			// The list going quiet says nothing about why. A notice does, and a
 			// failed key or a blocked host is exactly what people need told.
 			const reason = e instanceof GeocodeError ? e.message : e instanceof Error ? e.message : String(e);
