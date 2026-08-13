@@ -9,9 +9,11 @@ import {
 	ARROW_LAYER,
 	ENDPOINT_LAYER,
 	LINE_LAYER,
+	MARKER_LAYER,
 	PHOTO_DOT_LAYER,
 	PHOTO_LAYER,
 	POINT_LAYER,
+	SPREAD,
 	SRC,
 	type TrackKnob,
 } from './constants';
@@ -43,6 +45,14 @@ import {
 } from './layers';
 import { customMapLabel, customMapUrl, customMaps, enabledBuiltins, externalMapUrl, resolveBuiltins } from './maplinks';
 import { PhotoModal } from './photo-modal';
+import {
+	iconOffsetExpression,
+	markerIconScale,
+	spreadFactor,
+	spreadPins,
+	type SpreadPin,
+	type SpreadPlan,
+} from './spread';
 import { projectedFeatures } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type {
@@ -52,6 +62,7 @@ import type {
 	LngLat,
 	LngLatBounds,
 	MapConfig,
+	MapMarker,
 	MapMouseEvent,
 	MarkerFeature,
 } from './types/obsidian-internals';
@@ -151,6 +162,11 @@ export class TrackLayer {
 	 */
 	private following: boolean;
 	private markerFeatures: MarkerFeature[] | null = null;
+	/** Which pins share a spot with another, and where each of them was sent. */
+	private spread: SpreadPlan | null = null;
+	/** The `icon-offset` currently on the native marker layer, as its own JSON, so
+	 *  an unchanged fan costs no re-parse. Null when nothing has been set. */
+	private spreadApplied: string | null = null;
 	/** How to put back every method wrapped for the life of this layer. */
 	private readonly restorers: Array<() => void> = [];
 	/** Every listener put directly on a MapLibre map, paired with its exact `off`. */
@@ -228,6 +244,10 @@ export class TrackLayer {
 
 		this.wrap(manager, 'updateMarkers', (orig) => async (data?: BasesData) => {
 			await orig.call(manager, data);
+			// After the native call, because that is what creates the marker layer
+			// the fan is drawn on — and before the tracks, because it depends on
+			// none of them.
+			this.applySpread();
 			try {
 				await this.sync(data);
 			} catch (e) {
@@ -238,8 +258,8 @@ export class TrackLayer {
 		// Every marker coordinate that reaches the map is minted here — the
 		// native method does nothing but turn parsed entries into Point
 		// features — which makes it the one place the pins have to be moved.
-		this.wrap(manager, 'createGeoJSONFeatures', (orig) => (entries: unknown) => {
-			const features = orig.call(manager, entries);
+		this.wrap(manager, 'createGeoJSONFeatures', (orig) => (markers: MapMarker[]) => {
+			const features = orig.call(manager, markers);
 			const system = this.system();
 			const moved =
 				system === 'wgs84'
@@ -251,7 +271,7 @@ export class TrackLayer {
 			// Native getBounds() still answers in WGS-84, so keep the moved
 			// features around; bounds() reads them instead.
 			this.markerFeatures = moved;
-			return moved;
+			return this.fanOut(markers, moved);
 		});
 
 		// Where a click on a pin sends the note. The native callback is
@@ -269,7 +289,7 @@ export class TrackLayer {
 		this.wrap(popups, 'showPopup', (orig) => {
 			this.origShowPopup = orig;
 			return (entry, latLng, properties, markerProps, displayName) => {
-				const [lng, lat] = toTileSpace(this.system(), latLng[1], latLng[0]);
+				const [lng, lat] = this.fanned(entry, ...toTileSpace(this.system(), latLng[1], latLng[0]));
 				orig.call(popups, entry, [lat, lng], properties, markerProps, displayName);
 			};
 		});
@@ -354,6 +374,10 @@ export class TrackLayer {
 			this.photoIcons = [];
 			this.drawn = null;
 			this.markerFeatures = null;
+			this.spread = null;
+			// The layer this was set on goes with the map, so there is nothing to
+			// put back — only the memory of having set it.
+			this.spreadApplied = null;
 			this.appliedSystem = null;
 			this.pendingFocus = null;
 			this.pendingPopup = null;
@@ -482,6 +506,9 @@ export class TrackLayer {
 		this.mapEvents.clear();
 		if (view.map) cancelPhotoImages(view.map);
 		this.removeLayers();
+		// A native layer, so this one is handed back rather than removed.
+		this.restoreSpread();
+		this.spread = null;
 		for (const control of [this.fitControl, this.followControl]) {
 			if (!control || !view.map) continue;
 			try {
@@ -522,6 +549,12 @@ export class TrackLayer {
 		// built-in view puts its markers back, so put the tracks back too rather
 		// than riding on its one-shot `styledata` handler.
 		this.mapEvents.on(map, 'style.load', () => {
+			// The native marker layer is one of the things wiped, and it comes back
+			// carrying its own default offset — so forget what was applied to the
+			// old one, or `applySpread` will decide the fan is already up. It is
+			// re-applied by the `updateMarkers` the native view runs to put its own
+			// markers back.
+			this.spreadApplied = null;
 			this.sync().catch((e) => console.error('Advanced Maps: could not redraw tracks', e));
 		});
 
@@ -766,6 +799,138 @@ export class TrackLayer {
 		this.locate?.replaceDot();
 		if (view.data && view.markerManager) await view.markerManager.updateMarkers(view.data);
 		else await this.sync();
+	}
+
+	/* ---- pins that share a spot ---- */
+
+	/**
+	 * Tell every pin that shares its spot with another which way to lean.
+	 *
+	 * The slot is stamped on the feature rather than applied to it: the pin
+	 * itself stays exactly where its note says it is, and the offset is drawn on
+	 * screen by `icon-offset` (see `applySpread`). Nothing downstream of here —
+	 * bounds, the context menu, "Copy coordinates" — ever sees a moved
+	 * coordinate, because there is no moved coordinate to see.
+	 *
+	 * Keyed on the note's own path rather than on the index the native manager
+	 * mints, so re-sorting a base leaves each note where it already was in its
+	 * own fan instead of shuffling the whole ring.
+	 *
+	 * Stands down whole on anything unexpected: a marker list that is not one
+	 * per feature, a row with no path, a feature that is not a Point. A fan is a
+	 * convenience, and half a fan — some pins moved, some not — would be worse
+	 * than none.
+	 */
+	private fanOut(markers: MapMarker[], features: MarkerFeature[]): MarkerFeature[] {
+		this.spread = null;
+		if (!this.plugin.settings.spreadMarkers) return features;
+		if (!Array.isArray(markers) || markers.length !== features.length) return features;
+		const paths: string[] = [];
+		const pins: SpreadPin[] = [];
+		for (let i = 0; i < features.length; i++) {
+			const path = markers[i]?.entry?.file?.path;
+			const geometry = features[i]?.geometry;
+			if (typeof path !== 'string' || path === '') return features;
+			if (!geometry || geometry.type !== 'Point') return features;
+			const [lng, lat] = geometry.coordinates;
+			paths.push(path);
+			pins.push({ key: path, lng, lat });
+		}
+		const plan = spreadPins(pins);
+		if (plan.pins.size === 0) return features;
+		this.spread = plan;
+		return features.map((feature, i) => {
+			const slot = plan.pins.get(paths[i])?.slot;
+			if (!slot) return feature;
+			return { ...feature, properties: { ...feature.properties, amSlot: slot } };
+		});
+	}
+
+	/**
+	 * Hand the native marker layer the expression that reads those slots.
+	 *
+	 * Set on the native layer rather than on one of this plugin's own, because
+	 * the pins are the native layer's — and put back by `restoreSpread` when the
+	 * plugin goes away, so a Maps view that outlives this instance is left as it
+	 * was found. A style swap wipes the layer and re-adds it with its own
+	 * default, which is why `spreadApplied` is dropped on `style.load`: the
+	 * expression has to go back on, and the guard here would otherwise say it
+	 * already had.
+	 *
+	 * The guard matters. `setLayoutProperty` re-parses the layer's buckets, and
+	 * this runs after every `updateMarkers` — which Bases calls on any vault
+	 * change while a map is open, the same reason `sync()` guards its own upload
+	 * (see the note there). The fan itself only changes when the notes do.
+	 */
+	private applySpread(): void {
+		const map = this.view.map;
+		if (!map || typeof map.setLayoutProperty !== 'function') return;
+		const table = this.spread?.table ?? [];
+		// Never touch a native layer that has nothing to fan and has never been
+		// given an expression: a base with no two notes in one place is left
+		// exactly as the Maps plugin drew it.
+		if (this.spreadApplied === null && table.length < 2) return;
+		let offset: unknown;
+		try {
+			if (!map.getLayer(MARKER_LAYER)) return;
+			const scale = markerIconScale(map.getLayoutProperty?.(MARKER_LAYER, 'icon-size'), SPREAD.toZoom);
+			offset = iconOffsetExpression(table, scale);
+			const applied = JSON.stringify(offset);
+			if (applied === this.spreadApplied) return;
+			map.setLayoutProperty(MARKER_LAYER, 'icon-offset', offset);
+			this.spreadApplied = applied;
+		} catch (e) {
+			console.warn('Advanced Maps: could not fan out the pins sharing a spot', e);
+		}
+	}
+
+	/** Put the native layer's own `icon-offset` back. */
+	private restoreSpread(): void {
+		if (this.spreadApplied === null) return;
+		this.spreadApplied = null;
+		const map = this.view.map;
+		if (!map || typeof map.setLayoutProperty !== 'function') return;
+		try {
+			if (map.getLayer(MARKER_LAYER)) map.setLayoutProperty(MARKER_LAYER, 'icon-offset', [0, 0]);
+		} catch {
+			/* map or layer already gone */
+		}
+	}
+
+	/**
+	 * Where this note's pin actually is on screen, which is not where its note
+	 * says once the fan has opened.
+	 *
+	 * Only the hover card needs this, and it needs it badly: a card anchored at
+	 * the spot nine notes share would sit in the middle of their ring, covering
+	 * the eight pins the reader is trying to pick between. The offset goes
+	 * through `project`/`unproject` rather than any arithmetic of its own, so it
+	 * lands on the same pixel MapLibre drew the icon at, at whatever zoom,
+	 * rotation and pitch the map is under.
+	 *
+	 * `spreadFactor` is the same ramp `iconOffsetExpression` writes into the
+	 * style — one statement of it, so the card cannot open where the pin was
+	 * yesterday. The two disagree by a pixel or so mid-open, where MapLibre is
+	 * also scaling the offset by an `icon-size` that has not reached its last
+	 * stop yet; at `SPREAD.toZoom` and past it, which is where a reader
+	 * separating pins actually is, they agree exactly.
+	 */
+	private fanned(entry: BasesEntry, lng: number, lat: number): [number, number] {
+		const path = entry && entry.file ? entry.file.path : '';
+		const slot = path ? this.spread?.pins.get(path) : undefined;
+		const map = this.view.map;
+		if (!slot || !map) return [lng, lat];
+		if (typeof map.project !== 'function' || typeof map.unproject !== 'function') return [lng, lat];
+		if (typeof map.getZoom !== 'function') return [lng, lat];
+		const factor = spreadFactor(map.getZoom());
+		if (factor <= 0) return [lng, lat];
+		try {
+			const point = map.project([lng, lat]);
+			const moved = map.unproject([point.x + slot.offset[0] * factor, point.y + slot.offset[1] * factor]);
+			return [moved.lng, moved.lat];
+		} catch {
+			return [lng, lat];
+		}
 	}
 
 	/* ---- data ---- */

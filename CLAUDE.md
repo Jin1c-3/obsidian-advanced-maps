@@ -37,6 +37,7 @@ installed in that vault, every save reloads the plugin.
 src/
   main.ts            plugin class, registry patch, commands, "open in map", location
   map-block.ts       the "Around" view and its embed line   ← pure, tested
+  spread.ts          fanning apart pins that share a spot   ← pure, tested
   track-layer.ts     everything added to one native map view
   embed.ts           inline ![[track.gpx]]
   modal.ts           the pop-up form of "open in map"
@@ -556,6 +557,159 @@ Honestly, not everything here was checked against a running Obsidian:
   fetch returned 200 in ~1.4 s outside Electron; nothing in `dev:errors`
   pointed at this plugin). Noted here as an environment gap in what got
   checked, not as a finding about the feature.
+
+## Pins that share a spot
+
+Nine notes on one pixel are one clickable note and eight that cannot be reached:
+the native click handler takes `features[0]` and there is no second pixel to aim
+at. Measured on the real 292-pin base this repo is developed against, **30
+coordinates carried more than one note and the busiest carried nine** — notes
+written about one address hold its coordinate exactly, so this is the ordinary
+case rather than an edge one.
+
+So the pins are pushed apart on screen. `spread.ts` is the pure half — grouping,
+ring geometry, the zoom ramp, and the expression that carries it — and
+`TrackLayer` is the two seams that reach a map: `createGeoJSONFeatures` stamps
+each fanned pin with an `amSlot`, and `applySpread` hands the **native** marker
+layer an `icon-offset` that reads it.
+
+### `icon-offset`, not a moved coordinate
+
+Every other way of doing this loses something this one keeps.
+
+- **Moving the coordinates** puts the fan in the data, where "Copy coordinates",
+  the context menu, `bounds()` and the base's own values would all have to learn
+  to un-move it. Nothing downstream of `fanOut` ever sees a moved coordinate,
+  because there is no moved coordinate to see.
+- **A ground-fixed offset** — the one shape that needs no zoom handling at all —
+  is a constant number of metres, so it grows without limit on screen as you
+  zoom in. Coincident pins never separate naturally, so a 15 m ring is 30 px at
+  z18 and 480 px at z22: the fan turns into nine notes scattered across a city
+  block.
+- **A pixel-fixed offset recomputed on `zoomend`** means `setData` on the
+  markers source per zoom, and a visible pop at the end of every zoom: the
+  geometry scales with the map during the gesture and then snaps back.
+- **`cluster: true`** was rejected for the same two reasons written down under
+  the photo album: a cluster needs a Point-only source of its own, and a cluster
+  feature carries none of the original's properties.
+
+`icon-offset` is evaluated per frame by MapLibre itself, in **pixels**, so the
+ring is the same size at every zoom and there is nothing to recompute when the
+camera moves. Three facts about it, all measured live rather than read:
+
+- **It is multiplied by `icon-size`.** An offset of 200 landed a pin **47 px**
+  from its anchor at zoom 17, where the native `icon-size` curve interpolates to
+  0.235. `markerIconScale` therefore reads the native layer's own `icon-size`
+  and divides it out — reading it rather than hard-coding 0.24, so an Obsidian
+  release that draws bigger pins gets a wider fan instead of a fan that silently
+  shrinks relative to the icons it exists to separate. `SPREAD.toZoom` is 18
+  because that is where that curve reaches its last stop and stops changing, so
+  the division is exact at full open and at every zoom past it.
+- **Hit-testing follows it.** `queryRenderedFeatures` at the shared anchor
+  answered **0** features with the fan open and **9** at the ring, and each of
+  the nine resolved to its own note. So a click lands on the pin the reader
+  aimed at, with nothing rebound.
+- **A `zoom` expression on it is evaluated at the live zoom**, not frozen at the
+  tile's. A `step` at 16 answered no offset at 15.99 and full offset at 16.01,
+  and was still evaluating at z19 — past the GeoJSON source's own default
+  `maxzoom` of 18, which is the case worth checking, since symbol layout is
+  otherwise baked per tile.
+
+### Integer slots, not an array property
+
+`icon-offset` wants an `array<number, 2>`, and a feature property really can
+hold one: `['array','number',2,['get','amOffset']]` was measured working. **The
+same property read back through `querySourceFeatures` comes out as the string
+`"[200,0]"`** — a GeoJSON tile is serialized to a vector tile for querying, and
+vector tiles have no array type, so rendering and querying disagree about what
+the property holds. That is exactly the kind of split that turns into a silent
+failure two versions later.
+
+So a feature carries an integer, and the expression is a `match` over a table of
+the **distinct** offsets in play — a hundred two-note fans are two entries, not
+two hundred. `zoom` may only appear as the input of the outermost `interpolate`
+or `step`, which is why the ramp wraps the match rather than the other way
+round, and why a per-feature zoom threshold (`['case', ['>', ['zoom'], ['get',
+'amFrom']], …]`) is not expressible at all.
+
+### Which pins count as sharing a spot
+
+Grouping is by **rendered distance at `SPREAD.toZoom`**, in normalized Web
+Mercator, because that is the question actually being asked: would these two
+pins still be on top of each other once there is room for them not to be? A
+ground distance answers it differently at every latitude; Mercator already
+carries that difference. MapLibre's world is `512 * 2^zoom` px across whatever
+tile size the source uses — measured, not assumed: 0.01° at zoom 14 projected
+233.0169 px apart against a Mercator separation of 2.777778e-5, a world of
+8388608.000003 px where `512 * 2^14` is 8388608.
+
+**Leader clustering over pins sorted by path**, and both halves matter. Sorted,
+so re-sorting a base leaves each note where it already was in its own ring
+rather than shuffling the whole thing. Leader rather than single linkage, so a
+line of pins each just inside the threshold of the next cannot chain into one
+enormous group — `tests/spread.test.ts` walks twelve pins 4 m apart down a line
+and expects six pairs, not one ring of twelve.
+
+**Each pin is offset from its own position, not from the group's centre.** For
+the coincident case — the case this exists for — the two are the same thing.
+For pins that are merely close, offsetting from a centroid would mean the offset
+depends on the zoom again, and would move a pin further from where its note says
+it is than the ring radius. A slightly irregular ring is the truthful answer.
+
+### The seams, and what has to happen at each
+
+- **`fanOut`** runs inside the `createGeoJSONFeatures` wrapper, after the
+  coordinate-system shift, and **stands down whole** on anything unexpected: a
+  marker list that is not one per feature, a row with no path, a feature that is
+  not a Point. Half a fan — some pins moved, some not — is worse than none.
+- **`applySpread`** runs from the `updateMarkers` wrapper, _after_ the native
+  call, because that call is what creates the layer being styled. It is guarded
+  on the expression's own JSON: `setLayoutProperty` re-parses the layer's
+  buckets, and this runs on every `updateMarkers`, which Bases calls on any
+  vault change while a map is open (guard #8 again). It also never touches a
+  native layer that has nothing to fan and was never given an expression.
+- **`style.load` drops `spreadApplied`.** A style swap wipes the marker layer
+  and the native view re-adds it carrying its own default offset, so the guard
+  above would otherwise decide the fan was already up. The `updateMarkers` the
+  native view runs to restore its own markers is what puts it back — verified
+  across a Liberty → 高德 → Liberty round trip.
+- **`detach` calls `restoreSpread`.** This is the one layer this plugin styles
+  that it does not own, so a native map outliving the plugin is handed back with
+  `icon-offset` at `[0, 0]`. Measured after `detach()`.
+- **The popup is moved too**, through `project`/`unproject` rather than any
+  arithmetic of its own, so it lands on the pixel MapLibre drew the icon at
+  under any zoom, rotation or pitch. A card anchored at the spot nine notes
+  share would sit in the middle of their ring covering the eight pins the reader
+  is choosing between. `spreadFactor` is the single statement of the ramp that
+  both the style expression and the card read; mid-ramp they disagree by about a
+  pixel, where MapLibre is also scaling by an `icon-size` that has not reached
+  its last stop, and at `toZoom` and past it they agree exactly. Measured: pin
+  at 48.7 px, card at 49 px.
+- **The setting goes through `reprojectAll()`, not `refreshTracks()`.** The fan
+  is stamped on the pins as the _native_ manager mints them, and only
+  `updateMarkers` mints them; `sync()` would redraw every track and change no
+  pin at all.
+
+### A trap that cost a debugging cycle
+
+`reprojectAll()` ends in `sync()`, which ends in `fit()` — so toggling the
+setting from the console **re-frames the map to the whole base**. A camera
+reading taken straight afterwards looks exactly like the fan having stopped
+working: the pins really are stacked, because the map is at z5 looking at a
+country. Re-aim the camera after any settings change before measuring, the same
+way "Testing" below already says to settle after `switchToTileSet`.
+
+### What was not measured
+
+- **Mobile.** Nothing here is desktop-specific, but nothing here was run on a
+  phone either.
+- **A group of hundreds.** `spreadSlots` opens a second ring past
+  `SPREAD.ringMaxPx` and is unit-tested to 64, but the largest real group
+  measured is nine.
+- **A rotated or pitched map.** `icon-offset` is screen-aligned by default
+  (`icon-rotation-alignment` is `viewport` for point symbols) and the card is
+  placed through `project`/`unproject`, so both should follow — reasoned, not
+  checked.
 
 ## Coordinate systems (GCJ-02 / BD-09)
 
@@ -1764,7 +1918,7 @@ All of them cost real debugging time. Read this before "simplifying" any of them
 
 `src/coords.ts`, `src/parse.ts`, `src/stats.ts`, `src/maplinks.ts`,
 `src/geometry.ts`, `src/map-events.ts`, `src/locate.ts`, `src/view-options.ts`,
-`src/map-block.ts`, `src/geolink.ts`, `src/geocode.ts` and `src/i18n.ts` run outside Obsidian and are
+`src/map-block.ts`, `src/geolink.ts`, `src/geocode.ts`, `src/spread.ts` and `src/i18n.ts` run outside Obsidian and are
 held above 90 % coverage in CI (the list lives in `vitest.config.ts`). Anything
 touching the coordinate maths, a parser, the statistics or the locator needs a
 test in the same PR.

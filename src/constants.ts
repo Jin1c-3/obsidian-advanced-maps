@@ -115,6 +115,44 @@ export const FOCUS_TRIES = 30;
  * what the slider happens to offer. Collapsing the two would quietly re-clamp
  * every hand-written base.
  */
+/**
+ * Fanning apart the pins that land on the same spot — see `spread.ts` for the
+ * geometry and CLAUDE.md for why it is drawn with `icon-offset` rather than by
+ * moving the notes' own coordinates.
+ *
+ * Every number here is in **CSS pixels on screen**, which is the space the
+ * problem is actually in: two notes are hard to click apart when their pins
+ * overlap, and whether they overlap depends on the zoom, not on how far apart
+ * they are on the ground. A native pin is a 192 px composite image drawn at
+ * `icon-size` 0.24 — 46 px overall, with a 23 px disc in the middle of it
+ * (`createCompositeMarkerImage` in obsidian-maps/src/map/markers.ts) — which is
+ * where `groupPx` and `ringStepPx` come from.
+ *
+ * `fromZoom`/`toZoom` are the fan opening: nothing is moved at all below
+ * `fromZoom`, so a zoomed-out map is exactly as truthful as it was, and the
+ * offsets reach their full size at `toZoom`. `toZoom` is 18 deliberately —
+ * that is where the native `icon-size` curve reaches its last stop and stops
+ * changing, so the ring is exactly `ringStepPx` apart there and at every zoom
+ * past it. See `iconOffsetExpression` for why `icon-size` has to be divided
+ * out at all.
+ */
+export const SPREAD = {
+	fromZoom: 15,
+	toZoom: 18,
+	/** Centre-to-centre px, at `toZoom`, below which two pins are "the same spot". */
+	groupPx: 26,
+	/** The tightest ring drawn, for the two-note case that needs no more room. */
+	ringMinPx: 24,
+	/** Centre-to-centre spacing along a ring, and the gap between rings. */
+	ringStepPx: 34,
+	/** How wide the first ring may grow before a second one is opened outside it. */
+	ringMaxPx: 140,
+	/** What the native `icon-size` is assumed to be at `toZoom` when its own
+	 *  layout property cannot be read or is a shape `markerIconScale` does not
+	 *  recognise. Read off obsidian-maps/src/map/markers.ts. */
+	iconScale: 0.24,
+} as const;
+
 export const TRACK_KNOBS = {
 	trackWeight: { def: 4, min: 1, max: 12, step: 1, hardMin: 1, hardMax: 24 },
 	trackOpacity: { def: 85, min: 10, max: 100, step: 5, hardMin: 0, hardMax: 100 },

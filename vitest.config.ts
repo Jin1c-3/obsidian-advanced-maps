@@ -32,6 +32,7 @@ export default defineConfig({
 				'src/map-block.ts',
 				'src/stats.ts',
 				'src/maplinks.ts',
+				'src/spread.ts',
 				'src/i18n.ts',
 				'src/locate.ts',
 			],

@@ -7,7 +7,7 @@ import {
 	type SettingDefinition,
 	type SettingDefinitionItem,
 } from 'obsidian';
-import { TRACK_KNOBS, type TrackKnob } from './constants';
+import { SPREAD, TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
 import type { PhotoDatum } from './exif';
 import { GEOCODE_PROVIDERS, KEY_STORES, type GeocodeProvider, type KeyStore } from './geocode';
@@ -56,6 +56,8 @@ export interface AdvancedMapsSettings {
 	photoThumbnails: boolean;
 	/** Which datum a photo's raw EXIF coordinate is trusted to be in. */
 	photoDatum: PhotoDatum;
+	/** Whether pins that land on the same spot fan apart once there is room. */
+	spreadMarkers: boolean;
 	/** "Open in map" — the map launched from a note's ⋮ menu. */
 	basePath: string;
 	viewName: string;
@@ -112,6 +114,7 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	showPhotos: true,
 	photoThumbnails: true,
 	photoDatum: 'auto',
+	spreadMarkers: true,
 	basePath: '',
 	viewName: '',
 	coordsProperty: 'coords',
@@ -422,7 +425,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	private group(
-		key: 'coord' | 'open' | 'external' | 'search' | 'locate' | 'tracks',
+		key: 'coord' | 'open' | 'external' | 'search' | 'locate' | 'pins' | 'tracks',
 		items: SettingDefinition<ControlKey>[]
 	) {
 		return {
@@ -762,6 +765,15 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				}),
 			]),
 
+			// The notes' own pins, which are the native view's rather than this
+			// plugin's — hence a group of their own rather than a row among the
+			// track knobs, which are about files a note points at.
+			this.group('pins', [
+				this.toggle('settings.pins.spread.name', 'settings.pins.spread.desc', 'spreadMarkers', {
+					zoom: String(SPREAD.fromZoom),
+				}),
+			]),
+
 			this.group('tracks', [
 				this.text('settings.tracks.color.name', 'settings.tracks.color.desc', 'trackColor', {
 					placeholder: DEFAULT_SETTINGS.trackColor,
@@ -900,6 +912,12 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			case 'locate':
 				// Turning it on is a fresh statement of intent; forget any refusal.
 				this.plugin.resetLocator();
+				break;
+			case 'spreadMarkers':
+				// Not on the track-refresh list below: the fan is stamped on the pins
+				// as the *native* manager mints them, and only `updateMarkers` mints
+				// them. `sync()` would redraw every track and change no pin at all.
+				this.plugin.reprojectAll();
 				break;
 		}
 

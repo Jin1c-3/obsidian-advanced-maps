@@ -15,18 +15,19 @@ vendored map library, no runtime dependencies.
 
 ## What it fixes
 
-| Problem                                                             | What this plugin does                                                             |
-| ------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| A note has a `.gpx` attached, and the map shows only a pin.         | Draws the track, in that note's colour, with start/end pins and direction arrows. |
-| The `.gpx` knows how far you walked, and nothing tells you.         | Distance, ascent, moving time and pace, with a hoverable elevation profile.       |
-| Mainland basemaps aren't WGS-84, so every pin floats a few streets. | Converts on the way to the map and back. Nothing on disk changes.                 |
-| The map opens on the whole world.                                   | Auto-frames markers _and_ tracks, and gets out of the way once you pan.           |
-| `![[track.gpx]]` renders as a link.                                 | Renders it as a real map, inline.                                                 |
-| A map beside the note you are editing drifts away from it.          | Press ⊹ and it follows the note you switch to. The base's query is never touched. |
-| A trip note is about six places, and a note holds one coordinate.   | One line embeds a map of the notes around it. Drag a note in and it appears.      |
-| A share link, and you have to dig the numbers out — in which datum? | Paste it. WGS-84 comes out, whatever went in.                                     |
-| Filling in coordinates by hand.                                     | Search a place name, or take it from where you are — on desktop too.              |
-| A geotagged photo just sits in the vault, its location unread.      | Draws its own pin from its EXIF GPS tags, its own thumbnail as the icon.          |
+| Problem                                                               | What this plugin does                                                             |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| A note has a `.gpx` attached, and the map shows only a pin.           | Draws the track, in that note's colour, with start/end pins and direction arrows. |
+| The `.gpx` knows how far you walked, and nothing tells you.           | Distance, ascent, moving time and pace, with a hoverable elevation profile.       |
+| Mainland basemaps aren't WGS-84, so every pin floats a few streets.   | Converts on the way to the map and back. Nothing on disk changes.                 |
+| The map opens on the whole world.                                     | Auto-frames markers _and_ tracks, and gets out of the way once you pan.           |
+| `![[track.gpx]]` renders as a link.                                   | Renders it as a real map, inline.                                                 |
+| A map beside the note you are editing drifts away from it.            | Press ⊹ and it follows the note you switch to. The base's query is never touched. |
+| A trip note is about six places, and a note holds one coordinate.     | One line embeds a map of the notes around it. Drag a note in and it appears.      |
+| A share link, and you have to dig the numbers out — in which datum?   | Paste it. WGS-84 comes out, whatever went in.                                     |
+| Filling in coordinates by hand.                                       | Search a place name, or take it from where you are — on desktop too.              |
+| A geotagged photo just sits in the vault, its location unread.        | Draws its own pin from its EXIF GPS tags, its own thumbnail as the icon.          |
+| Nine notes at one address are one pin, and eight of them unclickable. | Zoom in and they fan out onto a ring, each one its own pin again.                 |
 
 ## Requirements
 
@@ -40,6 +41,19 @@ is the view this one extends. Without it Advanced Maps says so and does nothing.
 `<vault>/.obsidian/plugins/advanced-maps/` and enable it.
 
 **With BRAT.** Add `Jin1c-3/obsidian-advanced-maps`.
+
+## Pins that share a spot
+
+Notes written about one address share its coordinate exactly, and pins that
+share a coordinate are one pin: whichever note is on top opens, and the rest
+cannot be reached at all. Zoom past 15 and they fan apart onto a ring around
+the spot, one pin each, so any of them can be hovered and opened. Zoomed out
+they close back into a single pin, because at that scale the ring would be a
+lie about where they are.
+
+The ring is drawn on screen only — no note is moved, nothing is written, and
+"Copy coordinates" still answers the coordinate the note actually holds.
+**Fan out pins that share a spot** turns it off.
 
 ## Tracks
 

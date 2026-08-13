@@ -139,9 +139,25 @@ export interface MapConfig {
 
 export type MarkerFeature = Feature<Geometry, Record<string, unknown>>;
 
+/**
+ * One pin as the native manager tracks it — `MapMarker` in
+ * obsidian-maps/src/map/markers.ts. This is both what `createGeoJSONFeatures`
+ * is handed and what `markerManager.markers` keeps, and the features it mints
+ * come back in the same order, one per marker, each carrying its own index as
+ * `entryIndex`.
+ *
+ * `coordinates` is `[lat, lng]`, the note's own value, and stays untouched by
+ * this plugin: the shift into tile space happens to the *features*, which is
+ * why "Copy coordinates" on a pin was already right.
+ */
+export interface MapMarker {
+	entry: BasesEntry;
+	coordinates: [number, number];
+}
+
 export interface MarkerManager {
 	updateMarkers(data?: BasesData): Promise<void>;
-	createGeoJSONFeatures(entries: unknown): MarkerFeature[];
+	createGeoJSONFeatures(markers: MapMarker[]): MarkerFeature[];
 	getCustomColor(entry: BasesEntry, config: MapConfig | undefined): string | null | undefined;
 	resolveColor(color: string): string;
 	getBounds(): LngLatBounds | null;
@@ -287,6 +303,10 @@ export interface MapLibreMap {
 	removeLayer(id: string): void;
 	setPaintProperty(layerId: string, name: string, value: unknown): void;
 	setLayoutProperty(layerId: string, name: string, value: unknown): void;
+	/** What a layer is currently asking for — read on the *native* marker layer,
+	 *  whose `icon-size` the fan in `spread.ts` has to divide out. Public
+	 *  MapLibre API; optional here like everything else on this interface. */
+	getLayoutProperty?(layerId: string, name: string): unknown;
 	/**
 	 * Standard, documented MapLibre GL JS `Map` methods — not an Obsidian
 	 * secret, declared here for the same reason every other `MapLibreMap`

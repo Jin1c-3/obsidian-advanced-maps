@@ -250,6 +250,18 @@ const en = {
 		'The view added to that base for maps of the notes around a note. Renaming it here does not repoint maps ' +
 		'already inserted — their links name the old one.',
 
+	/* ---- settings: pins ----
+	 * The notes' own markers, which belong to the native Maps view rather than
+	 * to this plugin — a group of their own rather than a row among the track
+	 * knobs, which are about files a note points at. */
+	'settings.pins.heading': 'Pins',
+	'settings.pins.intro': "How the notes' own markers behave on a map view.",
+	'settings.pins.spread.name': 'Fan out pins that share a spot',
+	'settings.pins.spread.desc':
+		'Notes at the same place stack into one pin, and only the top one can be opened. Past zoom {zoom} they fan ' +
+		'apart onto a ring, so each can be hovered and opened on its own. Drawn on screen only — no note is moved ' +
+		'and nothing is written.',
+
 	/* ---- settings: tracks ---- */
 	'settings.tracks.heading': 'Tracks',
 	'settings.tracks.intro':
@@ -479,6 +491,13 @@ const zh: Record<TranslationKey, string> = {
 	'settings.open.aroundView.name': '「周围」视图名称',
 	'settings.open.aroundView.desc':
 		'为「本篇相关笔记的地图」在该 base 中添加的视图。在这里改名不会改已经插入的地图——它们的链接指向旧名字。',
+
+	'settings.pins.heading': '图钉',
+	'settings.pins.intro': '笔记自身的标记在地图视图里的行为。',
+	'settings.pins.spread.name': '散开位置重合的图钉',
+	'settings.pins.spread.desc':
+		'位置相同的笔记会叠成一个图钉，只有最上面那个点得开。放大到 {zoom} 级以上后，它们会散成一圈，于是每一个都能单独悬停、单独打开。' +
+		'只是画在屏幕上——笔记不会被移动，也不会写入任何内容。',
 
 	'settings.tracks.heading': '轨迹',
 	'settings.tracks.intro': 'GPX / GeoJSON 轨迹的画法。线宽、透明度和缩放上限都可以在单个地图视图里另设。',
