@@ -6,6 +6,58 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.12.2]
+
+A correctness and robustness release: no new settings and nothing new on
+screen, but several ways a map could quietly show the wrong thing are gone.
+
+### Fixed
+
+- **A pasted map link that names a supported provider but carries no readable
+  coordinate no longer answers a wrong one.** An 高德 or 百度 URL whose shape
+  this plugin does not know used to fall through to the plain-number reader,
+  which relabels whatever digits it finds as WGS-84 — on exactly those two
+  providers that is a pin several hundred metres from the place the link
+  meant, with nothing on screen to say so. It refuses now.
+- **The place-search box can no longer show an older query's results.** A
+  slower earlier request could land after a newer one and replace the list
+  under the words being typed; clearing the box or taking a cached answer now
+  cancels an in-flight one too. Nominatim requests are additionally spaced to
+  the one-per-second its usage policy asks for, across the whole session
+  rather than per open search box.
+- **A track file edited while a map was reading it is no longer cached as
+  though the new bytes had been read.** Obsidian updates a file's stat in
+  place, so the old contents could be stamped with the new modification time
+  and then trusted indefinitely. Two maps opening the same large track now
+  also share one read instead of parsing it twice.
+- **The track layers recover from a style change that interrupts them.** If a
+  theme or background switch replaced the style midway through adding them,
+  the half-installed set stayed behind and every later redraw took the
+  "already there" path — the track stayed missing until something forced a
+  full style reload.
+- **Disabling and re-enabling the plugin on an open map view no longer leaves
+  the previous instance's click and hover handlers running.** Removing a layer
+  does not remove a listener scoped to it, so they woke back up as soon as the
+  new instance recreated the same layers.
+- **A settings change made while an inline map is still loading is no longer
+  lost**, and an older redraw that finishes after a newer one can no longer
+  win by finishing last.
+- **Track colour, width, opacity, fit zoom and inline map height now reach
+  maps that are already open**, the same way the toggles beside them already
+  did, instead of waiting for an unrelated redraw.
+- **A view name occupied by a table or cards view is refused rather than
+  used.** _Map of the notes around this note_ says so instead of writing an
+  embed line that shows the wrong view, and the "open in map" view setting no
+  longer opens a table named there as the map it is not.
+
+### Changed
+
+- **The photo album's thumbnails are chosen by what actually fits on screen.**
+  Only photos with room to render decode, four at a time; the rest stay dots
+  and cost nothing. Recently-left icons stay warm for a pan back, panning away
+  cancels work that has not started, and a base holding thousands of photos
+  can no longer grow one map's image table without limit.
+
 ## [1.12.1]
 
 Documentation only — `main.js` is byte-identical to 1.12.0.
@@ -389,7 +441,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.1...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.2...HEAD
+[1.12.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.1...1.12.2
 [1.12.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.0...1.12.1
 [1.12.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.11.0...1.12.0
 [1.11.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.10.1...1.11.0
