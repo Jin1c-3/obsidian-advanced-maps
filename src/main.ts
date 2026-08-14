@@ -658,10 +658,53 @@ export default class AdvancedMapsPlugin extends Plugin {
 	 * One map has just been asked to start following. Called by the button rather
 	 * than calling it, so that turning following on lands the camera at once
 	 * instead of at the next `file-open`.
+	 *
+	 * **This is the second writer of `followPane`, and it has to be.** The button
+	 * is the ordinary way into following — `followActiveNote` defaults to false —
+	 * so a map followed this way and never any other reaches `followTarget` with
+	 * `followPane` still null, which hands a pin click back to the native
+	 * "open in the active leaf": the map's own, because clicking a map is what
+	 * makes it active. That is the "a click on a pin ate the map" failure, and it
+	 * survived the fix on exactly this path.
+	 *
+	 * It cannot record the same thing `followActiveNote` does. There, a
+	 * `file-open` has just made the note's pane the most recent one; here the
+	 * reader's last click was on the map, so `getMostRecentLeaf()` may well answer
+	 * the map itself — which `followTarget` then rejects, leaving following on and
+	 * the click unprotected. So the pane is looked up from the note instead.
 	 */
 	followNow(layer: TrackLayer): void {
 		const target = this.noteTarget(this.app.workspace.getActiveFile());
-		if (target) layer.focus(target);
+		if (!target) return;
+		// Kept rather than cleared when the note is in no pane this may open into:
+		// a pane remembered from an earlier follow is a better answer than none.
+		this.followPane = this.noteLeaf(target.file, layer) ?? this.followPane;
+		layer.focus(target);
+	}
+
+	/**
+	 * A pane showing this note that is not the one `layer` is drawn in.
+	 *
+	 * The exclusion is the point: the note is usually open in the active leaf, and
+	 * on an *embedded* base that leaf is the very note the map is inside — opening
+	 * into it would be the same self-replacement `followTarget` exists to prevent,
+	 * arrived at from the other direction.
+	 */
+	private noteLeaf(file: TFile | undefined, layer: TrackLayer): WorkspaceLeaf | null {
+		if (!file) return null;
+		const own = layer.view.containerEl;
+		let found: WorkspaceLeaf | null = null;
+		// The callback returns undefined on every path: `iterateAllLeaves` stops on
+		// a truthy return, so an assignment used as the body would visit one leaf
+		// per split and look exactly like Obsidian hiding leaves from it.
+		this.app.workspace.iterateAllLeaves((leaf) => {
+			if (found) return;
+			const view = leaf.view;
+			if (!(view instanceof FileView) || view.file !== file) return;
+			if (own && view.containerEl?.contains(own)) return;
+			found = leaf;
+		});
+		return found;
 	}
 
 	/**

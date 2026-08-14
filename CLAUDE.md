@@ -1009,6 +1009,27 @@ coordinate — a base file opening in a leaf fires `file-open` too, and that che
 is what keeps the pane pointer off a map. So the rule is one sentence: **a
 following map opens notes in the pane it is following.**
 
+**Both ways into following have to record it, and for one version only one did.**
+`followActiveNote` is false by default, so the button is the ordinary way in —
+and a map followed that way and never any other reached `followTarget` with
+`followPane` still null, which is the signal to hand the click back to the native
+"open in the active leaf": the map's own. The fix above was real and this path
+walked straight past it. Measured on a note in one pane and `moments.base` in the
+next, with `followPane` forced back to null: `followTarget` answered **null**
+before `followNow`, and the note's own markdown leaf after it — and a pin click
+driven through `markerManager.onOpenFile` with the map's leaf active left that
+leaf still showing `moments.base`.
+
+`followNow` cannot record the same thing `followActiveNote` does. There a
+`file-open` has just made the note's pane the most recent one; here the reader's
+last click was on the map, which is exactly what makes `getMostRecentLeaf()`
+answer the map — and a `followPane` pointing at the map is one `followTarget`
+rejects, leaving the click unprotected again. So it looks the pane up from the
+note instead, through `noteLeaf`, which skips any leaf containing the map's own
+container: on an **embedded** base that leaf is the note the map is drawn inside,
+and opening into it would be the same self-replacement arrived at from the other
+side.
+
 `openNote()` is the one door for both click paths — the wrapped `onOpenFile` for
 pins and `open()` for tracks — and it falls through to the native call for a
 mod-click, for a map that is not following, and for a `followPane` that has since
@@ -1396,6 +1417,36 @@ a base view, in either direction.
 
 Extensions are claimed only if nothing else has them, so a plugin that already
 renders `.gpx` keeps working alongside this one.
+
+### A file that stops parsing under an open embed
+
+`build()` and `refresh()` meet the same condition, `rec.error`, and must not
+answer it the same way. `build()` calls `fail()`, which empties `rootEl` — free,
+because there is no view yet. `refresh()` cannot: doing that to a live embed
+tears the map's element out from under a MapLibre instance that is still running
+and leaks its WebGL context against the browser's own cap, which is the very cost
+the lazy `IntersectionObserver` build exists to manage.
+
+It shipped doing neither, and the gap is the shape to remember: `refresh()`
+removed every layer and _then_ `draw()` returned on `rec.error` one line in, while
+`renderStats()` dropped the panel before its own identical guard. The result was
+bare tiles — no track, no stats, no message, indefinitely. **The failure was
+silent because the error check sat downstream of the teardown.**
+
+So `refresh()` answers it **before** anything comes off and before `this.rec` is
+replaced, through `failInPlace()`: the map and the last good track stay, and the
+message takes the stats panel's place under them. Which is also the better
+reading of the common case — a sync client or an editor halfway through
+rewriting the file is a moment, not a verdict, and the `modify` completing the
+write refreshes straight back. A file that stays broken keeps its last track
+_and_ a line saying so, which is more than either half alone.
+
+Measured on a scratch note carrying `![[t.gpx]]`, by overwriting the file with a
+truncated document: `map` still alive, `rec.error` still null with its one
+feature intact, `queryRenderedFeatures` on `LINE_LAYER` still answering 2, and
+the panel reading `advanced-maps-panel advanced-maps-error` /
+`无法绘制 t.gpx：not valid XML`. Restoring the file put the stats bar back
+(`2.9 km ↑20 m …`) with the error line gone and nothing else touched.
 
 ## Track statistics
 
@@ -1914,6 +1965,15 @@ All of them cost real debugging time. Read this before "simplifying" any of them
     Without both halves, an old result can win by finishing last, or a settings
     change during lazy build can disappear entirely.
 
+13. **A NUL used as a separator is written `'\0'`, never as a raw byte in the
+    source.** `TrackLayer.signature()` joins on one because no path or mtime can
+    contain one, so no two different item lists can collide — that part is right
+    and stays. Typed as a literal byte, though, it makes `grep` treat the file as
+    binary and skip it **in silence**: a search for anything defined in
+    `track-layer.ts`, the largest file in the plugin, comes back empty and reads
+    as "not defined anywhere" rather than as a search that never looked. `grep -a`
+    is the workaround; the escape is the fix.
+
 ## Testing
 
 `src/coords.ts`, `src/parse.ts`, `src/stats.ts`, `src/maplinks.ts`,
@@ -2044,7 +2104,7 @@ doc comment:
   wherever the underlying state changed.
 
 `setControlValue` is the one seam for everything that used to live in an
-`onChange`: it trims, applies the two fallbacks that a cleared field has, checks
+`onChange`: it trims, applies the fallbacks that a cleared field has, checks
 the two dropdown values against their own lists, and then does the side effects —
 `reprojectAll`, `resetLocator`, `refreshTracks`, and `update()` for the Amap key
 row that states its own visibility. Every visual track/embed key lives in the one
@@ -2054,6 +2114,22 @@ embed has no Bases data to prompt it at all, so colour, weight, opacity, fit zoo
 and embed height need the same explicit refresh the toggles already had. Height is
 applied before `TrackEmbed.refresh()`'s map guard, so an embed still below the fold
 resizes without first spending a WebGL context.
+
+**A text row that shows its default as the placeholder has to mean it once the
+box is cleared**, and that list — `PLACEHOLDER_DEFAULT_KEYS` — is typed and
+restated in `tests/settings.test.ts` for the same reason `TRACK_REFRESH_KEYS` is:
+a key added to the pane and forgotten here is invisible until somebody clears the
+field. Three of the four never had a second reading — an empty coordinate
+property or an empty colour is not a setting anybody could want — and the fourth
+is why it is a list rather than a chain of `||`. `autoFillExclude` **does** have a
+coherent other reading, "exclude nothing", and it shipped taking it: clearing the
+box stored `''`, `excludedFragments('')` answered `[]`, and every template note
+opened after that was stamped with the device's real position — the one thing the
+field exists to prevent, reached by emptying the field that prevents it. Ruling
+that reading out costs nothing, since `templates` only ever excludes paths
+containing the word, and a reader who wants the fill everywhere has the fill's own
+switch. Measured live through the tab: `'   '` stored `templates`,
+`' drafts , templates '` stored untouched but for the outer trim.
 
 ### The base and its view are picked, not typed
 

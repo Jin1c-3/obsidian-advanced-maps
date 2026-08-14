@@ -195,6 +195,40 @@ export class TrackEmbed extends Component {
 		this.rootEl.setText(t('embed.failed', { file: this.file.name, message }));
 	}
 
+	/**
+	 * The same failure, said without taking the map down: `refresh()`'s answer to
+	 * a file that stopped parsing under an embed that is already drawing it.
+	 *
+	 * `fail()` cannot be reused there, and the difference is not cosmetic.
+	 * `build()` calls it before there is a view at all, so emptying `rootEl` costs
+	 * nothing; doing that to a live embed would tear the map's element out from
+	 * under a MapLibre instance that is still running, leaking its WebGL context
+	 * against the browser's own cap — the very cost the lazy `IntersectionObserver`
+	 * build exists to manage.
+	 *
+	 * Which leaves what to draw, and the last good track is the better answer than
+	 * a cleared map. The common way to get here is a sync client or an editor
+	 * halfway through rewriting the file: a truncated read is a moment, not a
+	 * verdict, and the `modify` that completes the write refreshes straight back to
+	 * a correct map. A file that stays broken keeps the track it last had *and*
+	 * this line underneath saying so, which is strictly more than either half
+	 * alone — where the shipped behaviour said nothing and showed nothing, because
+	 * the layers came off and `draw()` then returned on `rec.error` one line in.
+	 */
+	private failInPlace(message: string): void {
+		// The panel is a sibling of the map, not a child, so it outlives anything
+		// done to `rootEl` and has to be replaced by hand. Its profile goes first:
+		// the cursor dot it draws lives on the map's own style rather than inside
+		// the panel, so dropping the DOM alone would strand one mid-hover.
+		this.profile?.clear();
+		this.profile = null;
+		this.panelEl?.remove();
+		this.panelEl = null;
+		if (!this.rootEl) return;
+		this.panelEl = this.containerEl.createDiv({ cls: ['advanced-maps-panel', 'advanced-maps-error'] });
+		this.panelEl.setText(t('embed.failed', { file: this.file.name, message }));
+	}
+
 	private async build(): Promise<void> {
 		let loaded: { rec: TrackRecord; photos: PhotoEntry[] };
 		// A settings change while the lazy embed is still reading has no map for
@@ -267,6 +301,10 @@ export class TrackEmbed extends Component {
 		const revision = ++this.operationRevision;
 		const { rec, photos } = await this.loadAll();
 		if (revision !== this.operationRevision || !this.map || this.dead) return;
+		// Answered before anything is torn down, and before `this.rec` is replaced:
+		// an unusable read must not be able to take the last usable one with it.
+		// See failInPlace() for why this is not the `fail()` build() calls.
+		if (rec.error) return this.failInPlace(rec.error);
 		this.rec = rec;
 		this.photos = photos;
 		removeTrackLayers(this.map);

@@ -201,6 +201,30 @@ export function refreshesTracks(key: string): boolean {
 }
 
 /**
+ * Text settings whose row shows its default as the placeholder, and which
+ * therefore have to *mean* that default once the box is cleared.
+ *
+ * A greyed placeholder reads as "this is what you get if you leave it empty",
+ * and for three of these there was never another reading — an empty coordinate
+ * property or an empty colour is not a setting anyone could want. The fourth is
+ * why this is a list rather than a chain of `||`: an empty `autoFillExclude` has
+ * a perfectly coherent other meaning, "exclude nothing", and taking that reading
+ * turns clearing the box into stamping every template note with the device's
+ * real position — the one thing the field exists to prevent, arrived at by
+ * emptying the field that prevents it. Nothing is lost by ruling it out:
+ * `templates` only ever excludes paths that contain the word, so a vault with no
+ * templates folder is unaffected either way, and a reader who wants the fill
+ * everywhere has the fill's own switch.
+ */
+const PLACEHOLDER_DEFAULT_KEYS = ['coordsProperty', 'placeProperty', 'trackColor', 'autoFillExclude'] as const;
+
+type PlaceholderDefaultKey = (typeof PLACEHOLDER_DEFAULT_KEYS)[number];
+
+export function fallsBackToDefault(key: string): key is PlaceholderDefaultKey {
+	return (PLACEHOLDER_DEFAULT_KEYS as readonly string[]).includes(key);
+}
+
+/**
  * A row inside one of the two lists names its entry by index —
  * `customMaps.2.url` rather than a settings key of its own.
  *
@@ -862,7 +886,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		let next = value;
 		if (typeof next === 'string') {
 			next = next.trim();
-			if (next === '' && (key === 'coordsProperty' || key === 'placeProperty' || key === 'trackColor')) {
+			if (next === '' && fallsBackToDefault(key)) {
 				next = DEFAULT_SETTINGS[key];
 			}
 		}

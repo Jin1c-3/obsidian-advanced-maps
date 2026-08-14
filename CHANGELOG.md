@@ -6,6 +6,34 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.13.1]
+
+### Fixed
+
+- **A map you started following with its own button answered a click on a pin by
+  replacing itself with the note.** Following opens notes in the pane the map is
+  following, and that pane was only ever recorded when following was already on
+  as a note opened — so a map switched on by its crosshair button, which is the
+  ordinary way in, had none to open into and fell back to "the active leaf": its
+  own, because clicking a map is what makes it active. The button now looks the
+  pane up from the note itself, and skips the map's own pane so an embedded base
+  cannot replace the note it is drawn inside either.
+
+- **Clearing "Skip paths containing" meant "exclude nothing" rather than the
+  `templates` its greyed placeholder shows.** With location filling on, that
+  stamped every template note opened afterwards with the device's real position —
+  the one thing the field is there to prevent. A cleared box now means what the
+  placeholder says, the same way the coordinate property and the default track
+  colour already did. A value you type is stored exactly as typed.
+
+- **An inline map went blank, and said nothing, when its track file stopped
+  parsing under it.** A sync client or an editor halfway through rewriting a
+  `.gpx` was enough: the track, the statistics bar and the elevation profile all
+  went, leaving bare tiles with no message and no way to tell that from an empty
+  file. The map and the last track it drew now stay put, with the reason
+  underneath them — and the moment the file parses again, the map picks it up and
+  the message goes.
+
 ## [1.13.0]
 
 ### Added
@@ -460,7 +488,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.1...HEAD
+[1.13.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.0...1.13.1
 [1.13.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.2...1.13.0
 [1.12.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.1...1.12.2
 [1.12.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.0...1.12.1

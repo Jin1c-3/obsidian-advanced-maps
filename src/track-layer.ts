@@ -999,7 +999,13 @@ export class TrackLayer {
 			// path has not moved.
 			for (const trackFile of item.trackFiles) parts.push(trackFile.path, String(trackFile.stat.mtime));
 		}
-		return parts.join(' ');
+		// '\0' written as an escape, not as a raw NUL byte in the source: a literal
+		// one makes `grep -rn` treat this file as binary and skip it in silence,
+		// which reads as "that symbol is not defined anywhere" rather than as a
+		// search that never looked. It is still the separator, for the reason it
+		// always was — no path or mtime can contain one, so no two different item
+		// lists can join to the same string.
+		return parts.join('\0');
 	}
 
 	async sync(data?: BasesData): Promise<void> {
