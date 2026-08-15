@@ -398,9 +398,11 @@ interface HeicOpts {
 	/** A second, non-matching item ahead of the real one in both `iinf` and
 	 *  `iloc` — exercises the "skip and keep looking" branch in each walker. */
 	extraItem?: boolean;
-	exifPrefixMissing?: boolean;
+	/** Inserts an "Exif\0\0" padding marker before TIFF; a valid declared
+	 *  offset still points past it directly to the TIFF header. */
+	exifPrefixBeforeTiff?: boolean;
 	/** Writes a bogus, non-resolving declared offset in the Exif item's own
-	 *  4-byte header field, to force the "Exif\0\0" fallback search. */
+	 *  4-byte header field. */
 	badDeclaredOffset?: boolean;
 }
 
@@ -435,10 +437,9 @@ function buildHeic(tiff: Uint8Array, opts: HeicOpts = {}): Uint8Array {
 
 	const metaBoxLen = 8 + 4 + iinfBytes.length + probe;
 	const exifPayloadOffset = ftypBytes.length + metaBoxLen;
-	const declaredOffset = opts.badDeclaredOffset ? 999999 : 0;
-	const exifPayload = opts.exifPrefixMissing
-		? [...u32be(declaredOffset), ...Array.from(tiff)] // no "Exif\0\0" anywhere in reach
-		: [...u32be(declaredOffset), ...EXIF_PREFIX, ...Array.from(tiff)];
+	const padding = opts.exifPrefixBeforeTiff ? EXIF_PREFIX : [];
+	const declaredOffset = opts.badDeclaredOffset ? 999999 : padding.length;
+	const exifPayload = [...u32be(declaredOffset), ...padding, ...Array.from(tiff)];
 
 	ilocItems[ilocItems.length - 1] = { itemId, extentOffset: exifPayloadOffset, extentLength: exifPayload.length };
 	const ilocBytes = buildIlocCustom(shape, ilocItems);
@@ -1181,17 +1182,31 @@ describe('ISOBMFF — box-tree edges', () => {
 		expect(parseExif(bytes)).toBeNull();
 	});
 
-	it('falls back to a bare "Exif\\0\\0" search when the declared offset does not resolve', () => {
+	it('reads the standard zero-offset layout whose field points directly to TIFF', () => {
 		const { bytes: tiff } = fullTiff(false);
-		const bytes = buildHeic(tiff, { badDeclaredOffset: true });
+		const exif = parseExif(buildHeic(tiff));
+		expect(exif).not.toBeNull();
+		expect(exif!.lat).toBeCloseTo(30.269453, 6);
+	});
+
+	it('reads a non-zero offset that points past padding directly to TIFF', () => {
+		const { bytes: tiff } = fullTiff(false);
+		const exif = parseExif(buildHeic(tiff, { exifPrefixBeforeTiff: true }));
+		expect(exif).not.toBeNull();
+		expect(exif!.lng).toBeCloseTo(120.118832, 6);
+	});
+
+	it('falls back to an immediate legacy "Exif\\0\\0" marker when the declared offset does not resolve', () => {
+		const { bytes: tiff } = fullTiff(false);
+		const bytes = buildHeic(tiff, { badDeclaredOffset: true, exifPrefixBeforeTiff: true });
 		const exif = parseExif(bytes);
 		expect(exif).not.toBeNull();
 		expect(exif!.lat).toBeCloseTo(30.269453, 6);
 	});
 
-	it('answers null when neither the declared offset nor the fallback finds "Exif\\0\\0"', () => {
+	it('answers null when a bad declared offset has no immediate legacy marker', () => {
 		const { bytes: tiff } = fullTiff(false);
-		const bytes = buildHeic(tiff, { badDeclaredOffset: true, exifPrefixMissing: true });
+		const bytes = buildHeic(tiff, { badDeclaredOffset: true });
 		expect(parseExif(bytes)).toBeNull();
 	});
 

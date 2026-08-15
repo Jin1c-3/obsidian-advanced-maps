@@ -6,6 +6,7 @@ import {
 	LINE_LAYER,
 	MARKER_LAYER,
 	PHOTO_DOT_LAYER,
+	PHOTO_ICON_PREFIX,
 	PHOTO_ICON_MAX,
 	PHOTO_ICON_PX,
 	PHOTO_LAYER,
@@ -482,6 +483,41 @@ export function cancelPhotoImages(map: MapLibreMap): void {
 	state.queued.clear();
 }
 
+/**
+ * Release photo images when this plugin is permanently detaching from a map.
+ * Unlike `removeTrackLayers`, this is terminal: a subsequent redraw must not
+ * retain GPU images or let active decodes commit into the map.
+ */
+export function disposePhotoImages(map: MapLibreMap): void {
+	const state = photoDecodeStates.get(map);
+	const ownedIds = [...(state?.order.keys() ?? [])];
+	// Delete ownership before any map calls. An active decode that resumes while
+	// image removal is in progress then sees no wanted state and discards itself.
+	state?.wanted.clear();
+	state?.queued.clear();
+	state?.pending.clear();
+	state?.order.clear();
+	photoDecodeStates.delete(map);
+
+	let ids: Iterable<string> = ownedIds;
+	if (typeof map.listImages === 'function') {
+		try {
+			ids = map.listImages().filter((id) => id.startsWith(PHOTO_ICON_PREFIX));
+		} catch {
+			// A half-destroyed native style can reject enumeration; current-module
+			// ownership still lets us release the images we know we registered.
+		}
+	}
+	for (const id of ids) {
+		try {
+			map.removeImage(id);
+		} catch {
+			// Keep disposal best-effort: one missing or style-owned image must not
+			// prevent removing other Advanced Maps thumbnails.
+		}
+	}
+}
+
 /** Select fixed-size, non-overlapping visible icons in O(n); source order breaks ties. */
 export function selectPhotoIconIds(map: MapLibreMap, records: readonly PhotoIconSource[]): Set<string> {
 	const fallback = (): Set<string> => new Set(records.slice(0, PHOTO_ICON_MAX).map((record) => record.id));
@@ -637,6 +673,13 @@ async function decodePhotoIcon(map: MapLibreMap, record: PhotoIconSource): Promi
 		// a fresh, plain `ArrayBuffer`-backed copy that `Blob` accepts.
 		const blob = new Blob([new Uint8Array(thumbnail.bytes)], { type: 'image/jpeg' });
 		const bitmap = await createImageBitmap(blob);
+		// Terminal disposal deletes the map state before image removal. Check before
+		// canvas work as well as before registration, so a late decode is released
+		// immediately and cannot recreate a thumbnail after detach.
+		if (!photoDecodeStates.get(map)?.wanted.has(id)) {
+			bitmap.close();
+			return;
+		}
 		let imageData: ImageData;
 		try {
 			imageData = drawPhotoIcon(bitmap, orientation);

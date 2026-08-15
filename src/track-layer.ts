@@ -32,6 +32,7 @@ import { MapEventBindings } from './map-events';
 import {
 	applyTrackPaint,
 	cancelPhotoImages,
+	disposePhotoImages,
 	drawTracks,
 	ensurePhotoImages,
 	fitTo,
@@ -61,6 +62,7 @@ import type {
 	BasesMapView,
 	LngLat,
 	LngLatBounds,
+	MapLibreMap,
 	MapConfig,
 	MapMarker,
 	MapMouseEvent,
@@ -89,6 +91,12 @@ export interface FocusTarget {
 }
 
 type TrackFeature = Feature<Geometry, TrackFeatureProps>;
+type CameraProvenance = CoordSystem | 'current' | 'adopted';
+
+function recordedCameraSystem(map: MapLibreMap): CoordSystem | null {
+	const value = map.__advancedMapsCameraSystem;
+	return value === 'wgs84' || value === 'gcj02' || value === 'bd09' ? value : null;
+}
 
 /** Probe the undeclared `setSubmenu` on a throwaway menu so the real menu stays untouched. */
 let nestedMenus: boolean | null = null;
@@ -164,12 +172,21 @@ export class TrackLayer {
 	/** The last DOM event `open()` acted on — see there for why one click can
 	 *  arrive twice. */
 	private handledClick: MouseEvent | null = null;
+	/** The sole MapLibre instance this layer has initialized; reset on native destruction. */
+	private createdMap: MapLibreMap | null = null;
+	/** True only until the pre-wrapper native map, if any, is adopted once. */
+	private adoptingInitialMap: boolean;
+	/** Adoption can observe native style loading without taking ownership of it. */
+	private adoptionWatcher: number | null = null;
 
 	constructor(
 		private readonly plugin: AdvancedMapsPlugin,
 		/** Public so the plugin can find the layer that draws inside a given element. */
-		readonly view: BasesMapView
+		readonly view: BasesMapView,
+		/** An adopted native map's pre-existing camera is always vault/WGS-84 space. */
+		adopted = false
 	) {
+		this.adoptingInitialMap = adopted;
 		// Read once, here, rather than consulted on every `file-open`: the setting
 		// is the state a *new* map starts in, so changing it must not reach across
 		// and re-arm a map whose button the reader has since pressed.
@@ -290,13 +307,22 @@ export class TrackLayer {
 		}
 
 		this.wrap(view, 'initializeMap', (orig) => async () => {
-			const fresh = !view.map;
 			await orig.call(view);
-			if (fresh && view.map) this.onMapCreated(view.map);
+			const map = view.map;
+			// Native initialization can finish after detach or after the host replaces
+			// its map. Neither case authorizes plugin work against that instance.
+			if (this.detached || !map || view.map !== map) return;
+			const initialSystem = this.adoptingInitialMap ? 'adopted' : 'current';
+			if (this.onMapCreated(map, initialSystem) && !this.detached && view.map === map) {
+				this.reproject().catch((e) => console.error('Advanced Maps: could not draw tracks', e));
+			}
 		});
 
 		this.wrap(view, 'destroyMap', (orig) => () => {
 			this.syncRevision++;
+			this.stopAdoptionWatcher();
+			this.createdMap = null;
+			this.adoptingInitialMap = false;
 			if (view.map) cancelPhotoImages(view.map);
 			// MapLibre listeners belong to the map, not to the wrapped view methods.
 			// Remove them before the native view tears the map down; on recreation,
@@ -397,8 +423,12 @@ export class TrackLayer {
 		// before a later plugin instance recreates the same layer ids. Async photo
 		// decodes need their own cancellation because the map remains alive.
 		this.mapEvents.clear();
-		if (view.map) cancelPhotoImages(view.map);
+		const map = view.map;
+		if (map) cancelPhotoImages(map);
 		this.removeLayers();
+		// Photo thumbnails are intentionally retained by ordinary refreshes. On
+		// terminal detach, remove them only after every referencing layer is gone.
+		if (map) disposePhotoImages(map);
 		// A native layer, so this one is handed back rather than removed.
 		this.restoreSpread();
 		this.spread = null;
@@ -423,11 +453,18 @@ export class TrackLayer {
 		this.pendingFocus = null;
 		this.pendingPopup = null;
 		this.held = null;
+		this.stopAdoptionWatcher();
+		this.createdMap = null;
 
 		this.plugin.layers.delete(this);
 	}
 
-	onMapCreated(map: NonNullable<BasesMapView['map']>): void {
+	/** Complete layer setup once per map, with explicit camera provenance. */
+	onMapCreated(map: NonNullable<BasesMapView['map']>, initialSystem: CameraProvenance): boolean {
+		if (this.detached || this.createdMap === map) return false;
+		this.stopAdoptionWatcher();
+		this.createdMap = map;
+		this.adoptingInitialMap = false;
 		this.fitControl = new FitControl(() => this.fit(true));
 		map.addControl(this.fitControl, 'top-right');
 		this.followControl = new FollowControl(() => this.toggleFollow());
@@ -436,7 +473,13 @@ export class TrackLayer {
 		// can be told which way it is pointing.
 		this.followControl.setActive(this.following);
 		this.locate ??= guardLocateControl(map, () => this.system());
-		this.appliedSystem = this.system();
+		this.appliedSystem =
+			initialSystem === 'current'
+				? this.system()
+				: initialSystem === 'adopted'
+					? (recordedCameraSystem(map) ?? 'wgs84')
+					: initialSystem;
+		this.realignCamera();
 
 		// A new style is a blank slate: every source and layer is gone. The
 		// built-in view puts its markers back, so put the tracks back too rather
@@ -475,6 +518,29 @@ export class TrackLayer {
 			this.pendingFocus = null;
 			this.focus(pending);
 		}
+		return true;
+	}
+
+	/** Wait sparingly for an already-open view's original native initialization. */
+	watchAdoptedMap(): void {
+		if (!this.adoptingInitialMap || this.detached || this.view.map || this.adoptionWatcher !== null) return;
+		this.adoptionWatcher = window.setInterval(() => {
+			const map = this.view.map;
+			if (this.detached) {
+				this.stopAdoptionWatcher();
+				return;
+			}
+			if (!map) return;
+			if (this.onMapCreated(map, 'adopted') && !this.detached && this.view.map === map) {
+				this.reproject().catch((e) => console.error('Advanced Maps: could not draw tracks', e));
+			}
+		}, 250);
+	}
+
+	private stopAdoptionWatcher(): void {
+		if (this.adoptionWatcher === null) return;
+		window.clearInterval(this.adoptionWatcher);
+		this.adoptionWatcher = null;
 	}
 
 	/* ---- pointing the camera ---- */
@@ -544,13 +610,22 @@ export class TrackLayer {
 		const map = this.view.map;
 		const system = this.system();
 		const previous = this.appliedSystem;
-		this.appliedSystem = system;
-		if (!map || previous === null || previous === system || typeof map.setCenter !== 'function') return;
+		if (!map) {
+			this.appliedSystem = system;
+			return;
+		}
+		if (previous === null || previous === system || typeof map.setCenter !== 'function') {
+			this.appliedSystem = system;
+			map.__advancedMapsCameraSystem = system;
+			return;
+		}
 		const centre = map.getCenter();
 		if (!centre) return;
 		const [lng, lat] = toWgs84(previous, centre.lng, centre.lat);
 		const [tileLng, tileLat] = toTileSpace(system, lng, lat);
 		map.setCenter({ lng: tileLng, lat: tileLat });
+		this.appliedSystem = system;
+		map.__advancedMapsCameraSystem = system;
 	}
 
 	/* ---- config ---- */
@@ -869,9 +944,14 @@ export class TrackLayer {
 		const map = this.view.map;
 		if (!map) return;
 		this.interactionsBound = true;
-		// Bind both photo layers: dot-only photos must remain interactive.
-		for (const layer of [LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER, PHOTO_DOT_LAYER, PHOTO_LAYER]) {
+		const layers = [LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER, PHOTO_DOT_LAYER, PHOTO_LAYER];
+		// MapLibre delegates an overlapping DOM click in registration order. Give
+		// photo features first refusal, then let the original-event guard collapse
+		// thumbnail + fallback-dot delivery to one action.
+		for (const layer of [PHOTO_LAYER, PHOTO_DOT_LAYER, LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER]) {
 			this.mapEvents.onLayer(map, 'click', layer, (ev: MapMouseEvent) => this.open(ev));
+		}
+		for (const layer of layers) {
 			this.mapEvents.onLayer(map, 'mousemove', layer, (ev: MapMouseEvent) => this.hover(ev));
 			this.mapEvents.onLayer(map, 'mouseenter', layer, () => map.getCanvas().addClass('is-over-marker'));
 			this.mapEvents.onLayer(map, 'mouseleave', layer, () => {

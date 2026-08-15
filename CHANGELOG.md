@@ -6,6 +6,30 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.13.2]
+
+### Fixed
+
+- **Maps that were already open when Advanced Maps loaded now adopt the
+  enhancement exactly once.** A native initialization already in flight is
+  observed rather than started again; disabling or closing the view while it
+  finishes cannot install late controls or layers; and a surviving GCJ-02 or
+  BD-09 map is not shifted a second time when the plugin reloads.
+
+- **An inline map that finishes initializing after its embed has gone away is
+  now destroyed.** The late native view can no longer leave a detached WebGL
+  context, listeners or drawing work behind after a note closes.
+
+- **A photo wins a click where its thumbnail and a track overlap.** The photo
+  opens once even when both its thumbnail and fallback dot receive the event,
+  while modifier-click still opens the image file directly. Disabling or
+  reloading the plugin also removes its decoded thumbnail images from a native
+  map that stays alive.
+
+- **HEIC, HEIF and AVIF photos now follow the standard Exif item offset.** The
+  offset points directly to the TIFF header, including when padding makes it
+  non-zero; the bounded legacy `Exif\0\0` layout remains supported.
+
 ## [1.13.1]
 
 ### Fixed
@@ -488,7 +512,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.1...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.2...HEAD
+[1.13.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.1...1.13.2
 [1.13.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.0...1.13.1
 [1.13.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.2...1.13.0
 [1.12.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.1...1.12.2

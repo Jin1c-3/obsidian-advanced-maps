@@ -5,6 +5,7 @@ import {
 	ENDPOINT_LAYER,
 	LINE_LAYER,
 	PHOTO_DOT_LAYER,
+	PHOTO_ICON_PREFIX,
 	PHOTO_ICON_MAX,
 	PHOTO_LAYER,
 	POINT_LAYER,
@@ -12,6 +13,7 @@ import {
 } from '../src/constants';
 import {
 	cancelPhotoImages,
+	disposePhotoImages,
 	drawTracks,
 	ensurePhotoImages,
 	PHOTO_DECODE_CONCURRENCY,
@@ -181,5 +183,62 @@ describe('photo icon bounds', () => {
 		await Promise.resolve();
 		expect(addImage).not.toHaveBeenCalled();
 		expect(decode).toHaveBeenCalledTimes(PHOTO_DECODE_CONCURRENCY);
+	});
+
+	it('removes every registered Advanced Maps image when MapLibre can enumerate them', () => {
+		const own = `${PHOTO_ICON_PREFIX}one`;
+		const removed = vi.fn();
+		const map = {
+			listImages: () => [own, `${PHOTO_ICON_PREFIX}two`, 'native-marker'],
+			removeImage: removed,
+		} as unknown as MapLibreMap;
+
+		disposePhotoImages(map);
+
+		expect(removed).toHaveBeenCalledTimes(2);
+		expect(removed).toHaveBeenCalledWith(own);
+		expect(removed).toHaveBeenCalledWith(`${PHOTO_ICON_PREFIX}two`);
+		expect(removed).not.toHaveBeenCalledWith('native-marker');
+	});
+
+	it('falls back to current decode-state ownership when image enumeration is unavailable', () => {
+		const record = { ...photos(1)[0], id: `${PHOTO_ICON_PREFIX}known` };
+		const removed = vi.fn();
+		const map = {
+			getStyle: () => ({}),
+			hasImage: (id: string) => id === record.id,
+			removeImage: removed,
+		} as unknown as MapLibreMap;
+
+		ensurePhotoImages(map, [record]);
+		disposePhotoImages(map);
+
+		expect(removed).toHaveBeenCalledWith(record.id);
+	});
+
+	it('does not let an active decode re-add an image after terminal disposal', async () => {
+		let resolve!: (bitmap: ImageBitmap) => void;
+		vi.stubGlobal(
+			'createImageBitmap',
+			() =>
+				new Promise<ImageBitmap>((done) => {
+					resolve = done;
+				})
+		);
+		vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const addImage = vi.fn();
+		const map = {
+			getStyle: () => ({}),
+			hasImage: () => false,
+			addImage,
+			removeImage: () => undefined,
+		} as unknown as MapLibreMap;
+
+		ensurePhotoImages(map, photos(1));
+		disposePhotoImages(map);
+		resolve({ close: () => undefined, width: 1, height: 1 });
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(addImage).not.toHaveBeenCalled();
 	});
 });

@@ -280,6 +280,9 @@ export interface MapMouseEvent {
 }
 
 export interface MapLibreMap {
+	/** Advanced Maps-owned camera provenance retained when this native map
+	 * outlives one plugin instance and is adopted by the next. */
+	__advancedMapsCameraSystem?: 'wgs84' | 'gcj02' | 'bd09';
 	style?: { _loaded?: boolean };
 	scrollZoom: { disable(): void; enable(): void };
 	isStyleLoaded?(): boolean;
@@ -311,6 +314,9 @@ export interface MapLibreMap {
 	addImage(id: string, image: ImageData, options?: { pixelRatio?: number }): void;
 	/** Throws if a layer still references the id — remove the layer first. */
 	removeImage(id: string): void;
+	/** Public MapLibre GL JS `Map#listImages`; optional because Obsidian owns the
+	 * runtime MapLibre version and this plugin must stand down on shape changes. */
+	listImages?(): string[];
 	addControl(control: MapControl, position?: string): void;
 	removeControl(control: MapControl): void;
 	on(type: string, listener: (ev: any) => void): void;
