@@ -47,5 +47,5 @@
 - [x] 7.1 Review the TypeScript diff with whitespace-insensitive and word-level views, confirming executable statements, declarations, settings, dependencies, and persisted-data behavior are unchanged or separately justified.
 - [x] 7.2 Run formatting, type-aware lint, typecheck, coverage tests, production build, and bundle smoke loading via `npm run check` and the repository's production build path; record the results in the pull request.
 - [x] 7.3 Run strict OpenSpec validation again and search for `/mnt/c/`, obsolete reload-trap language, and source `CLAUDE.md` references, excluding dependency and Git history directories.
-- [ ] 7.4 Push the short-lived branch, open a focused pull request using the updated template, and confirm the required CI check succeeds under the new protection rules.
+- [x] 7.4 Push the short-lived branch, open a focused pull request using the updated template, and confirm the required CI check succeeds under the new protection rules.
 - [ ] 7.5 Squash-merge the pull request into `main` and verify the source branch is deleted; leave release tagging to the existing release process and archive the OpenSpec change only through the separate archive workflow.
