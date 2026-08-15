@@ -164,6 +164,11 @@ export class TrackLayer {
 	/** The last DOM event `open()` acted on — see there for why one click can
 	 *  arrive twice. */
 	private handledClick: MouseEvent | null = null;
+	/** The same, for the pointer samples `hover()` acts on. */
+	private handledHover: MouseEvent | null = null;
+	/** Which drawn feature the native popup is currently describing, so pointing
+	 *  at it again costs nothing. Null whenever that is no longer known. */
+	private shownPopup: string | null = null;
 	/** The sole MapLibre instance this layer has initialized; reset on native destruction. */
 	private createdMap: MapLibreMap | null = null;
 	/** True only until the pre-wrapper native map, if any, is adopted once. */
@@ -324,6 +329,8 @@ export class TrackLayer {
 			this.followControl = null;
 			this.interactionsBound = false;
 			this.handledClick = null;
+			this.handledHover = null;
+			this.shownPopup = null;
 			this.userMoved = false;
 			this.data = null;
 			this.photoIcons = [];
@@ -442,6 +449,8 @@ export class TrackLayer {
 		this.locate = null;
 		this.interactionsBound = false;
 		this.handledClick = null;
+		this.handledHover = null;
+		this.shownPopup = null;
 		this.pendingFocus = null;
 		this.pendingPopup = null;
 		this.held = null;
@@ -553,7 +562,14 @@ export class TrackLayer {
 		});
 	}
 
-	/** Restore the editor only for programmatic follows; native hover popups retain normal focus behavior. */
+	/**
+	 * Restore the editor only for programmatic follows; native hover popups
+	 * retain normal focus behavior. A follow moves the map without the reader
+	 * having asked to leave the note they are typing in, which is why only that
+	 * path puts focus back. Pointing at something is the reader's own doing, and
+	 * the native marker hover does not restore focus either — hover() raises the
+	 * popup once per pointed feature, the same rate the native path produces.
+	 */
 	private restoreFocus(target: FocusTarget, run: () => void): void {
 		const doc = this.view.containerEl?.doc ?? activeDocument;
 		const before = target.keepFocus ? doc.activeElement : null;
@@ -866,6 +882,10 @@ export class TrackLayer {
 		// its BasesEntry objects on every update and warns against holding the old
 		// ones, and hover() reads an entry straight out of this list.
 		this.items = items;
+		// hover()'s memory of the shown popup indexes into the list just replaced,
+		// so it means nothing now. Forgetting costs one redundant rebuild; keeping
+		// it would silently withhold a popup the reader asked for.
+		this.shownPopup = null;
 
 		const system = this.system();
 		this.data = this.build(items, system);
@@ -948,11 +968,13 @@ export class TrackLayer {
 		const map = this.view.map;
 		if (!map) return;
 		this.interactionsBound = true;
-		const layers = [LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER, PHOTO_DOT_LAYER, PHOTO_LAYER];
-		// MapLibre delegates an overlapping DOM click in registration order. Give
-		// photo features first refusal, then let the original-event guard collapse
-		// thumbnail + fallback-dot delivery to one action.
-		for (const layer of [PHOTO_LAYER, PHOTO_DOT_LAYER, LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER]) {
+		// MapLibre delegates an overlapping DOM event in registration order, and
+		// both `open()` and `hover()` act on the first delivery only — so this
+		// order decides which of two stacked features wins, and clicking and
+		// pointing must not disagree about that. Photo features first, then let
+		// the original-event guards collapse thumbnail + fallback-dot delivery.
+		const layers = [PHOTO_LAYER, PHOTO_DOT_LAYER, LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER];
+		for (const layer of layers) {
 			this.mapEvents.onLayer(map, 'click', layer, (ev: MapMouseEvent) => this.open(ev));
 		}
 		for (const layer of layers) {
@@ -961,6 +983,9 @@ export class TrackLayer {
 			this.mapEvents.onLayer(map, 'mouseleave', layer, () => {
 				map.getCanvas().removeClass('is-over-marker');
 				this.view.popupManager.hidePopup();
+				// The popup this was describing is on its way out, so coming back
+				// to the same feature has to raise it again.
+				this.shownPopup = null;
 			});
 		}
 	}
@@ -1012,15 +1037,43 @@ export class TrackLayer {
 		else void this.view.app.workspace.openLinkText(path, '', mod);
 	}
 
-	/** Reuse the built-in popup, so a track hover reads like its marker hover. */
+	/**
+	 * Reuse the built-in popup, so a track hover reads like its marker hover.
+	 *
+	 * This runs on `mousemove` rather than `mouseenter`, because six overlapping
+	 * layers mean `mouseenter` never fires when the pointer crosses between two
+	 * features of the same layer. That makes it the caller's job not to rebuild
+	 * a popup that is already correct: the native `showPopup` ends in
+	 * `addTo(map)`, which re-inserts the shared popup and re-lays it out — ~3.7ms
+	 * measured, ~90% of a pointer sample's whole cost. So one DOM event is acted
+	 * on once, and an unchanged feature is not acted on at all.
+	 */
 	private hover(ev: MapMouseEvent): void {
 		const item = this.itemFrom(ev);
 		const view = this.view;
 		if (!item || !view.data || !view.data.properties || !view.mapConfig || !view.config) return;
+		if (ev.originalEvent) {
+			if (this.handledHover === ev.originalEvent) return;
+			this.handledHover = ev.originalEvent;
+		}
+		// Two photos of one note are different popups; a thumbnail and the dot
+		// beneath it are the same one. Index, role and path say exactly that, and
+		// a space separates them unambiguously because only the trailing path can
+		// contain one.
+		const props = ev.features?.[0]?.properties;
+		const index = props && typeof props.amIndex === 'number' ? props.amIndex : -1;
+		const role = props && typeof props.amRole === 'string' ? props.amRole : '';
+		const path = props && typeof props.amPath === 'string' ? props.amPath : '';
+		const key = `${index} ${role} ${path}`;
+		if (key === this.shownPopup) return;
+		this.shownPopup = key;
 		const config = view.config;
-		// Under the cursor is where this one belongs, and the cursor is already in
-		// tile space — so go straight to the native method, past the wrapper that
-		// exists to move the pins' own WGS-84 anchors.
+		// Where the pointer entered this feature is where the popup stays, since
+		// only a changed feature reaches here — the same as a native marker
+		// popup, which opens on the marker's own coordinate and does not follow
+		// the cursor. The cursor is already in tile space, so go straight to the
+		// native method, past the wrapper that exists to move the pins' own
+		// WGS-84 anchors.
 		const show = (this.origShowPopup ?? view.popupManager.showPopup).bind(view.popupManager);
 		show(
 			item.entry,
