@@ -170,6 +170,21 @@ export interface MarkerManager {
 	createGeoJSONFeatures(markers: MapMarker[]): MarkerFeature[];
 	getCustomColor(entry: BasesEntry, config: MapConfig | undefined): string | null | undefined;
 	resolveColor(color: string): string;
+	/**
+	 * Null before the manager has ever run, and thereafter the bounds of the last
+	 * marker set — **including an empty `LngLatBounds` when that set was empty**.
+	 * `updateMarkers` assigns `this.bounds = new LngLatBounds()` before extending
+	 * it (obsidian-maps/src/map/markers.ts), so "not null" does not mean "has a
+	 * marker in it".
+	 *
+	 * That distinction is load-bearing: the native `map.on('load')` handler reads
+	 * `if (bounds) this.map.setCenter(bounds.getCenter())`
+	 * (obsidian-maps/src/map-view.ts), which is a presence check where it means a
+	 * content check. On an empty bounds it leaves the map transform's centre
+	 * undefined and every later render throws `reading 'lng'`. Reproduced on a
+	 * 12,487-result base where the query outlives the style load; not reachable at
+	 * ~1,000 results. See the wrapper in track-layer.ts `attach()`.
+	 */
 	getBounds(): LngLatBounds | null;
 	getMarkerDrivenProps(config: MapConfig | undefined): unknown;
 	/**

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TFile } from 'obsidian';
+import { READ_CONCURRENCY } from '../src/constants';
 import { TrackEmbed } from '../src/embed';
 import type AdvancedMapsPlugin from '../src/main';
 import type { BasesMapView, MapLibreMap } from '../src/types/obsidian-internals';
@@ -199,5 +200,106 @@ describe('TrackEmbed deferred initialization', () => {
 		expect(Reflect.get(embed, 'resizeObserver')).toBeNull();
 		expect(Reflect.get(embed, 'interactionsBound')).toBe(false);
 		expect(container.querySelector('.advanced-maps-panel')).toBeNull();
+	});
+});
+
+describe('TrackEmbed bounded companion reads', () => {
+	/** An embed whose host note carries `count` photos, each read gated. */
+	function albumEmbed(count: number) {
+		const { map } = mapStub();
+		const container = document.createElement('div');
+		const rootEl = document.createElement('div');
+		container.append(rootEl);
+		const track = Object.assign(new TFile(), { name: 'route.gpx', path: 'route.gpx', extension: 'gpx' });
+		track.stat = { mtime: 1, ctime: 1, size: 10 };
+		const host = Object.assign(new TFile(), { name: 'trip.md', path: 'notes/trip.md', extension: 'md' });
+		const photos = Array.from({ length: count }, (_, i) => {
+			const photo = Object.assign(new TFile(), {
+				name: `p-${i}.jpg`,
+				path: `photos/p-${i}.jpg`,
+				extension: 'jpg',
+			});
+			photo.stat = { mtime: 1, ctime: 1, size: 10 };
+			return photo;
+		});
+
+		const trackRec = { mtime: 1, features: [] };
+		const started: string[] = [];
+		const gates: Array<() => void> = [];
+		const plugin = {
+			settings: {
+				coordSystem: 'wgs84',
+				photoDatum: 'wgs84',
+				showPhotos: true,
+				trackColor: '#ff0000',
+				trackWeight: 4,
+				trackOpacity: 100,
+				trackMarkers: true,
+				photoThumbnails: true,
+				fitMaxZoom: 16,
+				embedHeight: 300,
+				trackStats: false,
+				elevationProfile: false,
+			},
+			app: { vault: { getFileByPath: () => host } },
+			embeds: new Set(),
+			resolveTracks: () => photos,
+			tracks: {
+				load: vi.fn((file: TFile) => {
+					if (file.extension !== 'jpg') return Promise.resolve(trackRec);
+					started.push(file.path);
+					return new Promise((resolve) => gates.push(() => resolve({ mtime: 1, features: [] })));
+				}),
+			},
+		} as unknown as AdvancedMapsPlugin;
+		const view = {
+			map,
+			mapConfig: {},
+			markerManager: { resolveColor: (color: string) => color },
+		} as unknown as BasesMapView;
+		const embed = new TrackEmbed(container, plugin, track, 'notes/trip.md');
+		Reflect.set(embed, 'rootEl', rootEl);
+		Reflect.set(embed, 'view', view);
+		Reflect.set(embed, 'map', map);
+		Reflect.set(embed, 'rec', trackRec);
+		return {
+			embed,
+			started,
+			photos,
+			releaseAll: () => {
+				for (const release of gates.splice(0)) release();
+			},
+			async drain() {
+				for (let round = 0; round < 500; round++) {
+					for (const release of gates.splice(0)) release();
+					await new Promise((resolve) => window.setTimeout(resolve, 0));
+					if (gates.length === 0) return;
+				}
+			},
+		};
+	}
+
+	it('reads a large album under the limit without dropping a photo', async () => {
+		const album = albumEmbed(READ_CONCURRENCY * 3);
+		const running = album.embed.refresh();
+		expect(album.started).toHaveLength(READ_CONCURRENCY);
+
+		await album.drain();
+		await running;
+		expect(album.started).toHaveLength(album.photos.length);
+		expect(new Set(album.started).size).toBe(album.photos.length);
+	});
+
+	it('stops starting companion reads once the embed is torn down', async () => {
+		const album = albumEmbed(64);
+		const running = album.embed.refresh();
+		const firstWindow = album.started.length;
+
+		album.embed.onunload();
+		album.releaseAll();
+		await running;
+
+		expect(album.started.length).toBe(firstWindow);
+		expect(album.started.length).toBeLessThan(album.photos.length);
 	});
 });
