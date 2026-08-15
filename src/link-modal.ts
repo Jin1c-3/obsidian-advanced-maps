@@ -1,16 +1,4 @@
-/*
- * "Set coordinates from a link".
- *
- * The reader is in geolink.ts and is pure; this is only the box you paste into.
- * Two things it is careful about:
- *
- * - It shows the WGS-84 result *before* anything is written, because a datum
- *   mistake is invisible afterwards — the note looks fine and the pin is in the
- *   next province.
- * - The detected datum is a dropdown, not a verdict. Bare numbers carry no clue
- *   about which system they came from, and a proxied or reformatted link can
- *   lose the host that would have said.
- */
+/* Review a parsed map link and optional datum override before writing WGS-84. */
 
 import { Modal, Notice, Setting } from 'obsidian';
 import type { App } from 'obsidian';

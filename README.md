@@ -359,9 +359,8 @@ npm run check             # prettier, eslint, tsc, vitest — the same set CI ru
 vault with **Bases** on and the first-party **Maps** plugin installed.
 
 - [ROADMAP.md](ROADMAP.md) — what might come next, and what deliberately will not.
-- [CLAUDE.md](CLAUDE.md) — architecture, the internals this leans on, and the
-  non-obvious things not to undo.
-- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, tests, house rules, translations.
+- [CLAUDE.md](CLAUDE.md) — technical entry point, coding rules, and capability specs.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, branch/PR workflow, tests, and releases.
 
 New language: one object in `src/i18n.ts` plus one line in `LOCALES`. English is
 the source of truth and its keys are the type, so a missing entry is a compile

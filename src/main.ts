@@ -1,25 +1,4 @@
-/*
- * Advanced Maps — extends Obsidian's built-in Maps view instead of replacing it.
- *
- * The built-in plugin already does markers, icons, colours, tiles and popups
- * well, so this plugin only adds what it is missing:
- *
- *   · GPX / GeoJSON tracks, resolved from each note's embeds and drawn in that
- *     note's colour
- *   · a zoom-to-fit control, and auto-framing that includes the tracks
- *   · GCJ-02 / BD-09 alignment for Chinese tile providers
- *   · inline maps for ![[track.gpx]] embeds
- *   · "open in map" on a note's ⋮ menu, and a sidebar map that follows the note
- *     being edited — both of them one camera move over the reader's own base
- *   · filling a note's blank coordinate property from the device's location,
- *     on the desktop as well as on mobile
- *
- * It works by wrapping the "map" entry in Bases' view registry: the factory is
- * replaced with one that builds the native view and then attaches a TrackLayer
- * to the instance, and the options callback gets an extra group appended. The
- * native class itself is never subclassed or edited, so an Obsidian update to
- * Maps lands here untouched.
- */
+/* Plugin orchestration: wrap the native Maps registration and coordinate features. */
 
 import {
 	FileView,
@@ -117,12 +96,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 			})
 		);
 
-		// A parsed track is held by path, so a file that goes away — or moves —
-		// would otherwise sit in the cache for the rest of the session holding its
-		// geometry and every projection of it. These also drop the embed memo,
-		// because which file a `![[track.gpx]]` resolves to can change without the
-		// *note* being touched at all: creating the attachment a note already
-		// links to is exactly that case.
+		// File lifecycle invalidates parsed data and note-link resolution memos.
 		this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => this.forgetTrack(file.path)));
 		// The old path is the one the cache is keyed under; the new one cannot be
 		// stale yet.
@@ -135,18 +109,13 @@ export default class AdvancedMapsPlugin extends Plugin {
 			})
 		);
 
-		// Maps re-registers its view whenever it reloads, which drops our wrapper
-		// on the floor. The check is a property lookup, so run it whenever the
-		// workspace settles.
+		// Maps may replace its registration; idempotently re-adopt after layout changes.
 		this.registerEvent(this.app.workspace.on('layout-change', () => this.patchMapsView()));
 	}
 
 	override onunload(): void {
 		this.unpatchMapsView();
-		// Each live embed holds its own MapLibre map, and so its own WebGL context,
-		// of which a browser will keep only about sixteen alive at once. Without
-		// this they survive until their note is closed — so the documented
-		// hot-reload loop, or any update, leaks one per embed still on screen.
+		// Explicitly release each embed's MapLibre/WebGL resources.
 		for (const embed of [...this.embeds]) embed.unload();
 		const registry = this.app.embedRegistry;
 		if (registry && this.ownedExtensions.length > 0) {
@@ -227,11 +196,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		}
 	}
 
-	/**
-	 * Enabling the plugin — or Maps reloading — leaves already-open map views
-	 * behind, since they never pass through the patched factory. Walk the
-	 * component tree and pick them up, so nobody has to reopen a tab.
-	 */
+	/** Adopt already-open native map views that did not pass through the wrapped factory. */
 	private adoptOpenViews(): void {
 		const seen = new Set<object>();
 		const visit = (node: unknown): void => {
@@ -277,12 +242,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 	}
 
 	refreshTracks(): void {
-		// showPhotos is read inside resolveTracks() itself, but resolveTracks()'s
-		// answer is memoised per note against its CachedMetadata object — which a
-		// settings change does not touch. Left in place, flipping "Show photos"
-		// would keep drawing (or omitting) every photo exactly as before until the
-		// vault next changed under each note, which is the same trap the memo
-		// avoids for a track file's own edits, just from the settings side instead.
+		// `showPhotos` changes link eligibility without replacing CachedMetadata.
 		this.trackLinks = new WeakMap();
 		for (const layer of this.layers) {
 			layer.sync().catch((e) => console.error('Advanced Maps: could not redraw tracks', e));
@@ -317,28 +277,8 @@ export default class AdvancedMapsPlugin extends Plugin {
 	}
 
 	/**
-	 * The track and photo files a note points at — or the file itself, so a
-	 * base that queries `file.ext == "gpx"` (or `"jpg"`) works too.
-	 *
-	 * Reading the metadata cache rather than the query result means the base's
-	 * own filters keep working untouched: no need to widen a filter just to let
-	 * attachments into the result set.
-	 *
-	 * **All three ways of pointing at a file count**, not only `![[x.gpx]]`:
-	 * a plain `[[x.gpx]]` in the body, and a `[[x.gpx]]` inside a property, do
-	 * too. That is what lets the two halves of this plugin be asked for
-	 * separately, which they could not be while an embed was the only way in:
-	 * `!` is Obsidian's own mark for "render it here", so `![[x.gpx]]` means an
-	 * inline map in the note *and* the line on every base map, while `[[x.gpx]]`
-	 * means the line on the base map and nothing rendered in the note. The
-	 * reported symptom of having no way to say the second one was two maps in
-	 * one note, one of them unwanted (issue #6).
-	 *
-	 * A photo — `PHOTO_EXTS`, gated on `settings.showPhotos` — is resolved the
-	 * same way and through the exact same three lists, on the same reasoning:
-	 * an EXIF coordinate belongs to the note that carries the photo, the same
-	 * way a track's geometry does, and the reader who links a photo without
-	 * embedding it presumably wants it on the map and not duplicated inline.
+	 * Resolve direct result files plus embeds, body links, and frontmatter links.
+	 * Metadata-cache discovery leaves the base query unchanged; TFile identity deduplicates.
 	 */
 	resolveTracks(file: TFile): TFile[] {
 		if (this.isTrackFile(file.extension)) return [file];
@@ -346,14 +286,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		const cache = this.app.metadataCache.getFileCache(file);
 		if (!cache) return [];
 
-		// Keyed on the cache object rather than the path, so it invalidates itself:
-		// re-indexing a note hands back a *new* CachedMetadata, which is a miss.
-		// Worth the memo because this is per row of the base and Bases replaces its
-		// result set on any vault change — several hundred link resolutions per
-		// redraw, to recompute an answer that only moves when a note does. It says
-		// nothing about `showPhotos`, which is why toggling that setting goes
-		// through `refreshTracks()` dropping the whole memo rather than through
-		// this function noticing the setting changed.
+		// Cache-object identity invalidates naturally when Obsidian re-indexes the note.
 		const memo = this.trackLinks.get(cache);
 		if (memo) return memo;
 
@@ -379,12 +312,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.ownedExtensions = [...TRACK_EXTS].filter((ext) => !registry.isExtensionRegistered(ext));
 		if (this.ownedExtensions.length === 0) return;
 		registry.registerExtensions(this.ownedExtensions, (context, file) => {
-			// `sourcePath` is the note the embed sits in, which is what lets an
-			// inline map draw that note's photos beside its track. Obsidian passes
-			// it — measured, by wrapping the registered creator on a running app:
-			// the context is `{app, linktext, sourcePath, containerEl, displayMode,
-			// showInline, depth}`. Read defensively anyway, since it is one of the
-			// keys `EmbedContext` declares as unknown rather than promised.
+			// `sourcePath` identifies the host note for companion-photo resolution.
 			const source = typeof context.sourcePath === 'string' ? context.sourcePath : '';
 			const embed = new TrackEmbed(context.containerEl, this, file, source);
 			this.embeds.add(embed);
@@ -488,16 +416,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		return { base, view, file: baseFile };
 	}
 
-	/**
-	 * Open the base's map on this note.
-	 *
-	 * Neither half of this writes anything. The base is *referenced* — opened as
-	 * itself in a leaf, or embedded in the pop-up — rather than copied with a
-	 * `center` spliced into it, which is what the first version of this did and
-	 * what froze every pop-up at the base as it stood when the map was written.
-	 * Where the note is, is a camera position, and a camera position belongs to
-	 * the camera.
-	 */
+	/** Open the configured base and move its camera without rewriting the base. */
 	private async openMapForFile(file: TFile): Promise<void> {
 		const found = this.readCoords(file);
 		if (!found) {
@@ -559,20 +478,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.focusIn(modal.contentEl, target);
 	}
 
-	/**
-	 * The base file itself, in a leaf — its toolbar, its other views, and the one
-	 * thing neither the pop-up nor an embed has: a config that writes back to disk
-	 * when the reader changes something on the map.
-	 *
-	 * A leaf already showing that base is reused rather than added to. Pressing
-	 * this on one note after another is then a single map that keeps moving, which
-	 * is exactly what "follow the active note" does without being asked.
-	 */
+	/** Open or reuse a leaf for the base, preserving its writable native config. */
 	private async openMapLeaf(loaded: { view: BaseView; file: TFile }, target: FocusTarget): Promise<void> {
 		const leaf = this.baseLeaf(loaded.file) ?? this.app.workspace.getLeaf('tab');
-		// The view name goes through the leaf's state, which is how Bases itself
-		// records which view a tab is on — read off a running Obsidian rather than
-		// guessed: `{ type: 'bases', state: { file, viewName } }`.
+		// Bases selects a view through leaf state.
 		const state = loaded.view.name ? { viewName: loaded.view.name } : undefined;
 		await leaf.openFile(loaded.file, { active: true, state });
 		await this.app.workspace.revealLeaf(leaf);
@@ -600,16 +509,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		});
 	}
 
-	/**
-	 * Point whatever map is inside `container` at a place, however soon it turns
-	 * up.
-	 *
-	 * A base opened in a leaf already has its TrackLayer by the time `openFile`
-	 * resolves — measured — and `focus()` covers its map arriving a beat after
-	 * that. An embedded base is the one that has to be waited for: it is built
-	 * when the embed loads and there is no promise to await for it. So this asks
-	 * again, for as long as the container is on screen and no longer.
-	 */
+	/** Retry briefly for a lazily-created map inside the supplied container. */
 	focusIn(container: HTMLElement, target: FocusTarget): void {
 		let tries = 0;
 		const timer = window.setInterval(() => {
@@ -623,26 +523,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.registerInterval(timer);
 	}
 
-	/**
-	 * The maps that follow, keeping up with the note being edited.
-	 *
-	 * **The camera moves, never the query.** The filter belongs to Bases and to
-	 * whoever wrote the base; rewriting it to name one note — which is how the
-	 * other map plugin does this — takes the wheel off them. The zoom is left
-	 * alone too: no `zoom` on the target, so MapLibre keeps whatever the reader
-	 * chose. "Open in map" passes `openZoom` because that is a jump to a subject
-	 * rather than a look around one.
-	 *
-	 * **Which** maps follow is each map's own button and nothing else. This asked
-	 * `leaf.getRoot() !== workspace.rootSplit` for two versions — sidebar only, on
-	 * the grounds that a map in the main area is something being read or arranged
-	 * rather than something watching. That reasoning holds for a map sharing a tab
-	 * group with the note, which is hidden the moment the note opens, and gets the
-	 * case people actually asked about exactly backwards: a note in one tab group
-	 * and a map in the next one over is the follow layout, and it lives entirely
-	 * in the main area. No rule about where a map sits distinguishes the two —
-	 * only the reader does, which is what the button is.
-	 */
+	/** Move each opted-in map camera to the active note without changing query or zoom. */
 	private followActiveNote(file: TAbstractFile | null): void {
 		const target = this.noteTarget(file);
 		if (!target) return;
@@ -654,25 +535,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		for (const layer of this.layers) if (layer.isFollowing()) layer.focus(target);
 	}
 
-	/**
-	 * One map has just been asked to start following. Called by the button rather
-	 * than calling it, so that turning following on lands the camera at once
-	 * instead of at the next `file-open`.
-	 *
-	 * **This is the second writer of `followPane`, and it has to be.** The button
-	 * is the ordinary way into following — `followActiveNote` defaults to false —
-	 * so a map followed this way and never any other reaches `followTarget` with
-	 * `followPane` still null, which hands a pin click back to the native
-	 * "open in the active leaf": the map's own, because clicking a map is what
-	 * makes it active. That is the "a click on a pin ate the map" failure, and it
-	 * survived the fix on exactly this path.
-	 *
-	 * It cannot record the same thing `followActiveNote` does. There, a
-	 * `file-open` has just made the note's pane the most recent one; here the
-	 * reader's last click was on the map, so `getMostRecentLeaf()` may well answer
-	 * the map itself — which `followTarget` then rejects, leaving following on and
-	 * the click unprotected. So the pane is looked up from the note instead.
-	 */
+	/** Start following immediately and remember the note pane so pin clicks do not replace the map. */
 	followNow(layer: TrackLayer): void {
 		const target = this.noteTarget(this.app.workspace.getActiveFile());
 		if (!target) return;
@@ -682,14 +545,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		layer.focus(target);
 	}
 
-	/**
-	 * A pane showing this note that is not the one `layer` is drawn in.
-	 *
-	 * The exclusion is the point: the note is usually open in the active leaf, and
-	 * on an *embedded* base that leaf is the very note the map is inside — opening
-	 * into it would be the same self-replacement `followTarget` exists to prevent,
-	 * arrived at from the other direction.
-	 */
+	/** Find a pane showing the note, excluding the pane that contains this map. */
 	private noteLeaf(file: TFile | undefined, layer: TrackLayer): WorkspaceLeaf | null {
 		if (!file) return null;
 		const own = layer.view.containerEl;
@@ -707,21 +563,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		return found;
 	}
 
-	/**
-	 * Where a click on a **following** map should open a note: the pane that map
-	 * is following, which is the pane the last followed note opened in.
-	 *
-	 * The native view opens a marker's note with `openLinkText(path, '', false)`,
-	 * which lands in the active leaf — and clicking a map is what makes that leaf
-	 * the map's own. So a following map answers a click by replacing itself with
-	 * the note it was pointing at, which is the one thing a viewfinder must not
-	 * do. Measured: with the map's leaf active, both `getMostRecentLeaf()` and
-	 * `getLeaf(false)` answer the map's leaf, so there is no built-in "the other
-	 * pane" to ask for — it has to be remembered from when it was the active one.
-	 *
-	 * Null gives the caller the native behaviour back, which is the right answer
-	 * for a map nobody has followed anything with yet.
-	 */
+	/** Return the remembered non-map pane for clicks on a following map, or native fallback. */
 	followTarget(layer: TrackLayer): WorkspaceLeaf | null {
 		const leaf = this.followPane;
 		if (!leaf || !leaf.view) return null;
@@ -751,22 +593,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		return this.settings.aroundViewName || t('view.around');
 	}
 
-	/**
-	 * Writes one line — an embed of a view in the configured base, filtered to
-	 * the notes this note links to, the notes that link to it, and itself. The
-	 * view is added to the base file the first time and referenced afterwards, so
-	 * a later change to the base reaches every note that embeds it.
-	 *
-	 * After that the plugin is out of the loop entirely: adding a place is
-	 * dragging a note into the body, which is Obsidian's own behaviour, and the
-	 * map follows because Bases re-runs the filter.
-	 *
-	 * Deliberately not on the file menu. It writes at the cursor, and `file-menu`
-	 * fires from the explorer and from tab headers, neither of which has one.
-	 * `editor-menu` is the entry point that does — a right-click inside the
-	 * editor is exactly a cursor at a particular spot — so the command sits on
-	 * the command palette and there.
-	 */
+	/** Register the cursor-dependent Around-map insertion command and editor item. */
 	private registerInsertMap(): void {
 		this.addCommand({
 			id: 'insert-linked-map',
@@ -961,13 +788,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		});
 	}
 
-	/**
-	 * The place property, written the same deliberate way `writeCoords` writes
-	 * the coordinate one — kept as its own small method rather than folded into a
-	 * generalized `write(file, property, value)`, because `writeCoords`'s own
-	 * comment calls itself "the one place a coordinate reaches disk from a
-	 * deliberate command", and a place name is not a coordinate.
-	 */
+	/** Write the configured place property through Obsidian's frontmatter API. */
 	private async writePlace(file: TFile, name: string): Promise<void> {
 		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
 			frontmatter[this.settings.placeProperty] = name;
@@ -1035,15 +856,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	/* ---- coordinates from a photo ---- */
 
-	/**
-	 * The photo files a note points at, through the same three-list scan
-	 * `resolveTracks` uses — but never gated on `settings.showPhotos`, and never
-	 * memoised. Filling a note's coordinate from a photo is a distinct ask from
-	 * drawing that photo on the map: a reader with photo thumbnails turned off
-	 * should still be able to pull a coordinate out of one, and this only runs
-	 * once per command invocation rather than once per redraw, so there is
-	 * nothing here worth caching the way the display path is.
-	 */
+	/** Resolve referenced photos for an explicit command, independent of display settings. */
 	private resolvePhotos(file: TFile): TFile[] {
 		const cache = this.app.metadataCache.getFileCache(file);
 		if (!cache) return [];
@@ -1055,12 +868,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		return out;
 	}
 
-	/**
-	 * Deliberately not behind **Enable location**, for the same reason the
-	 * link-paste command is not: it raises no permission prompt and records
-	 * nothing about where this device is. The coordinate it fills in came from
-	 * the photo's own EXIF tags, not from asking the device anything.
-	 */
+	/** EXIF is local file data, so this command is independent of device-location permission. */
 	private registerFillFromPhoto(): void {
 		this.addCommand({
 			id: 'fill-coords-from-photo',
@@ -1075,22 +883,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		});
 	}
 
-	/**
-	 * The first of the note's own photos that carries a usable GPS tag wins —
-	 * read in the same order `resolvePhotos` answers them, which is the order
-	 * they appear in the note. Goes through `TrackCache.load()` rather than
-	 * `exif.ts` directly, so this reads a photo's coordinate through the exact
-	 * same head-read, EXIF parse and datum conversion the map's own album uses,
-	 * with nothing duplicated: `photoWgs84` inside `loadPhoto` is what already
-	 * turns the tags into the WGS-84 point sitting on `rec.features[0]`.
-	 *
-	 * `TrackCache.load()` never throws — a read failure lands on `rec.error`
-	 * and an empty `features`, the same "not a failure, just nothing found"
-	 * shape a photo with no GPS tags gets. The two are told apart here only to
-	 * choose which notice to show once every photo has been tried: a read that
-	 * actually failed is worth saying so about, but only if no other photo in
-	 * the note answered.
-	 */
+	/** Use the first usable referenced photo in note order; report read failure only if none succeeds. */
 	private async fillCoordsFromPhoto(file: TFile): Promise<void> {
 		const photos = this.resolvePhotos(file);
 		let readError: string | null = null;

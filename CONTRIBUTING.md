@@ -4,73 +4,90 @@
 
 ```bash
 npm install
-cp .env.example .env      # OBSIDIAN_PLUGIN_DIR → a vault's plugin folder
+cp .env.example .env      # point OBSIDIAN_PLUGIN_DIR at a test vault
 npm run dev
 ```
 
-Install [pjeby/hot-reload](https://github.com/pjeby/hot-reload) in that vault
-and saves take effect without restarting Obsidian. `npm run dev` writes the
-`.hotreload` marker it looks for.
+The target vault must have Bases enabled and the first-party Maps plugin
+installed. Installing [pjeby/hot-reload](https://github.com/pjeby/hot-reload)
+in that vault lets the `.hotreload` marker written by `npm run dev` apply saved
+builds without restarting Obsidian. Keep personal vault paths in the ignored
+`.env`; committed examples must remain machine-independent.
 
-You need a vault with **Bases** on and the first-party **Maps** plugin
-installed; there is nothing for this plugin to extend otherwise.
+## Architecture and changes
+
+[CLAUDE.md](CLAUDE.md) is the concise technical entry point and links all
+capability specs. Read the specs for observable contracts, the relevant active
+or archived OpenSpec design for cross-cutting rationale, and adjacent source
+comments for narrow implementation constraints.
+
+Use an OpenSpec change when work adds or changes a stable behavior, invariant,
+compatibility boundary, or maintainer contract. Keep executable proof in tests
+rather than copying transcripts into documentation.
+
+The patching code reaches undocumented Obsidian internals. Wrap instances rather
+than prototypes, validate every runtime shape before use, and record any new
+internal in `src/types/obsidian-internals.d.ts` with its provenance. A missing
+internal is an expected compatibility outcome, not an exception to throw.
+
+## Branch and pull-request workflow
+
+Ordinary work follows this loop:
+
+1. Update local `main` from the remote.
+2. Create a focused short-lived branch.
+3. Implement and validate one coherent change.
+4. Push the branch and open a pull request.
+5. Resolve conversations and wait for
+   `CI / format · lint · types · tests · build` to pass.
+6. Squash-merge into `main`; the remote deletes the merged branch.
+
+Do not push ordinary changes directly to `main`. This is a solo-maintained
+repository, so pull requests require zero approving reviews; the PR and required
+CI are still mandatory. Administrator bypass is for emergencies only. Record
+the reason and run the same checks before, or immediately after, any bypass.
+Dependabot and routine automation use pull requests and the same CI rather than
+a broad direct-push exemption.
+
+Keep a PR focused and squashable. Link its OpenSpec change or explain why the
+change has no specification impact. For behavior-preservation work, include the
+diff review or live-vault evidence that supports that claim.
 
 ## Before opening a PR
 
 ```bash
-npm run check     # prettier, eslint, tsc, vitest — the same set CI runs
+npm run check
 ```
 
-`eslint` here is type-aware and includes `eslint-plugin-obsidianmd`, which is the
-same pair the community-plugin scorecard scans releases with. It is stricter than
-the usual plugin setup on purpose: the alternative is reading about a finding on
-a web page after the release rather than in the terminal before it.
+This is the CI sequence: formatting, type-aware lint (including
+`eslint-plugin-obsidianmd`), typecheck, Vitest and coverage gates, manifest
+validation, production build, and bundle smoke loading.
 
-## What the tests cover, and what they cannot
+Pure modules and their per-file coverage thresholds are configured in
+`vitest.config.ts`. Changes to coordinate conversion, parsers, statistics,
+external links, geometry, event binding, location decisions, view options,
+Around views, geolink/geocoding, pin spreading, or localization need focused
+tests in the same PR.
 
-`src/coords.ts`, `src/parse.ts`, `src/stats.ts`, `src/maplinks.ts`,
-`src/geometry.ts`, `src/view-options.ts`, `src/map-block.ts`, `src/geolink.ts`,
-`src/geocode.ts`, `src/locate.ts` and `src/i18n.ts` run outside Obsidian and are
-held above 90 % coverage — the list lives in `vitest.config.ts`. Anything
-touching the coordinate maths, a parser, the statistics or the locator needs a
-test in the same PR.
-
-The view wrappers cannot be tested here — they need a live Bases map. Try them
-in a real vault and say in the PR what you tried.
-
-## House rules for the patching code
-
-This plugin reaches into undocumented Obsidian internals. Two rules keep that
-survivable:
-
-- **Wrap instances, never prototypes.** An instance wrapper dies with the view
-  and `delete` restores the original. A prototype patch outlives the plugin.
-- **Check before you reach.** Every entry point verifies the shape it expects
-  and stands down quietly when Obsidian has moved on. A missing internal is an
-  expected outcome, not an exception to throw.
-
-`src/types/obsidian-internals.d.ts` is the written record of what is assumed.
-If you lean on a new internal, declare it there with a note on where it came
-from, rather than casting to `any` at the call site.
-
-[CLAUDE.md](CLAUDE.md) is the architecture document: the registry patch, the
-coordinate pipeline, and a "non-obvious things to leave alone" list that exists
-because each entry looks like dead weight and is not. Read it before simplifying.
+View wrappers also need a real vault with a live Bases map. Exercise the changed
+seam there when relevant and record what was tried and observed in the PR.
 
 ## Translations
 
-Add a table to `src/i18n.ts` and a line to `LOCALES`. English is the source of
-truth: its keys are the key type, so the compiler will list what is missing, and
-`tests/i18n.test.ts` checks placeholders match across languages.
+English in `src/i18n.ts` is the source of truth. Add a complete locale table and
+its `LOCALES` entry together; `tests/i18n.test.ts` verifies matching keys and
+placeholders.
 
 ## Releasing
 
-Maintainers only:
+Releases are cut from `main`. Add the matching changelog section and compare
+links first, confirm version metadata and CI are current, then run:
 
 ```bash
 npm version patch|minor|major
 git push --follow-tags
 ```
 
-`version-bump.mjs` keeps `manifest.json` and `versions.json` in step; CI refuses
-a release where the tag and the manifest disagree.
+`version-bump.mjs` synchronizes `package.json`, `manifest.json`, and
+`versions.json`. The tag workflow reruns checks, requires tag/manifest agreement,
+and publishes `main.js`, `manifest.json`, and `styles.css` with build provenance.

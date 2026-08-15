@@ -1,26 +1,4 @@
-/*
- * Where the device thinks it is, for stamping into a note.
- *
- * The only source is `navigator.geolocation` — the same Web API the browser
- * offers, which Obsidian inherits on every platform it ships on. Both map
- * plugins that came before this one register their location features on mobile
- * only, on the grounds that the desktop has no provider to ask; that was true of
- * older Electron builds, where Chromium's only fallback was Google's network
- * service and the API key for it is a build-time secret Electron does not ship.
- * Current Chromium asks the operating system instead — the Windows location
- * service, CoreLocation on macOS — so the desktop is worth asking too, and this
- * module is deliberately platform-blind.
- *
- * What it is not is optimistic. A platform that cannot answer would otherwise be
- * asked once per note opened, forever, so the first failure that arrives before
- * any success trips a breaker and no further attempt is made this session.
- * Explicitly invoking the command resets it: asking by hand is a statement that
- * something has changed.
- *
- * Fixes are WGS-84, which is exactly what the vault stores — see coords.ts, and
- * do not "fix" this by converting. The GCJ-02/BD-09 shift belongs on the way to
- * the tiles, not on the way to disk.
- */
+/* Platform-neutral navigator.geolocation with a session breaker and WGS-84 output. */
 
 import { formatLatLng } from './coords';
 import type { TranslationKey } from './i18n';

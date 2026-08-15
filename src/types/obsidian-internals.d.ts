@@ -208,19 +208,8 @@ export interface BasesMapView {
 	 */
 	showMapContextMenu(ev: MouseEvent): void;
 	/**
-	 * Where the camera should be, kept apart from where the base file says it
-	 * should be. Obsidian's own back/forward restore is what this exists for, and
-	 * the shape is `{ center: { lng, lat }, zoom }` — **tile space**, since it is
-	 * handed to MapLibre unconverted.
-	 *
-	 * Read out of the Maps source rather than assumed, because three behaviours
-	 * hang off it: `initializeMap` builds the map with it in place of the
-	 * configured centre, the map's own `load` handler stands down while it is set,
-	 * and so does `applyConfigToMap`. `pendingMapState` below is where it lands.
-	 *
-	 * **It is one-shot** — the data path applies it and sets it to null — so it
-	 * holds a camera in place only until the first data update. `TrackLayer.held`
-	 * is what holds it after that; see the `focus()` notes in CLAUDE.md.
+	 * Native back/forward camera state in tile space. The Maps data path consumes
+	 * it once, so callers needing a durable target must keep their own state.
 	 */
 	setEphemeralState?(state: { center?: { lng: number; lat: number }; zoom?: number } | null): void;
 	onunload(): void;

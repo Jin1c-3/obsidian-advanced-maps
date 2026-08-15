@@ -1,24 +1,4 @@
-/*
- * Turning a WGS-84 coordinate into a link that opens the same spot in an
- * external map app — the exact inverse of geolink.ts, which reads a coordinate
- * out of a pasted link. Every decision below already got made there, correctly,
- * with the reasoning written out, so this file mirrors it rather than
- * re-deciding it:
- *
- * - Axis order is per provider, not universal. 高德 writes longitude first;
- *   百度 writes latitude first. Get it backwards and the pin lands in another
- *   province with nothing on screen to say so — the exact trap readAmap() and
- *   readBaidu() exist to dodge on the way in, mirrored here on the way out.
- * - The datum is a property of the provider, not a setting. 高德 and 腾讯 both
- *   serve GCJ-02, 百度 serves BD-09, and Google/Apple serve GCJ-02 inside China
- *   and WGS-84 everywhere else — the same rule `chinaAware()` applies when
- *   *reading* one of their links applies unchanged when *writing* one.
- *
- * Pure and offline: no Obsidian import, no DOM, no network. The caller hands
- * this WGS-84 — that is what every other seam in this plugin un-shifts a
- * coordinate to before it leaves the map, so this file does no un-shifting of
- * its own, only the shift back onto each provider's native datum.
- */
+/* Pure WGS-84-to-provider URL builders with provider-specific datum and axis order. */
 
 import { COORD_DIGITS, gcj2bd, outOfChina, wgs2gcj } from './coords';
 
@@ -35,17 +15,7 @@ export interface BuiltinMap {
 	on: boolean;
 }
 
-/**
- * One map app the reader added themselves — a name, a URL with `{lat}`/`{lng}`
- * in it, and the datum that URL expects.
- *
- * **The datum is stated, not templated.** It is the one thing the six built-ins
- * do that no amount of string substitution can express: 高德 and 腾讯 want
- * GCJ-02, 百度 wants BD-09, and getting it wrong lands the pin 500 m away with
- * nothing on screen to say so — the same failure `geolink.ts` and the rest of
- * this file exist to keep out. So a custom entry carries its own answer rather
- * than being guessed at from the host, which a self-hosted mirror would defeat.
- */
+/** Custom URL template plus its explicitly selected coordinate datum. */
 export interface CustomMap {
 	name: string;
 	url: string;

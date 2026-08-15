@@ -1,23 +1,4 @@
-/*
- * Reading a coordinate out of whatever was on the clipboard.
- *
- * The gap this fills: a location almost never arrives as a coordinate. It
- * arrives as a share link from a phone — 高德, 百度, 腾讯, Google, Apple — and
- * copying the numbers out by hand means knowing, per provider, which of the two
- * numbers comes first and which datum they are in. Get either wrong and the pin
- * lands in the wrong province with no visible complaint.
- *
- * So each provider gets its own reader, and each reader states the datum it
- * knows the provider writes in. The conversion to WGS-84 happens once, at the
- * end, through coords.ts — nothing here does arithmetic on a coordinate.
- *
- * Everything in this file is pure and offline. Short links (surl.amap.com,
- * maps.app.goo.gl, j.map.baidu.com) are deliberately *not* followed: resolving
- * one means a network request to a third party carrying the link, which is a
- * different kind of decision from parsing text. They are recognised only so the
- * caller can say "that link has to be opened once first" instead of "no
- * coordinate here".
- */
+/* Pure, offline provider-aware coordinate parsing; short redirects are identified but never followed. */
 
 import { outOfChina, type CoordSystem } from './coords';
 
@@ -208,12 +189,7 @@ function readOsm(url: URL): ParsedPoint | null {
 
 /* ---- host routing ---- */
 
-/*
- * One alternative per *domain*, not per subdomain: `(^|\.)` already matches the
- * dot, so `(^|\.)baidu\.com$` covers `map.baidu.com` on its own. Spelling the
- * subdomains out as well changed no answer and read as if they were handled
- * specially, which is the sort of thing a seventh provider gets copied from.
- */
+/* One expression per registrable provider domain; `(^|\.)` covers subdomains. */
 const HOSTS: ReadonlyArray<[RegExp, (url: URL) => ParsedPoint | null]> = [
 	[/(^|\.)amap\.com$|(^|\.)autonavi\.com$|(^|\.)gaode\.com$/i, readAmap],
 	[/(^|\.)baidu\.com$/i, readBaidu],

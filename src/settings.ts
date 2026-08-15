@@ -24,16 +24,7 @@ import {
 } from './maplinks';
 import type AdvancedMapsPlugin from './main';
 
-/**
- * Where "open in map" opens.
- *
- * `tab` is the base file itself — its toolbar, its other views, and a config
- * that writes back to disk when something on the map is changed. `modal` is a
- * pop-up that embeds the same view: it disturbs nothing, and nothing changed
- * inside it is kept, because neither an embedded base nor a code block has
- * anywhere to write a view option back to. Measured, not assumed — see the
- * settings text, which says so rather than letting it be found out.
- */
+/** A tab has writable native config; an embedded modal's option changes are transient. */
 export const OPEN_TARGETS = ['tab', 'modal'] as const;
 export type OpenTarget = (typeof OPEN_TARGETS)[number];
 
@@ -68,7 +59,7 @@ export interface AdvancedMapsSettings {
 	menuLabel: string;
 	/** Whether that map is the base file itself, or a pop-up embedding it. */
 	openIn: OpenTarget;
-	/** Whether a map open in a sidebar keeps up with the note being edited. */
+	/** Initial follow state for each newly opened map. */
 	followActiveNote: boolean;
 	/** The view added to the base for "a map of the notes around this one". */
 	aroundViewName: string;
@@ -92,15 +83,8 @@ export interface AdvancedMapsSettings {
 	autoFillExclude: string;
 }
 
-/* Blank is meaningful for four of these: `menuLabel` and `aroundViewName` blank
- * fall back to their localized names, and `viewName` blank takes the base's
- * first map view. `basePath` blank simply means "Open in map" is not configured
- * yet.
- *
- * `locate` starts off because the first request raises a permission prompt and
- * because recording where each note was written is a decision, not a default.
- * `autoFillCoords` starts on: it only matters once `locate` is on, and by then
- * filling in the blank is the thing that was asked for. */
+/* Blank labels use localized fallbacks; blank viewName selects the first map.
+ * Device location starts disabled because it prompts and writes physical position. */
 export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	coordSystem: 'auto',
 	trackColor: 'var(--bases-map-marker-background)',
@@ -121,8 +105,7 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	placeProperty: 'location',
 	openZoom: 15,
 	menuLabel: '',
-	// The base itself, because it is the only one of the two whose edits are
-	// kept. A reader who would rather not have a tab appear can say so.
+	// Default to the only target whose view-option edits persist.
 	openIn: 'tab',
 	// Off: a camera that moves on its own is a surprise, and this one moves
 	// because of something happening in another pane entirely.
@@ -131,10 +114,7 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	externalMaps: [],
 	customMaps: [],
 	geocodeProvider: 'nominatim',
-	// The safer of the two is the one nobody had to choose. A key already on
-	// disk from before this setting existed keeps the other one — `loadSettings`
-	// derives that once, because an update does not get to quietly move somebody's
-	// key into a store their other devices cannot read.
+	// Fresh installs default to device-local SecretStorage.
 	amapKeyStore: 'secret',
 	amapKey: '',
 	amapSecretId: '',
@@ -200,22 +180,7 @@ export function refreshesTracks(key: string): boolean {
 	return TRACK_REFRESH_KEYS.has(key);
 }
 
-/**
- * Text settings whose row shows its default as the placeholder, and which
- * therefore have to *mean* that default once the box is cleared.
- *
- * A greyed placeholder reads as "this is what you get if you leave it empty",
- * and for three of these there was never another reading — an empty coordinate
- * property or an empty colour is not a setting anyone could want. The fourth is
- * why this is a list rather than a chain of `||`: an empty `autoFillExclude` has
- * a perfectly coherent other meaning, "exclude nothing", and taking that reading
- * turns clearing the box into stamping every template note with the device's
- * real position — the one thing the field exists to prevent, arrived at by
- * emptying the field that prevents it. Nothing is lost by ruling it out:
- * `templates` only ever excludes paths that contain the word, so a vault with no
- * templates folder is unaffected either way, and a reader who wants the fill
- * everywhere has the fill's own switch.
- */
+/** Cleared placeholder-backed fields restore defaults; exclusion stays privacy-safe. */
 const PLACEHOLDER_DEFAULT_KEYS = ['coordsProperty', 'placeProperty', 'trackColor', 'autoFillExclude'] as const;
 
 type PlaceholderDefaultKey = (typeof PLACEHOLDER_DEFAULT_KEYS)[number];
@@ -224,16 +189,7 @@ export function fallsBackToDefault(key: string): key is PlaceholderDefaultKey {
 	return (PLACEHOLDER_DEFAULT_KEYS as readonly string[]).includes(key);
 }
 
-/**
- * A row inside one of the two lists names its entry by index —
- * `customMaps.2.url` rather than a settings key of its own.
- *
- * That is what keeps a list declarative like everything else in this tab: the
- * framework reads and writes through `getControlValue`/`setControlValue`, and
- * those two are where the path is understood. Drawing the rows by hand instead
- * would take them out of the settings search and put a second write path beside
- * the one seam.
- */
+/** Indexed entry keys keep list rows on the declarative settings read/write seam. */
 type EntryKey = `externalMaps.${number}.on` | `customMaps.${number}.${'name' | 'url' | 'datum'}`;
 type ControlKey = Key | EntryKey;
 
@@ -269,39 +225,11 @@ function knownDatum(value: unknown): CustomDatum {
 	return (CUSTOM_DATUMS as readonly unknown[]).includes(value) ? (value as CustomDatum) : 'wgs84';
 }
 
-/**
- * Settings are **declared**, not drawn.
- *
- * Obsidian 1.13 renders a tab from `getSettingDefinitions()` and — the reason
- * this is worth the change — indexes what it renders, so every setting below is
- * reachable from the search box at the top of the settings window. A tab that
- * paints itself in `display()` is invisible to that search, and this plugin
- * already requires 1.13.1, so there is no older Obsidian to keep the old path
- * for.
- *
- * It also removes the one piece of manual bookkeeping the old tab had: showing
- * the Amap key only under the Amap provider used to mean re-running `display()`
- * from inside a dropdown's own handler. Now the row states when it is `visible`
- * and `update()` re-asks.
- */
+/** Declarative Obsidian 1.13 settings, indexed by settings search. */
 export class AdvancedMapsSettingTab extends PluginSettingTab {
 	/**
-	 * The map views the configured base holds, and the base they came out of.
-	 *
-	 * A base is a file, so reading one is asynchronous and
-	 * `getSettingDefinitions()` is not. The read is started from there and the
-	 * render that has the answer is the one `update()` makes afterwards; until
-	 * then `views` is null.
-	 *
-	 * **Null is "no answer", and the empty list is "no map views".** Keeping those
-	 * two apart is what stops a base that could not be read — not there yet, or
-	 * mid-edit — from being reported as a base that does not hold the view named
-	 * in settings.
-	 *
-	 * `viewsPath` is set *before* the read rather than after, so a second render
-	 * arriving while the first read is still in the air does not start another —
-	 * and so a read whose base has been swapped since can recognise itself as
-	 * stale and stand down.
+	 * Async map-view options: null means unavailable/pending, [] means read with no maps.
+	 * Claim `viewsPath` before I/O so duplicate or stale reads can stand down.
 	 */
 	private views: string[] | null = null;
 	private viewsPath: string | null = null;
@@ -313,41 +241,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		super(app, plugin);
 	}
 
-	/**
-	 * Read the base again on the way out, for the next visit.
-	 *
-	 * A view can be renamed in Bases between two visits to this pane, and the
-	 * list is only right for as long as nobody has. The natural place to re-read
-	 * would be on the way *in* — except that nothing on the tab is called when it
-	 * is shown again. Measured on a running 1.13, by wrapping all five of
-	 * `display`, `hide`, `update`, `getSettingDefinitions` and `refreshDomState`
-	 * and switching tabs: `hide` fires on the way out and **nothing at all** fires
-	 * on the way back. A declarative pane renders from the `settingItems` that
-	 * `update()` stored, and its DOM is kept and re-attached, so `getSettingDefinitions()`
-	 * runs when the tab is added and on `update()` — not on every display, whatever
-	 * the doc comment says.
-	 *
-	 * So this is the seam: re-read while the pane is off screen, and the
-	 * `update()` it may cause happens with nobody watching it re-render.
-	 */
+	/** Invalidate and reload view choices while the declarative pane is hidden. */
 	override hide(): void {
 		this.viewsPath = null;
 		void this.loadViews();
 		super.hide();
 	}
 
-	/**
-	 * The map views in a base — or **null**, which is "no answer", not "none".
-	 *
-	 * The difference is the whole of a bug this shipped with for one build. A file
-	 * that is not there answered the empty list, which is indistinguishable from a
-	 * base that genuinely holds no map view, and the view named in settings was
-	 * then flagged as one the base does not have. On a phone that is what the
-	 * reader saw: 地图 is in that base, and the pane said it was not.
-	 *
-	 * A base halfway through a hand edit is not this pane's to report on either —
-	 * `loadBase` says so with a notice, at the point where it matters.
-	 */
+	/** Read map views, returning null for missing/unreadable rather than a misleading empty list. */
 	private async readViews(path: string): Promise<string[] | null> {
 		const file = path === '' ? null : this.app.vault.getFileByPath(path);
 		if (!file) return null;
@@ -374,12 +275,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		const before = JSON.stringify(this.viewOptions());
 		this.viewsPath = path;
 		this.views = null;
-		// The vault's file list is not necessarily populated while plugins load,
-		// and this read starts there — `addSettingTab` builds the definitions once.
-		// Measured on a phone: the base was not found, the empty list was cached as
-		// the answer, and the pane then said the base had no view by that name.
-		// `onLayoutReady` fires at once when the layout is already up, so this costs
-		// a microtask on a vault that has been open for a while.
+		// Wait until the vault file list is populated before resolving the base path.
 		await new Promise<void>((resolve) => {
 			this.app.workspace.onLayoutReady(resolve);
 		});
@@ -396,20 +292,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		this.update();
 	}
 
-	/**
-	 * What the view dropdown offers: blank, the base's map views, and — when it
-	 * comes to that — the name in settings that the base does not have.
-	 *
-	 * That last one is the case worth writing down. A dropdown whose value is not
-	 * among its options renders as the first option, so dropping a stale name
-	 * would show "the first map view" while the setting says something else
-	 * entirely. It is offered and labelled instead, so the pane keeps saying what
-	 * is stored.
-	 *
-	 * Only against a base that was actually read, though — `views` null covers
-	 * both "not yet" and "could not be", and neither is grounds for telling
-	 * somebody their view is missing.
-	 */
+	/** Keep a stored stale view name visible; label it missing only after a successful base read. */
 	private viewOptions(): Record<string, string> {
 		const options: Record<string, string> = { '': t('open.view.first') };
 		for (const name of this.views ?? []) options[name] = name;
@@ -420,22 +303,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		return options;
 	}
 
-	/**
-	 * A heading, and under it the one line saying what the group is for.
-	 *
-	 * The line is a nameless `render` item — the shape Obsidian's own settings
-	 * use for prose, and the only one that works: a definition with neither a
-	 * control nor a `render` is dropped before it reaches the DOM, so the same
-	 * row written as `{ name: '', desc }` renders nothing at all. Measured, not
-	 * assumed. `searchable: false` because it is context, not a setting to find.
-	 */
-	/**
-	 * The nameless row under a heading that says what the group is for —
-	 * pulled out of `group()` below so the photos group, whose translation
-	 * keys do not fit that method's `settings.${key}.intro` composition (see
-	 * the photos group itself, in `getSettingDefinitions`), can still share
-	 * the one rendering path.
-	 */
+	/** Render non-searchable group prose; a control-less declarative row is otherwise dropped. */
 	private introItem(intro: string): SettingDefinition<ControlKey> {
 		return {
 			name: '',
@@ -558,20 +426,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		this.update();
 	}
 
-	/**
-	 * One custom entry: its name, its URL and the datum that URL expects, on one
-	 * row. The ✕ and the drag handle beside them are the list's own, added to
-	 * every row that is not a page.
-	 *
-	 * Drawn rather than declared, which is the one place in this tab that is true
-	 * and is not a preference: three fields have to share a row so that one row
-	 * means one entry, and `onDelete(index)`/`onReorder(from, to)` count rows.
-	 * Three declared rows per entry would trade a working delete for a tidier
-	 * definition.
-	 *
-	 * Every write still goes through `setControlValue`, so the trimming, the datum
-	 * check and the one write seam all still apply.
-	 */
+	/** Draw three fields in one list row so delete/reorder indexes stay entry-aligned. */
 	private customRow(setting: Setting, entry: CustomMap, index: number): void {
 		setting.settingEl.addClass('advanced-maps-map-entry');
 		const say = (url: string) => {
@@ -708,12 +563,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				heading: t('settings.external.custom.heading'),
 				emptyState: t('settings.external.custom.empty'),
 				items: this.customs().map((entry, index) => ({
-					// Nameless on purpose: the three boxes say what they are, and the row
-					// has to stay an *ordinary* setting row. A `type: 'page'` row is the
-					// one shape a list gives no delete button and no drag handle to —
-					// `n6` returns at `setNavigable` before either is added, and the
-					// keyboard delete looks the row up in `group.settings`, which a page
-					// never joins. Measured against a real pane, not read off the types.
+					// Ordinary nameless rows retain the list's drag/delete affordances.
 					name: '',
 					searchable: false,
 					render: (setting: Setting) => this.customRow(setting, entry, index),
@@ -757,12 +607,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					name: t('settings.search.amapKey.name'),
 					desc: t('settings.search.amapKey.desc'),
 					visible: () => this.keyRow('secret'),
-					// SecretComponent is not one of the declarative control types —
-					// `SettingControl` has no `secret` — and it needs the `App` its
-					// siblings never see, so this row is drawn rather than declared.
-					// Which also means `setControlValue` is not reached for it unless
-					// this handler goes through it; it does, so the trimming and the
-					// one seam for side effects still apply.
+					// SecretComponent is not declarative; route its change through the shared seam.
 					render: (setting: Setting) => {
 						setting.addComponent((el) =>
 							new SecretComponent(this.app, el)
@@ -818,11 +663,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				this.toggle('settings.tracks.markers.name', 'settings.tracks.markers.desc', 'trackMarkers'),
 			]),
 
-			// A group of its own beside the track knobs above, rather than folded
-			// into that group: a track comes from a file the note points at on
-			// purpose, a photo's location comes along for free with a file kept for
-			// an unrelated reason, and that difference is exactly what the intro
-			// line below exists to say plainly.
+			// Photos have distinct privacy/context text from deliberate track attachments.
 			{
 				type: 'group' as const,
 				heading: t('setting.photos'),
@@ -840,14 +681,6 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		];
 	}
 
-	/**
-	 * Where a cleared field lands, and what has to happen elsewhere once a value
-	 * changes.
-	 *
-	 * Blank is meaningful for four keys and only two of them mean "the default":
-	 * `menuLabel`, `aroundViewName` and `viewName` all use their own emptiness as
-	 * an answer, so they are stored empty and resolved at the point of use.
-	 */
 	/** A list row reads its value out of the entry its key names. */
 	override getControlValue(key: string): unknown {
 		const path = entryPath(key);

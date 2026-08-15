@@ -33,14 +33,7 @@ export function extendBounds(bounds: LngLatBounds, geometry: Geometry | null | u
 	return n;
 }
 
-/**
- * A bounds covering every finite position in `geometries`, or null when there
- * was nothing to cover — which is what tells a caller "nothing to frame" apart
- * from "framed on a single point".
- *
- * `seed` is an existing bounds to start from, for the one caller that has to
- * merge the native marker bounds in rather than the features behind them.
- */
+/** Bounds over finite geometry, optionally seeded with native marker bounds; null when empty. */
 export function boundsOf(
 	map: MapLibreMap,
 	geometries: Iterable<Geometry | null | undefined>,
@@ -62,11 +55,7 @@ export function clamp(value: unknown, min: number, max: number, fallback: number
 	return Math.min(max, Math.max(min, n));
 }
 
-/**
- * One track knob's effective value: whatever was configured, held inside the
- * knob's own bounds and falling back to its own default. The bounds and the
- * default both come from `TRACK_KNOBS`, so neither is re-typed at a call site.
- */
+/** Resolve one configured track knob against its shared hard bounds and default. */
 export function trackKnob(key: TrackKnob, value: unknown): number {
 	const { hardMin, hardMax, def } = TRACK_KNOBS[key];
 	// Absent is not zero. `Number(null)` and `Number('')` are both 0 rather than
@@ -77,14 +66,7 @@ export function trackKnob(key: TrackKnob, value: unknown): number {
 	return clamp(value, hardMin, hardMax, def);
 }
 
-/**
- * MapLibre refuses addSource/addLayer until the style has loaded, and setStyle()
- * — theme change, background switch — drops it back to unloaded.
- *
- * Gate on the flag addSource itself checks rather than on isStyleLoaded(), whose
- * answer stays false until every *tile* has arrived as well: waiting for that
- * costs seconds on a busy map, and the source can go in long before.
- */
+/** Gate on MapLibre's internal style flag; `isStyleLoaded` also waits for tiles. */
 export function styleUsable(map: MapLibreMap): boolean {
 	const style = map.style;
 	if (style && typeof style._loaded === 'boolean') return style._loaded;
@@ -119,17 +101,7 @@ export function styleReady(map: MapLibreMap, timeout = 5000): Promise<void> {
 	});
 }
 
-/**
- * A LineString's or MultiLineString's true first and last coordinate — walking
- * past any empty sub-line a MultiLineString may carry, rather than trusting its
- * first and last *entries*. `null` for anything else, including a LineString
- * with no coordinates at all: there is no "start" to a line that never began.
- *
- * A single-point LineString is not treated specially — `coords[0]` and
- * `coords[coords.length - 1]` are already the same position, which is exactly
- * "both markers land on top of each other", the correct answer for a track
- * that is one point long.
- */
+/** True line endpoints, skipping empty MultiLineString members; null when absent. */
 export function lineEndpoints(geometry: Geometry): [Position, Position] | null {
 	if (geometry.type === 'LineString') {
 		const coords = geometry.coordinates;
@@ -154,55 +126,19 @@ export interface TrackFeatureProps extends Record<string, unknown> {
 	amColor: string;
 	/** Which note this belongs to — an index into the draw list, not a file path. */
 	amIndex: number;
-	/** A waypoint's own name, Point geometries only. See `trackFeatures` for why. */
+	/** A waypoint's own name, on Point geometries only. */
 	amName?: string;
-	/**
-	 * `'start'`/`'end'` are set on the two synthetic points `trackFeatures` adds
-	 * per line; absent on everything real, which is what `layers.ts`'s
-	 * point-layer filter tells apart. `'photo'` is different: it is not minted
-	 * here but carried through from the parsed feature itself (see
-	 * `trackFeatures` below) — a photo is "a track file with one Point in it"
-	 * (exif.ts), and that Point already knows it is a photo before it ever
-	 * reaches this function.
-	 */
+	/** Synthetic line endpoint or incoming photo role. */
 	amRole?: 'start' | 'end' | 'photo';
-	/** The `map.addImage` id a photo's decoded thumbnail is (or will be)
-	 *  registered under. Point geometries only, and only when `amRole ===
-	 *  'photo'` and the photo actually had a thumbnail — see
-	 *  `PHOTO_ICON_PREFIX` in constants.ts and `photoImageId` in
-	 *  track-cache.ts, the one place that formula is written. */
+	/** MapLibre image id for a photo thumbnail. */
 	amPhoto?: string;
-	/** The photo file's own vault path. Point geometries only, alongside
-	 *  `amPhoto` — this is what a click or hover on a photo marker opens. */
+	/** Vault path opened from a photo marker. */
 	amPath?: string;
 }
 
 /**
- * The one shared step between a parsed (or projected) track and what actually
- * reaches the map: every feature carries its note's colour and index, a
- * waypoint keeps its own name, and every line gains two synthetic start/end
- * points for `layers.ts`'s endpoint layer to draw.
- *
- * `amName` is deliberately Point-only. A KML `<Placemark>` can name a
- * LineString too — `tests/parse.test.ts` proves it with 'Trail A' — but nothing
- * downstream reads a name off a line, and carrying it through here would only
- * invite a future hover handler to bind it to the wrong thing: a name that
- * describes the whole track, attached to whichever point the cursor happens to
- * be nearest.
- *
- * `amRole`/`amPhoto`/`amPath` are carried the same Point-only way, but *read*
- * off the incoming feature rather than derived here — a photo stamps all
- * three of these onto its own single Point before it ever reaches this
- * function (see track-cache.ts's `loadPhoto`), and `projectedFeatures()` in
- * track-cache.ts carries them across whatever coordinate-system shift comes
- * next. This is simply the one place both draw paths already read a Point's
- * properties into `TrackFeatureProps`, so it is where a photo's properties
- * join a waypoint's `name` on the way through, rather than a second pass over
- * the feature list elsewhere that would only invite the two to drift.
- *
- * Both `TrackLayer.build()` (base views) and `TrackEmbed.draw()` (inline
- * embeds) call this rather than building their own feature list, which is what
- * keeps the two draw paths from drifting apart on what a feature carries.
+ * Shared map-feature builder: add note identity, carry Point-only metadata,
+ * and synthesize start/end Points for each line.
  */
 export function trackFeatures(
 	features: Array<Feature<Geometry, Record<string, unknown> | null>>,
@@ -215,9 +151,7 @@ export function trackFeatures(
 		if (feature.geometry.type === 'Point') {
 			const name = feature.properties?.name;
 			if (typeof name === 'string' && name !== '') props.amName = name;
-			// 'photo' is the only amRole an incoming feature ever carries —
-			// 'start'/'end' are minted below, never read — so this cannot collide
-			// with the synthetic points this same function adds per line.
+			// Only photo roles arrive from parsers; endpoint roles are minted below.
 			if (feature.properties?.amRole === 'photo') props.amRole = 'photo';
 			const photo = feature.properties?.amPhoto;
 			if (typeof photo === 'string' && photo !== '') props.amPhoto = photo;

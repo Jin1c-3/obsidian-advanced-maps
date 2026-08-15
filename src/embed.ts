@@ -1,11 +1,4 @@
-/*
- * Inline ![[track.gpx]] embed.
- *
- * There is no exported MapLibre to build a map with, so the embed borrows the
- * built-in view: the native factory is called with a stub controller, which
- * yields a fully configured map (tiles, dark mode, zoom controls) that happens
- * to have no rows behind it. The track is then drawn on top.
- */
+/* Inline ![[track.gpx]] map built from a headless native Maps view. */
 
 import { Component, Keymap, TFile } from 'obsidian';
 import type { FeatureCollection, Geometry } from 'geojson';
@@ -77,11 +70,7 @@ export class TrackEmbed extends Component {
 	/** The last DOM event `openPhoto()` acted on — one click over two photo
 	 *  layers dispatches twice; see bindInteractions(). */
 	private handledClick: MouseEvent | null = null;
-	/** A waypoint's name on hover, and — the same element, different content —
-	 *  a photo's own thumbnail on hover over a point on PHOTO_LAYER. Embeds
-	 *  only — see CLAUDE.md for why the base view keeps its existing
-	 *  hover-shows-the-note-popup behaviour instead, which is exactly why a
-	 *  photo point gets no competing tooltip there either. */
+	/** Shared inline waypoint-name/photo-preview tooltip. */
 	private tooltipEl: HTMLElement | null = null;
 	/** The elevation profile's own hover state, set by renderProfile() and read
 	 *  by hoverTrack() — null whenever there is no profile panel to link to
@@ -92,44 +81,19 @@ export class TrackEmbed extends Component {
 		private readonly containerEl: HTMLElement,
 		private readonly plugin: AdvancedMapsPlugin,
 		private readonly file: TFile,
-		/** The note this embed sits in — see `loadPhotos()`. Empty when the embed
-		 *  API did not name one, which reads the same as "this note has no
-		 *  photos" and needs no separate branch. */
+		/** Host note path used to resolve companion photos; empty means none. */
 		private readonly sourcePath = ''
 	) {
 		super();
 	}
 
-	/**
-	 * The host note's photos, so an inline map shows the pictures taken along
-	 * the track it is drawing.
-	 *
-	 * The embedded file itself is never a photo and cannot become one: the
-	 * embed registry hands `.jpg`/`.png`/`.webp`/`.avif` to Obsidian's own
-	 * image embed, and `registerTrackEmbeds` only ever claims extensions
-	 * nothing else has. So a photo reaches an inline map exactly one way —
-	 * through the note the embed is written in, which is the same note the
-	 * base-view path already draws photos for. Both halves therefore read the
-	 * same list, `resolveTracks`, filtered to the photo half of it.
-	 *
-	 * Kept apart from `this.rec` rather than merged into it, and that
-	 * separation is load-bearing twice over: `renderStats()` and
-	 * `elevationProfile()` both measure `this.rec.features`, and folding seven
-	 * zoo photos into the walk they were taken on would add several kilometres
-	 * of "distance" between points nobody walked between, and a sawtooth
-	 * elevation profile out of whatever altitude each phone happened to record.
-	 */
+	/** Host-note photos stay separate so track statistics/profile remain track-only. */
 	private photos: PhotoEntry[] = [];
 	/** The thumbnail candidates the last draw built — camera-independent, so
 	 *  `moveend` re-selects from these rather than rebuilding them. */
 	private photoIcons: PhotoIconSource[] = [];
 
-	/**
-	 * Everything one draw needs off disk. The track and the host note's photos
-	 * are independent reads, so they overlap rather than queueing behind each
-	 * other — a cold embed pays one I/O round trip, not two. Shared by `build()`
-	 * and `refresh()` so the two cannot drift on what a draw is fed.
-	 */
+	/** Load independent track/photo inputs concurrently for both build and refresh. */
 	private async loadAll(): Promise<{ rec: TrackRecord; photos: PhotoEntry[] }> {
 		const [rec, photos] = await Promise.all([
 			this.plugin.tracks.load(this.file, this.plugin.settings.photoDatum),
@@ -158,11 +122,7 @@ export class TrackEmbed extends Component {
 	/** The embed API calls this when the file is swapped underneath us. */
 	loadFile(): void {}
 
-	/**
-	 * An embed has no base behind it, so there is no view option to read — but it
-	 * does have tiles, and under "auto" those are the deciding vote. They are
-	 * usually the default tile set, not whatever a base view happens to use.
-	 */
+	/** Embeds have no base option; automatic datum follows their native tile set. */
 	private system(): CoordSystem {
 		return resolveSystem(this.plugin.settings.coordSystem, this.view?.mapConfig);
 	}
@@ -195,31 +155,9 @@ export class TrackEmbed extends Component {
 		this.rootEl.setText(t('embed.failed', { file: this.file.name, message }));
 	}
 
-	/**
-	 * The same failure, said without taking the map down: `refresh()`'s answer to
-	 * a file that stopped parsing under an embed that is already drawing it.
-	 *
-	 * `fail()` cannot be reused there, and the difference is not cosmetic.
-	 * `build()` calls it before there is a view at all, so emptying `rootEl` costs
-	 * nothing; doing that to a live embed would tear the map's element out from
-	 * under a MapLibre instance that is still running, leaking its WebGL context
-	 * against the browser's own cap — the very cost the lazy `IntersectionObserver`
-	 * build exists to manage.
-	 *
-	 * Which leaves what to draw, and the last good track is the better answer than
-	 * a cleared map. The common way to get here is a sync client or an editor
-	 * halfway through rewriting the file: a truncated read is a moment, not a
-	 * verdict, and the `modify` that completes the write refreshes straight back to
-	 * a correct map. A file that stays broken keeps the track it last had *and*
-	 * this line underneath saying so, which is strictly more than either half
-	 * alone — where the shipped behaviour said nothing and showed nothing, because
-	 * the layers came off and `draw()` then returned on `rec.error` one line in.
-	 */
+	/** Report refresh errors without removing the live map or its last good track. */
 	private failInPlace(message: string): void {
-		// The panel is a sibling of the map, not a child, so it outlives anything
-		// done to `rootEl` and has to be replaced by hand. Its profile goes first:
-		// the cursor dot it draws lives on the map's own style rather than inside
-		// the panel, so dropping the DOM alone would strand one mid-hover.
+		// Clear map-side profile state before replacing its sibling panel.
 		this.profile?.clear();
 		this.profile = null;
 		this.panelEl?.remove();
@@ -308,24 +246,13 @@ export class TrackEmbed extends Component {
 		this.rec = rec;
 		this.photos = photos;
 		removeTrackLayers(this.map);
-		// removeTrackLayers() only knows about the four shared track layers —
-		// see HIT_SRC/CURSOR_SRC's own comment in constants.ts for why. Left
-		// alone, the hover layers would survive this call while the track layers
-		// it just removed come back on top of them in draw() below (a fresh
-		// addLayer() always lands above whatever is already in the stack), which
-		// would bury the cursor dot under the redrawn line on every refresh()
-		// after the first. Removing both together and letting draw() re-create
-		// both keeps the stacking order — track, then hover link, on top —
-		// correct on every call, not just the first.
+		// Recreate private hover layers with shared layers to preserve stack order.
 		removeHoverLayers(this.map);
 		this.locate?.replaceDot();
 		this.framed = false;
 		await this.draw(revision);
 		if (revision !== this.operationRevision || this.dead) return;
-		// Also runs on every refresh(), not just the first build() — refresh() is
-		// what the two "track statistics" settings toggle through
-		// plugin.refreshTracks(), so a rebuild that only happened in build() would
-		// leave the toggle looking like it does nothing until the note is reopened.
+		// Statistics settings reach open embeds through refresh().
 		this.renderStats();
 	}
 
@@ -339,21 +266,13 @@ export class TrackEmbed extends Component {
 		if (!this.map || this.dead || revision !== this.operationRevision) return;
 
 		const color = view.markerManager.resolveColor(this.plugin.settings.trackColor);
-		// index 0 for every feature, the track's and the host note's photos alike:
-		// an embed has exactly one "note" behind it — the one it is written in —
-		// so there is only ever one thing for amIndex to point at, unlike a base
-		// view, which draws one per row and needs the index to tell them apart.
+		// An embed has one owning note, so every feature uses index 0.
 		const system = this.system();
 		const trackData: FeatureCollection<Geometry, TrackFeatureProps> = {
 			type: 'FeatureCollection',
 			features: trackFeatures(projectedFeatures(this.rec, system), color, 0),
 		};
-		// The photos ride in the same collection, so they are drawn, framed and
-		// removed by exactly the machinery the track already goes through. They
-		// are deliberately *not* in `trackData`, which is what feeds the
-		// elevation profile's hit corridor below — a wide invisible line whose
-		// only job is to be easy to point at, and which a Point contributes
-		// nothing to anyway.
+		// Photos share drawing/framing but stay out of the track-only hover corridor.
 		const data: FeatureCollection<Geometry, TrackFeatureProps> = {
 			type: 'FeatureCollection',
 			features: [
@@ -381,12 +300,7 @@ export class TrackEmbed extends Component {
 		// every other photo stays the dot PHOTO_DOT_LAYER always draws.
 		this.ensurePhotoIcons(system);
 
-		// The elevation-profile hover link's own style state — wiped by the same
-		// theme/background swap that just wiped the track, so re-created here
-		// unconditionally on every draw(), the same as the track layers
-		// themselves. Idle and harmless for a file with no profile to link:
-		// draw() does not need to know whether renderStats() found one, only
-		// renderProfile() (which sets this.profile) ever reads from it.
+		// Style replacement wipes private hover layers too; recreate idempotently.
 		ensureHoverLayers(map, weight);
 		setHitData(map, trackData);
 		applyCursorPaint(map, color, stroke);
@@ -418,42 +332,15 @@ export class TrackEmbed extends Component {
 		if (this.map) ensurePhotoImages(this.map, icons);
 	}
 
-	/** The camera moved, so which icons have room changed — but nothing
-	 *  `photoIconSource()` produces depends on the camera, so `moveend` re-runs
-	 *  only the screen-space selection over what the last draw built. */
+	/** Reselect cached icon candidates after camera movement. */
 	private reselectPhotoIcons(): void {
 		if (!this.map || this.photoIcons.length === 0) return;
 		ensurePhotoImages(this.map, this.photoIcons);
 	}
 
 	/**
-	 * Waypoint-name-on-hover, and the map-side half of the elevation-profile
-	 * hover link. Bound once per map — like the native marker interactions,
-	 * these listeners are layer-scoped but bound to the *map*, so they outlive
-	 * a style swap that recreates the layer under the same id, and survive
-	 * `refresh()` (which recreates the layer but not the map) without this
-	 * guard stacking a second copy on top of the first.
-	 *
-	 * Base views are deliberately not given the same tooltip: they already show
-	 * the note's own popup on any part of a track, through `popupManager`, and
-	 * this plugin has no handle on that popup's DOM to add to rather than fight.
-	 * An embed has no interactivity of its own to collide with. The hover link
-	 * has no base-view counterpart at all — a base view has no profile to link
-	 * to (see CLAUDE.md).
-	 *
-	 * PHOTO_LAYER gets its own pair of listeners rather than folding into
-	 * POINT_LAYER's: a photo point never lands on POINT_LAYER in the first
-	 * place (its filter excludes anything carrying `amRole`, and a photo
-	 * carries `amRole: 'photo'` precisely so it doesn't draw twice — see
-	 * CLAUDE.md's "photo" trap #2), and PHOTO_LAYER draws nothing else.
-	 *
-	 * Bare `map.on()` here, deliberately, where `TrackLayer` routes every
-	 * listener through `MapEventBindings` and its matching `off()`. The hazard
-	 * that class exists for is a *native Bases* map outliving the plugin
-	 * instance and later having the same layer ids recreated under it. An
-	 * embed's map has no such second owner: it comes from a headless view built
-	 * for this embed alone, `onunload` destroys it, and `plugin.onunload`
-	 * unloads every live embed. The map and its listeners die together.
+	 * Bind once per embed map. Layer listeners survive refresh/style changes,
+	 * and the map itself is destroyed with the embed, so explicit off() is unnecessary.
 	 */
 	private bindInteractions(): void {
 		if (this.interactionsBound) return;
@@ -463,12 +350,7 @@ export class TrackEmbed extends Component {
 		map.on('moveend', () => this.reselectPhotoIcons());
 		map.on('mousemove', POINT_LAYER, (ev: MapMouseEvent) => this.hoverWaypoint(ev));
 		map.on('mouseleave', POINT_LAYER, () => this.hideTooltip());
-		// Both photo layers, not just the one carrying a picture: a photo with no
-		// decoded icon draws on PHOTO_DOT_LAYER alone (see its comment in
-		// constants.ts), and binding only PHOTO_LAYER would leave exactly those
-		// inert. Which is also why `openPhoto` needs the same one-event guard the
-		// base view's `open()` has — the thumbnail and the dot beneath it are one
-		// feature, and a click over both dispatches twice.
+		// Bind dot-only photos too; the shared DOM-event guard prevents double opens.
 		for (const layer of [PHOTO_DOT_LAYER, PHOTO_LAYER]) {
 			map.on('mousemove', layer, (ev: MapMouseEvent) => this.hoverPhoto(ev));
 			map.on('mouseleave', layer, () => this.hideTooltip());
@@ -483,10 +365,7 @@ export class TrackEmbed extends Component {
 	private hoverWaypoint(ev: MapMouseEvent): void {
 		const name = ev.features?.[0]?.properties?.amName;
 		const point = ev.point;
-		// Read live, the same as applyTrackPaint() reads it on every draw() — one
-		// setting, trackMarkers, covers the endpoint pins, the direction arrows
-		// and this tooltip together, and a reader who turns it off expects all
-		// three gone at once rather than the tooltip surviving on its own.
+		// Waypoint tooltips follow the same live marker-visibility setting.
 		if (!this.plugin.settings.trackMarkers || typeof name !== 'string' || name === '' || !point || !this.rootEl) {
 			// Absent is absent — TCX has no waypoint concept at all, and GeoJSON may
 			// or may not name a point. Both read the same as "nothing to show" here.
@@ -503,18 +382,7 @@ export class TrackEmbed extends Component {
 		this.positionTooltip(point);
 	}
 
-	/**
-	 * The picture behind the pin, at a size worth looking at — the same
-	 * `PhotoModal` a base map view opens, and for the same reason a modal
-	 * rather than a pane: an inline map lives *inside* a note, so opening the
-	 * image in the active leaf would replace the note you are reading it in.
-	 *
-	 * No "open note" row here, unlike the base-view case. The note this photo
-	 * belongs to is the note the embed is written in — the one already on
-	 * screen around the map — so the row would offer to take you where you
-	 * already are. `PhotoModal` draws it only when handed a callback, which is
-	 * why this hands it none rather than one that does nothing.
-	 */
+	/** Open inline photos in a modal; the host note is already on screen. */
 	private openPhoto(ev: MapMouseEvent): void {
 		if (ev.originalEvent) {
 			if (this.handledClick === ev.originalEvent) return;
@@ -531,15 +399,7 @@ export class TrackEmbed extends Component {
 		new PhotoModal(this.plugin.app, file).open();
 	}
 
-	/**
-	 * The same tooltip element, showing the photo itself rather than a name:
-	 * an <img> sized to its own resource path plus the file name underneath.
-	 * `amPath` is the photo file's vault path (see geometry.ts's
-	 * TrackFeatureProps) — resolved through the vault here rather than trusted
-	 * as-is, since a path that was valid when the layer was drawn can still
-	 * point at a file that has since moved or been deleted by the time the
-	 * pointer reaches it.
-	 */
+	/** Show a photo preview, resolving its stored vault path again at hover time. */
 	private hoverPhoto(ev: MapMouseEvent): void {
 		const path = ev.features?.[0]?.properties?.amPath;
 		const point = ev.point;
@@ -582,20 +442,7 @@ export class TrackEmbed extends Component {
 		this.positionTooltip(point);
 	}
 
-	/**
-	 * The waypoint tooltip's shared placement logic — same element for a plain
-	 * name and for a photo's thumbnail-plus-caption, so both go through this
-	 * rather than duplicating the flip rule.
-	 *
-	 * .advanced-maps-embed clips with overflow: hidden so the map fills exactly
-	 * the configured height. The default transform carries the tooltip 130% of
-	 * its own height above the cursor, so content within that margin of the top
-	 * edge would have its label pushed through the clip rather than just crowd
-	 * the border — flip it below the cursor there instead. offsetHeight is read
-	 * after `is-visible` is applied (it is 0 on a `display: none` element), so
-	 * this measures the tooltip actually about to be shown, not a stale size
-	 * from the last hover.
-	 */
+	/** Position the shared tooltip and flip it below when its visible height would clip. */
 	private positionTooltip(point: { x: number; y: number }): void {
 		if (!this.tooltipEl) return;
 		this.tooltipEl.style.left = `${point.x}px`;
@@ -608,22 +455,7 @@ export class TrackEmbed extends Component {
 		this.tooltipEl?.removeClass('is-visible');
 	}
 
-	/**
-	 * The map → profile half of the hover link. `ev.lngLat` is tile space —
-	 * whatever the current coordinate system drew the track in — while every
-	 * sample in `this.profile.samples` is WGS-84, straight off `rec.features`
-	 * (see stats.ts). Comparing the two without converting first would search
-	 * the wrong space entirely: on Chinese tiles that is ~500 m off and still
-	 * lands on *some* plausible-looking sample, never an error.
-	 *
-	 * A no-op while `this.profile` is null (the elevation-profile setting is
-	 * off, or the file has nothing worth charting) — nothing on screen needs
-	 * highlighting either way, and `highlightAt` reuses the exact same closure
-	 * `renderProfile`'s own mousemove handler calls, cursor dot and all, so
-	 * hovering the track directly also redraws the dot right under the pointer
-	 * that is already there rather than leaving two code paths that both know
-	 * how to "highlight sample i" free to drift apart later.
-	 */
+	/** Convert map tile space back to profile WGS-84 before nearest-point lookup. */
 	private hoverTrack(ev: MapMouseEvent): void {
 		if (!this.profile) return;
 		const [lng, lat] = toWgs84(this.system(), ev.lngLat.lng, ev.lngLat.lat);
@@ -813,18 +645,7 @@ export class TrackEmbed extends Component {
 	}
 }
 
-/**
- * "13.6 km · ↑ 420 m · 2:41:05 · 5.1 km/h" — values only, no labels; seven
- * labelled fields on one line would not fit a note's width, which is exactly
- * why the i18n table carries a name for each one instead — that rides on the
- * caller's `title`/`aria-label`. `null` fields (see stats.ts — every field but
- * `distance` may be one) are left out entirely rather than shown as a
- * misleading zero.
- *
- * Returns `null` for a file with nothing worth a bar over at all: a
- * waypoints-only export has zero distance and no elevation or time to fall back
- * on, and a lone "0 m" reads as real data rather than as an absence.
- */
+/** Build compact value-only fields; omit unknowns and an entirely empty bar. */
 function statsFields(stats: TrackStats): Array<{ title: string; text: string }> | null {
 	const hasExtra =
 		stats.ascent !== null ||
@@ -864,22 +685,7 @@ function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<strin
 	return createSvg(tag, { attr: attrs });
 }
 
-/*
- * The elevation-profile hover link's own map-side state: an invisible, wide
- * hit-testing copy of the track line, and the small dot that follows a
- * hover from either direction. Both live here rather than in layers.ts —
- * unlike the four track layers, this has exactly one consumer (TrackEmbed)
- * and no base-view counterpart, since a base view has no profile to link to
- * (see CLAUDE.md) — folding it into the "shared spine" module would misstate
- * what that module is for.
- *
- * Drawn as a GeoJSON layer, not a DOM element tracked by hand or a
- * `maplibregl.Marker`: there is no exported MapLibre module to construct one
- * from, the same reason the tracks themselves are a source and a layer
- * rather than any kind of Marker — and a layer-backed point gets correct
- * screen placement through every pan and zoom for free, with nothing to
- * update but its data.
- */
+/* Inline-only profile hover corridor and map cursor, both as GeoJSON layers. */
 
 const EMPTY_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -911,14 +717,7 @@ const cursorLayerSpec = {
 	},
 };
 
-/**
- * Make sure both hover layers exist, and size the hit corridor to the
- * currently drawn line weight. Idempotent per source, mirroring drawTracks()'s
- * own "does it already exist" check, and safe to call unconditionally on
- * every draw() — including every style.load, which wipes these along with
- * everything else a style holds — since draw() does not need to know whether
- * renderStats() found a profile to link this to.
- */
+/** Ensure both hover layers after style changes and size the hit corridor. */
 function ensureHoverLayers(map: MapLibreMap, weight: number): void {
 	try {
 		if (!map.getSource(HIT_SRC)) {

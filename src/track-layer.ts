@@ -74,11 +74,7 @@ interface DrawItem {
 	color: string;
 }
 
-/**
- * Where a map is asked to point, in WGS-84 — the space the note is written in.
- * Moving it into whatever space the tiles are drawn in is `focus()`'s job, and
- * doing it anywhere else is how a pin ends up 500 m from its own street.
- */
+/** A requested camera target in vault (WGS-84) space. */
 export interface FocusTarget {
 	lat: number;
 	lng: number;
@@ -88,25 +84,13 @@ export interface FocusTarget {
 	animate?: boolean;
 	/** Whose popup to open on arrival, when that note is one of this view's own rows. */
 	file?: TFile;
-	/**
-	 * Put the keyboard back where it was once the camera and the popup are done.
-	 *
-	 * Set by following and not by "open in map": the difference is whether the
-	 * reader asked to be over here. See `restoreFocus`.
-	 */
+	/** Restore editor focus after a programmatic follow popup. */
 	keepFocus?: boolean;
 }
 
 type TrackFeature = Feature<Geometry, TrackFeatureProps>;
 
-/**
- * Can this Obsidian build nest menus? `MenuItem.setSubmenu` is undeclared, so
- * it is checked for rather than assumed.
- *
- * Probed on a throwaway `Menu` that is never shown, and remembered: a `MenuItem`
- * is only reachable from inside `addItem`, and probing on the real menu would
- * leave an empty entry sitting in it that there is no API to take out again.
- */
+/** Probe the undeclared `setSubmenu` on a throwaway menu so the real menu stays untouched. */
 let nestedMenus: boolean | null = null;
 function canNestMenus(): boolean {
 	if (nestedMenus === null) {
@@ -150,16 +134,7 @@ export class TrackLayer {
 	private detached = false;
 	private fitControl: FitControl | null = null;
 	private followControl: FollowControl | null = null;
-	/**
-	 * Whether this map keeps up with the note being edited. Per layer, so per
-	 * open map — the setting is only where a new one starts, and two tabs on the
-	 * same base view answer this separately.
-	 *
-	 * Not persisted anywhere: the two places that could hold it are the base file
-	 * (which would make one map's button rewrite everybody else's copy of that
-	 * view) and state of the plugin's own, which this repo would rather not keep.
-	 * So a reopened tab starts from the setting again.
-	 */
+	/** Per-open-map follow state; the setting supplies only its initial value. */
 	private following: boolean;
 	private markerFeatures: MarkerFeature[] | null = null;
 	/** Which pins share a spot with another, and where each of them was sent. */
@@ -206,18 +181,7 @@ export class TrackLayer {
 		return this.following;
 	}
 
-	/**
-	 * The button, and the two things it does besides flipping a flag.
-	 *
-	 * Switching it **on** aims at the note that is open now rather than waiting
-	 * for the next `file-open`: a toggle that appears to do nothing until you
-	 * click away and back reads as broken.
-	 *
-	 * Switching it **off** drops `held`, which is what stands `fit()` down (see
-	 * `fit`). Left in place, turning following off would leave the map frozen on
-	 * the last note it followed — auto-fit still standing down for a target
-	 * nothing is aiming at any more.
-	 */
+	/** Turning on follows immediately; turning off releases the target that suppresses auto-fit. */
 	private toggleFollow(): void {
 		this.following = !this.following;
 		this.followControl?.setActive(this.following);
@@ -229,12 +193,7 @@ export class TrackLayer {
 		this.restorers.push(override(obj, key, make));
 	}
 
-	/**
-	 * markerManager.updateMarkers is the useful seam. The native view calls it
-	 * after the map exists and after every data change, *and* re-calls it on
-	 * `styledata` once a new style has wiped every source — which is exactly the
-	 * set of moments the tracks need redrawing too.
-	 */
+	/** Native marker updates are the shared seam for pin spreading and track synchronization. */
 	attach(): this {
 		const view = this.view;
 		const manager = view.markerManager;
@@ -274,18 +233,12 @@ export class TrackLayer {
 			return this.fanOut(markers, moved);
 		});
 
-		// Where a click on a pin sends the note. The native callback is
-		// `openLinkText(path, '', newLeaf)`, which lands in the active leaf — the
-		// map's own, since clicking it is what activated it. Wrapped rather than
-		// re-implemented so a map nobody is following keeps the native behaviour
-		// exactly, including whatever a future version does with `newLeaf`.
+		// Preserve the native callback except when following supplies another pane.
 		this.wrap(manager, 'onOpenFile', (orig) => (path: string, newLeaf: boolean) => {
 			this.openNote(path, newLeaf, () => orig.call(manager, path, newLeaf));
 		});
 
-		// A marker's popup is anchored at the note's own value rather than at the
-		// feature that was drawn — the native manager keeps what the property
-		// said — so on Chinese tiles it opens a few streets from its own pin.
+		// Native popups receive vault coordinates, so project their anchor once here.
 		this.wrap(popups, 'showPopup', (orig) => {
 			this.origShowPopup = orig;
 			return (entry, latLng, properties, markerProps, displayName) => {
@@ -294,19 +247,14 @@ export class TrackLayer {
 			};
 		});
 
-		// The view reads `center` out of the base file in WGS-84 and hands it
-		// straight to the map. Converting it here, where the config object is
-		// born, means initializeMap and updateCenter both agree — patching
-		// either one alone makes them fight over the centre.
+		// Project the configured centre where the shared config object is created.
 		this.wrap(view, 'loadConfig', (orig) => (tileSetId?: string) => {
 			const config = orig.call(view, tileSetId);
 			this.projectConfigCenter(config);
 			return config;
 		});
 
-		// The background switcher rewrites mapConfig.mapTiles in place instead of
-		// going back through loadConfig, so under "auto" the system can change
-		// without the centre hearing about it. Re-derive it from the value we kept.
+		// `switchToTileSet` mutates the live config without calling `loadConfig` again.
 		this.wrap(view, 'switchToTileSet', (orig) => async (tileSetId: string) => {
 			await orig.call(view, tileSetId);
 			this.projectConfigCenter(view.mapConfig);
@@ -314,22 +262,14 @@ export class TrackLayer {
 			this.locate?.replaceDot();
 		});
 
-		// The map's own right-click menu turns the click into a coordinate with
-		// map.unproject(), which answers in tile space. "New note" writes that
-		// into the note it creates, "Copy coordinates" hands it over as a real
-		// place, and "Set default center point" stores it in the base file for
-		// loadConfig to shift a second time. Rather than rebuild the menu, undo
-		// the shift on what unproject answers for the length of the call — every
-		// item reads its coordinate off it, synchronously, before the menu opens.
+		// Native menu actions read `unproject()` synchronously; expose WGS-84 only for that call.
 		if (typeof view.showMapContextMenu === 'function') {
 			this.wrap(view, 'showMapContextMenu', (orig) => (ev: MouseEvent) => {
 				const map = view.map;
 				const system = this.system();
 				if (!map || system === 'wgs84' || typeof map.unproject !== 'function') {
 					orig.call(view, ev);
-					// No patch was installed above — under 'wgs84' tile space already
-					// *is* WGS-84, so addExternalMapItems's own toWgs84() call below is
-					// a correct no-op rather than a missing conversion.
+					// External items always normalize independently; WGS-84 is a no-op.
 					if (map) this.addExternalMapItems(ev, map, system);
 					return;
 				}
@@ -344,10 +284,7 @@ export class TrackLayer {
 				} finally {
 					restore();
 				}
-				// restore() has already put map.unproject back to its native,
-				// tile-space form, so addExternalMapItems reading it now gets exactly
-				// what the native "New note" item got before *its* un-shift — one
-				// more toWgs84() away from WGS-84, same as everything else here.
+				// External items read native tile space after the temporary wrapper is restored.
 				this.addExternalMapItems(ev, map, system);
 			});
 		}
@@ -395,32 +332,7 @@ export class TrackLayer {
 		return this;
 	}
 
-	/**
-	 * "Open in external map" — one item per map app the reader has left in the
-	 * list, appended to the menu the native handler above just built. Nothing is
-	 * appended when they have emptied it.
-	 *
-	 * `Menu.forEvent` keys its menu off the *event*, not off the caller. Read out
-	 * of the shipped Obsidian build (undocumented, so this was verified rather
-	 * than assumed — `npx asar extract` on `obsidian.asar`), it is exactly a
-	 * lookup-or-build against a `WeakMap<Event, Menu>`, with the actual
-	 * `showAtMouseEvent` deferred to a `setTimeout(0)`:
-	 * `n = map.get(e); if (!n) { n = new Menu(); map.set(e, n);
-	 * e.win.setTimeout(() => n.showAtMouseEvent(e)); } return n;`. The native
-	 * `showMapContextMenu` above has already called `Menu.forEvent(ev)` once for
-	 * this exact `ev`, so calling it again here — synchronously, in the same
-	 * task, before that deferred show fires — finds the same menu rather than
-	 * building a second, unrelated one, and the item lands before the reader
-	 * ever sees it open. This is `Menu.forEvent`'s documented purpose: several
-	 * contributors adding items to one menu for one event.
-	 *
-	 * The providers go in a submenu. `MenuItem.setSubmenu` is absent from
-	 * `obsidian.d.ts` but present in the shipped build and used by Obsidian's own
-	 * menus — see the declaration in `types/obsidian-internals.d.ts` for what was
-	 * read out of `obsidian.asar`. Undeclared means unpromised, so it is checked
-	 * for at runtime and six flat items are added instead when it is not there:
-	 * repetitive, but a working menu beats a missing one.
-	 */
+	/** Append to the event-keyed native menu, falling back to flat items without `setSubmenu`. */
 	private addExternalMapItems(ev: MouseEvent, map: NonNullable<BasesMapView['map']>, system: CoordSystem): void {
 		if (typeof map.unproject !== 'function') return;
 		let lngLat: LngLat;
@@ -430,14 +342,7 @@ export class TrackLayer {
 		} catch {
 			return;
 		}
-		// By the time this runs, map.unproject is back to its native, tile-space
-		// form — either the wrapper above patched it and its own restore() already
-		// ran (the finally block, above), or system was already 'wgs84' and no
-		// patch was ever installed in the first place. Either way toWgs84() here
-		// is exactly *one* un-shift: never the zero a still-patched unproject would
-		// leave (this would then double-convert), and never the two an extra call
-		// elsewhere would add. Both errors are invisible on screen and land the pin
-		// ~500 m from where the reader actually clicked.
+		// `unproject` is native tile space here; normalize exactly once before provider conversion.
 		const [lng, lat] = toWgs84(system, lngLat.lng, lngLat.lat);
 
 		const items = this.externalMapItems(lat, lng);
@@ -467,19 +372,7 @@ export class TrackLayer {
 		}
 	}
 
-	/**
-	 * What the menu offers, in the order the reader put it in: the built-ins they
-	 * left switched on, then whatever they added themselves.
-	 *
-	 * No label is passed anywhere below. The click is on empty map, not on a
-	 * note, so there is no name to give — inventing one would be worse than none.
-	 *
-	 * An unusable custom entry — no scheme, a scheme a menu item must not carry,
-	 * or a URL with no `{lat}`/`{lng}` to put the coordinate in — is left out
-	 * rather than opened. `customMapUrl` is the one place that decides, and the
-	 * settings pane says which of the three it is while the reader is still
-	 * typing, because a menu cannot explain the item it is not showing.
-	 */
+	/** Enabled built-ins in stored order, followed by custom entries that validate. */
 	private externalMapItems(lat: number, lng: number): Array<{ title: string; url: string }> {
 		const settings = this.plugin.settings;
 		const items = enabledBuiltins(resolveBuiltins(settings.externalMaps, getLocale())).map((provider) => ({
@@ -558,16 +451,8 @@ export class TrackLayer {
 			this.sync().catch((e) => console.error('Advanced Maps: could not redraw tracks', e));
 		});
 
-		// The built-in view frames every marker when the map finishes loading,
-		// *animated*, unless it has a pending camera state at that moment — and
-		// that state is one-shot: the data path applies it and sets it to null. So
-		// whether the map has finished loading before or after the first data
-		// update decides whether a map opened on one note stays on it. Desktop
-		// wins that race and mobile loses it, which is exactly how it was found.
-		//
-		// Registered here, after the native handler, so it runs in the same
-		// dispatch and puts the camera back before a frame is drawn — the started
-		// animation is cancelled by the new camera command rather than watched.
+		// The native load handler may frame after one-shot pending state is consumed;
+		// this later handler restores a held target unless the user moved the map.
 		this.mapEvents.on(map, 'load', () => {
 			if (this.held && !this.userMoved) this.aim(this.held, false);
 		});
@@ -584,8 +469,7 @@ export class TrackLayer {
 		// dots remain for every photo that has no room for a thumbnail.
 		this.mapEvents.on(map, 'moveend', () => this.reselectPhotoIcons());
 
-		// Asked for before there was a map to ask — "open in map" gets its layer
-		// back from the leaf a beat before the view builds its map, measured.
+		// A focus request may arrive before the native view constructs its map.
 		const pending = this.pendingFocus;
 		if (pending) {
 			this.pendingFocus = null;
@@ -595,27 +479,7 @@ export class TrackLayer {
 
 	/* ---- pointing the camera ---- */
 
-	/**
-	 * Point this map at one place: the note "open in map" was run on, or the note
-	 * that just became active.
-	 *
-	 * Keeping it there is the part that took measuring. Three things would
-	 * otherwise take the camera back:
-	 *
-	 * - `fit()`, on the next sync — and Bases syncs on *any* vault change while a
-	 *   map is open. `held` is what stands it down, and the ⛶ control still wins
-	 *   because that is what `force` means.
-	 * - The view's own `load` handler, which frames every marker. See
-	 *   `onMapCreated`.
-	 * - The configured centre, applied when the map is built.
-	 *
-	 * The last of those is handled by telling the view its camera is under outside
-	 * control, through the `setEphemeralState` seam Obsidian's own back/forward
-	 * restore uses. Worth knowing before relying on it: **it is one-shot**. The
-	 * native data path applies `pendingMapState` once the markers are up and then
-	 * sets it to null, so it cannot be the only thing holding a camera in place —
-	 * which is what `held` is for.
-	 */
+	/** Aim at a WGS-84 target and hold it against automatic framing and late native load framing. */
 	focus(target: FocusTarget): void {
 		if (this.detached) return;
 		// No map yet, and no `mapConfig` either — so there is nothing to convert
@@ -631,26 +495,7 @@ export class TrackLayer {
 		});
 	}
 
-	/**
-	 * Run something that opens a popup, and leave the keyboard where it was.
-	 *
-	 * A MapLibre `Popup` focuses itself when it opens — `focusAfterOpen`, which
-	 * defaults to true and which the native `PopupManager` never sets — so it
-	 * grabs the first focusable thing inside itself, the note link. Measured: with
-	 * a note focused in one pane, a follow lands `document.activeElement` on
-	 * `a.internal-link` inside the map's popup.
-	 *
-	 * That is correct for a popup the reader opened by pointing at a pin, and it
-	 * is the whole of why following was unusable in a split: every switch between
-	 * notes took the caret out of the editor and put it on the map. The popup is
-	 * still worth opening — a map that moves should say what it moved for — so the
-	 * focus goes back rather than the popup going away.
-	 *
-	 * Restoring after the fact, rather than turning `focusAfterOpen` off on the
-	 * shared popup: the flag is MapLibre's own and the popup is the native
-	 * manager's, and a reader who opens a popup by hovering a pin should still be
-	 * able to tab into it.
-	 */
+	/** Restore the editor only for programmatic follows; native hover popups retain normal focus behavior. */
 	private restoreFocus(target: FocusTarget, run: () => void): void {
 		const doc = this.view.containerEl?.doc ?? activeDocument;
 		const before = target.keepFocus ? doc.activeElement : null;
@@ -673,16 +518,7 @@ export class TrackLayer {
 		else map.setCenter({ lng, lat });
 	}
 
-	/**
-	 * Open the note's own popup where the camera landed, so a map that moves says
-	 * what it moved for.
-	 *
-	 * Only for a note the view holds a row for. One the base filters out has no
-	 * pin of its own, and a card floating over empty map would name a place that
-	 * is not on it. A view that has only just been built has its map before it has
-	 * its rows, which is what the pending slot above is for — answering false here
-	 * means "ask again once the data lands", once.
-	 */
+	/** Show a popup only for a row in this view; false asks the next data sync to retry once. */
 	private showNotePopup(target: FocusTarget): boolean {
 		const file = target.file;
 		if (!file) return true;
@@ -703,13 +539,7 @@ export class TrackLayer {
 		return true;
 	}
 
-	/**
-	 * Keep the camera pointed at the same real place when the space beneath it
-	 * changes. The map's centre is in tile space like everything else it holds,
-	 * so a switch from Amap to OpenStreetMap leaves it looking a few streets from
-	 * where the reader left it — and a view that pins a `center` never gets
-	 * re-framed by `fit()`, which stands down for exactly that case.
-	 */
+	/** Preserve the real-world camera centre across tile-datum changes. */
 	private realignCamera(): void {
 		const map = this.view.map;
 		const system = this.system();
@@ -803,24 +633,7 @@ export class TrackLayer {
 
 	/* ---- pins that share a spot ---- */
 
-	/**
-	 * Tell every pin that shares its spot with another which way to lean.
-	 *
-	 * The slot is stamped on the feature rather than applied to it: the pin
-	 * itself stays exactly where its note says it is, and the offset is drawn on
-	 * screen by `icon-offset` (see `applySpread`). Nothing downstream of here —
-	 * bounds, the context menu, "Copy coordinates" — ever sees a moved
-	 * coordinate, because there is no moved coordinate to see.
-	 *
-	 * Keyed on the note's own path rather than on the index the native manager
-	 * mints, so re-sorting a base leaves each note where it already was in its
-	 * own fan instead of shuffling the whole ring.
-	 *
-	 * Stands down whole on anything unexpected: a marker list that is not one
-	 * per feature, a row with no path, a feature that is not a Point. A fan is a
-	 * convenience, and half a fan — some pins moved, some not — would be worse
-	 * than none.
-	 */
+	/** Stamp stable screen-offset slots without moving coordinates; malformed input disables the whole plan. */
 	private fanOut(markers: MapMarker[], features: MarkerFeature[]): MarkerFeature[] {
 		this.spread = null;
 		if (!this.plugin.settings.spreadMarkers) return features;
@@ -846,22 +659,7 @@ export class TrackLayer {
 		});
 	}
 
-	/**
-	 * Hand the native marker layer the expression that reads those slots.
-	 *
-	 * Set on the native layer rather than on one of this plugin's own, because
-	 * the pins are the native layer's — and put back by `restoreSpread` when the
-	 * plugin goes away, so a Maps view that outlives this instance is left as it
-	 * was found. A style swap wipes the layer and re-adds it with its own
-	 * default, which is why `spreadApplied` is dropped on `style.load`: the
-	 * expression has to go back on, and the guard here would otherwise say it
-	 * already had.
-	 *
-	 * The guard matters. `setLayoutProperty` re-parses the layer's buckets, and
-	 * this runs after every `updateMarkers` — which Bases calls on any vault
-	 * change while a map is open, the same reason `sync()` guards its own upload
-	 * (see the note there). The fan itself only changes when the notes do.
-	 */
+	/** Apply the slot expression to the native layer once per value; detach restores its offset. */
 	private applySpread(): void {
 		const map = this.view.map;
 		if (!map || typeof map.setLayoutProperty !== 'function') return;
@@ -897,24 +695,7 @@ export class TrackLayer {
 		}
 	}
 
-	/**
-	 * Where this note's pin actually is on screen, which is not where its note
-	 * says once the fan has opened.
-	 *
-	 * Only the hover card needs this, and it needs it badly: a card anchored at
-	 * the spot nine notes share would sit in the middle of their ring, covering
-	 * the eight pins the reader is trying to pick between. The offset goes
-	 * through `project`/`unproject` rather than any arithmetic of its own, so it
-	 * lands on the same pixel MapLibre drew the icon at, at whatever zoom,
-	 * rotation and pitch the map is under.
-	 *
-	 * `spreadFactor` is the same ramp `iconOffsetExpression` writes into the
-	 * style — one statement of it, so the card cannot open where the pin was
-	 * yesterday. The two disagree by a pixel or so mid-open, where MapLibre is
-	 * also scaling the offset by an `icon-size` that has not reached its last
-	 * stop yet; at `SPREAD.toZoom` and past it, which is where a reader
-	 * separating pins actually is, they agree exactly.
-	 */
+	/** Place the popup at the rendered spread pin via MapLibre's own project/unproject pair. */
 	private fanned(entry: BasesEntry, lng: number, lat: number): [number, number] {
 		const path = entry && entry.file ? entry.file.path : '';
 		const slot = path ? this.spread?.pins.get(path) : undefined;
@@ -973,24 +754,7 @@ export class TrackLayer {
 		return { type: 'FeatureCollection', features };
 	}
 
-	/**
-	 * Everything the uploaded collection depends on, as one comparable string:
-	 * which files, in which state, in which colour, in which space.
-	 *
-	 * Paint and framing are deliberately *not* in here. They are cheap and they
-	 * run on every sync regardless, so this only has to answer one question —
-	 * "are these the same features as the ones already up?".
-	 *
-	 * `photoDatum` is in the same bucket as `system`: neither one is visible in
-	 * a track file's own path or mtime, so a change to either has to be spelled
-	 * out here by hand or `sync()`'s upload-skip gate cannot see it. Missing it
-	 * looks fine right up until a photo whose EXIF stated no datum is *why* the
-	 * reader flipped the setting — `sync()`'s own `isFresh()` check, below, now
-	 * reloads it under the new datum and `build()` puts the corrected coordinate
-	 * in `this.data`, but without this line the redraw is still skipped, since
-	 * path+mtime+color are unchanged — the map keeps showing the old pin having
-	 * done all the work to compute the new one.
-	 */
+	/** Feature-upload identity; paint/framing stay outside so they still run on every sync. */
 	private signature(items: DrawItem[], system: CoordSystem): string {
 		const parts: string[] = [system, this.plugin.settings.photoDatum];
 		for (const item of items) {
@@ -1037,18 +801,8 @@ export class TrackLayer {
 		const system = this.system();
 		this.data = this.build(items, system);
 
-		// `setData` hands every position to MapLibre's worker and re-tiles the
-		// lot, which is the one genuinely expensive step in here — and Bases
-		// replaces its result set on *any* vault change while a map view is open,
-		// not just changes to notes the base matches, so sync() runs far more
-		// often than the tracks themselves change.
-		//
-		// Only the upload is skipped. Paint and framing below are cheap and still
-		// run every time, so a row that arrives carrying a pin and no track still
-		// re-frames the map exactly as it used to. And the source has to still be
-		// there: a style swap — theme, background — wipes every source, then
-		// `style.load` re-enters here with an unchanged signature to put the
-		// tracks back.
+		// Skip only expensive worker upload; paint/framing always run, and a style
+		// swap forces upload because it removed the source.
 		const signature = this.signature(items, system);
 		if (signature !== this.drawn || !map.getSource(SRC)) {
 			if (!drawTracks(map, this.data)) return;
@@ -1085,17 +839,7 @@ export class TrackLayer {
 		);
 	}
 
-	/**
-	 * Build the thumbnail candidates for the current result set, then let
-	 * `ensurePhotoImages` project their tile-space Points and keep only a stable,
-	 * non-overlapping screen-space set. `photoIconSource()` (layers.ts) is the
-	 * one builder both draw paths share, so a base map and an inline one can
-	 * never disagree about what a photo icon carries.
-	 *
-	 * Run every sync, which is what catches rows entering and leaving the base.
-	 * The Point source still carries every photo, so everything outside the
-	 * selection remains a coloured dot.
-	 */
+	/** Rebuild camera-independent candidates per sync; viewport selection stays in `ensurePhotoImages`. */
 	private ensurePhotoIcons(items: DrawItem[]): void {
 		const system = this.system();
 		const records: PhotoIconSource[] = [];
@@ -1111,13 +855,7 @@ export class TrackLayer {
 		if (map) ensurePhotoImages(map, records);
 	}
 
-	/**
-	 * The camera moved, so which icons have room changed — but the candidates
-	 * did not. Nothing `photoIconSource()` produces depends on the camera, and a
-	 * base's whole row walk on every pan is real work on a large vault, so
-	 * `moveend` re-runs only the screen-space selection over what the last
-	 * sync built.
-	 */
+	/** Camera movement reselects from cached candidates without walking base rows again. */
 	private reselectPhotoIcons(): void {
 		const map = this.view.map;
 		if (!map || this.photoIcons.length === 0) return;
@@ -1131,17 +869,7 @@ export class TrackLayer {
 		const map = this.view.map;
 		if (!map) return;
 		this.interactionsBound = true;
-		// Endpoint pins and direction arrows share the click-to-open,
-		// hover-shows-the-note-popup behaviour of the line and the waypoint dots
-		// "for free" — same source, same amIndex, so itemFrom() resolves them the
-		// same way it resolves everything else.
-		//
-		// The two photo layers are here for the hover half of exactly that, and
-		// both of them are, not just the one that draws a thumbnail: a photo with
-		// no decoded icon renders on PHOTO_DOT_LAYER alone (see its comment in
-		// constants.ts), and binding only PHOTO_LAYER would leave that photo
-		// inert. `open()` is what tells the two apart on the way out — a photo
-		// opens the photo, everything else opens the note.
+		// Bind both photo layers: dot-only photos must remain interactive.
 		for (const layer of [LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER, PHOTO_DOT_LAYER, PHOTO_LAYER]) {
 			this.mapEvents.onLayer(map, 'click', layer, (ev: MapMouseEvent) => this.open(ev));
 			this.mapEvents.onLayer(map, 'mousemove', layer, (ev: MapMouseEvent) => this.hover(ev));
@@ -1159,17 +887,7 @@ export class TrackLayer {
 		return typeof index === 'number' ? (this.items[index] ?? null) : null;
 	}
 
-	/**
-	 * One click, one thing opened.
-	 *
-	 * `map.on('click', layer, …)` is registered per layer and dispatched per
-	 * layer, so a pointer over two of this source's layers at once fires this
-	 * twice for one `originalEvent`. That has always been possible — a
-	 * direction arrow sits on the line it describes — and cost nothing while
-	 * every layer opened the same note twice. A photo makes it visible: the
-	 * thumbnail on PHOTO_LAYER and the dot beneath it on PHOTO_DOT_LAYER are
-	 * the same feature, and two modals would open on top of each other.
-	 */
+	/** Layer-scoped handlers may deliver one DOM event twice; handle it once. */
 	private open(ev: MapMouseEvent): void {
 		const item = this.itemFrom(ev);
 		if (!item) return;
@@ -1184,18 +902,7 @@ export class TrackLayer {
 		else this.openNote(item.file.path, mod);
 	}
 
-	/**
-	 * A photo pin opens the photo; its note stays one click further away, in
-	 * the card that hovering the same pin already shows and in the modal's own
-	 * "open note" row. A mod-click keeps Obsidian's own meaning — the image
-	 * file, in a new tab — because that is the one case where the reader has
-	 * asked for a leaf and no map is about to be replaced by it.
-	 *
-	 * A path that no longer resolves falls back to the note rather than to
-	 * nothing: the pin was drawn from a record that was accurate when it was
-	 * built, and a file deleted since is a reason to show its note, not to make
-	 * the click dead.
-	 */
+	/** Normal click opens the modal, mod-click opens the file, and a stale path falls back to its note. */
 	private openPhoto(path: string, item: DrawItem, mod: PaneType | boolean): void {
 		const file = this.view.app.vault.getFileByPath(path);
 		if (!file) {
@@ -1209,19 +916,7 @@ export class TrackLayer {
 		new PhotoModal(this.view.app, file, () => this.openNote(item.file.path, false)).open();
 	}
 
-	/**
-	 * A click on this map, sent somewhere that is not this map.
-	 *
-	 * Only while following, and only for a plain click — a mod-click means "a new
-	 * tab" and already lands somewhere harmless. Everything else falls through to
-	 * `native`, so a map nobody is following behaves exactly as it always did,
-	 * including whatever a later version of Maps does with `newLeaf`.
-	 *
-	 * `active: true`, because a click on a pin is a request to read that note.
-	 * The `file-open` this raises comes back round to `followActiveNote`, which
-	 * aims this same map at the note it was already showing — a no-op move, and
-	 * cheaper than an exception to the rule.
-	 */
+	/** Plain clicks on a following map use its followed pane; every other case preserves native behavior. */
 	private openNote(path: string, mod: PaneType | boolean, native?: () => void): void {
 		const leaf = this.following && !mod ? this.plugin.followTarget(this) : null;
 		const file = leaf ? this.view.app.vault.getFileByPath(path) : null;

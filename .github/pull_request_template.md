@@ -6,6 +6,7 @@
 
 ## Checked
 
-- [ ] `npm run check` passes (format, lint, types, tests)
-- [ ] Tried in a real vault with the built-in Maps view enabled
-- [ ] If it touches the coordinate maths or a parser, there is a test for it
+- [ ] Linked the affected OpenSpec change/spec, or explained why there is no spec impact
+- [ ] `npm run check` passes
+- [ ] Recorded behavior-preservation or live-vault evidence when relevant
+- [ ] Kept the branch focused and the PR squashable

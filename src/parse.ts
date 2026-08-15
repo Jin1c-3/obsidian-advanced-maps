@@ -1,11 +1,4 @@
-/*
- * Parsing — everything becomes plain GeoJSON features.
- *
- * GPX, KML and TCX all go through the browser's own XML parser rather than a
- * library: the subset that matters out of each format is a handful of tag
- * names, and a plugin that ships no dependencies is a plugin that cannot ship
- * a vulnerable one.
- */
+/* Dependency-free GPX/KML/TCX/GeoJSON parsing into plain GeoJSON features. */
 
 import type { Feature, Geometry, Position } from 'geojson';
 
@@ -14,26 +7,7 @@ export interface ParsedTrack {
 	waypoints?: number;
 }
 
-/**
- * Fold what a reader managed to pick up beyond bare geometry into `properties`
- * — or `null` when there was nothing, which every existing reader (and every
- * caller downstream) already depends on: a feature with nothing extra to say
- * keeps `properties: null` rather than an empty object nobody asked for.
- *
- * Two keys go in, and there is nowhere else for either to ride:
- *
- * - `name`, a `<Placemark>`'s (or similar) own, when the source states one.
- * - `times`, epoch milliseconds one per coordinate, aligned 1:1 with the
- *   geometry's position array. `null` marks a point whose source gave no
- *   timestamp, or one that did not parse — a hole rather than a dropped point,
- *   because dropping it would desync this array from the coordinates it
- *   describes.
- *
- * The return type is the wider `Record<string, unknown>` rather than an
- * interface naming those two: `ParsedTrack.features` is typed against the
- * `Record`, and an interface with named properties has no index signature for
- * TypeScript to match against it.
- */
+/** Preserve optional name and position-aligned timestamps; return null when empty. */
 function buildProperties(
 	name: string | undefined,
 	times: (number | null)[] | undefined
@@ -124,11 +98,7 @@ export function parseGpx(text: string): ParsedTrack {
 	return { features, waypoints };
 }
 
-/**
- * Garmin's TCX: the richest of the four formats, since every field GPX might
- * omit — time, altitude — a TCX export states on every trackpoint that has it.
- * One `<Track>` (nested under `<Lap>`) becomes one LineString.
- */
+/** Garmin TCX: each positioned `<Track>` becomes one LineString. */
 export function parseTcx(text: string): ParsedTrack {
 	const doc = new DOMParser().parseFromString(text, 'application/xml');
 	if (doc.getElementsByTagName('parsererror').length > 0) {
@@ -192,8 +162,7 @@ function firstByLocalName(parent: Element, name: string): Element | undefined {
 	return byLocalName(parent, name)[0];
 }
 
-/** `lon,lat[,ele]` tuples, whitespace-separated — including the newlines most
- *  real KML wraps a long `<coordinates>` block in for readability. */
+/** Whitespace-separated KML `lon,lat[,ele]` tuples. */
 function parseKmlCoordinates(raw: string): Position[] {
 	const out: Position[] = [];
 	for (const tuple of raw.trim().split(/\s+/)) {
