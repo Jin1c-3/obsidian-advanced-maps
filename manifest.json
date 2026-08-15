@@ -1,7 +1,7 @@
 {
 	"id": "advanced-maps",
 	"name": "Advanced Maps",
-	"version": "1.13.4",
+	"version": "1.13.5",
 	"minAppVersion": "1.13.1",
 	"description": "Extends the built-in Maps view: GPX/GeoJSON/KML/TCX tracks and geotagged photos drawn from your notes, inline maps for ![[track.gpx]], GCJ-02/BD-09 basemap alignment, and coordinates from a map link, a place search, a photo or your device.",
 	"author": "Jin1c-3",
