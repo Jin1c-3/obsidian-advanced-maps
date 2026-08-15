@@ -23,6 +23,33 @@ export const PHOTO_HEAD_BYTES = 65536;
  */
 export const READ_CONCURRENCY = 16;
 
+/**
+ * How many photos the persistent index retains before evicting least-recently
+ * used entries.
+ *
+ * Generous against the 12,107-photo library this was measured on, because
+ * eviction costs a re-read of exactly the photos a session then wants. That
+ * library serialized to 1.99 MB, or 164 bytes per entry; entries that all carry
+ * a coordinate run to about 205, which puts the bound near 10 MB and 26 ms of
+ * `JSON.parse` once per session. The 8.5 s of file reading that same session
+ * avoided is what pays for it.
+ */
+export const PHOTO_INDEX_MAX = 50000;
+
+/** How long index changes accumulate before one coalesced write. */
+export const PHOTO_INDEX_WRITE_MS = 5000;
+
+/**
+ * How stale a last-used stamp must be before merely reading an entry is worth a
+ * rewrite of the file.
+ *
+ * Without this, a warm start that reads 12,000 unchanged entries would dirty
+ * every one of them and rewrite the whole index on every session for no change
+ * but the clock. Eviction only has to know which entries no recent session
+ * wanted, and a day is finer than that question needs.
+ */
+export const PHOTO_INDEX_TOUCH_MS = 86400000;
+
 /* This plugin's own source and layer ids. The native marker layer is
  * "marker-pins" on the "markers" source; tracks go in below it so a pin sitting
  * on its own track stays clickable. */

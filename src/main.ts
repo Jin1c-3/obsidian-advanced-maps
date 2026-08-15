@@ -29,6 +29,7 @@ import {
 	type BaseView,
 } from './map-block';
 import { MapModal } from './modal';
+import { PhotoIndex, pluginIndexIO } from './photo-index';
 import { nativeBehind, ownedBy, stamp, type RegistrationOwner } from './registration';
 import { PlaceSearchModal } from './search-modal';
 import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMapsSettings } from './settings';
@@ -47,6 +48,8 @@ export default class AdvancedMapsPlugin extends Plugin {
 	/** Declared on Plugin as `unknown` since 1.13; narrowed here. */
 	override settings!: AdvancedMapsSettings;
 	tracks!: TrackCache;
+	/** What reading a photo answered last session; derivable, never authoritative. */
+	photoIndex!: PhotoIndex;
 	locator!: Locator;
 	readonly layers = new Set<TrackLayer>();
 	readonly embeds = new Set<TrackEmbed>();
@@ -74,7 +77,11 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	override async onload(): Promise<void> {
 		await this.loadSettings();
-		this.tracks = new TrackCache(this.app);
+		this.photoIndex = new PhotoIndex(pluginIndexIO(this));
+		// Started here rather than awaited: the read is what the first map waits
+		// on, and every other part of loading has no business waiting with it.
+		void this.photoIndex.ready();
+		this.tracks = new TrackCache(this.app, this.photoIndex);
 		this.locator = new Locator({
 			geolocation: typeof navigator !== 'undefined' ? (navigator.geolocation ?? null) : null,
 			// The locator names the reason; turning it into a sentence is this side's
@@ -143,9 +150,18 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 		// Maps may replace its registration; idempotently re-adopt after layout changes.
 		this.registerEvent(this.app.workspace.on('layout-change', () => this.patchMapsView()));
+
+		// Only once the vault file list is populated: asking a half-built index
+		// which paths exist would answer "none" and discard the whole store.
+		this.app.workspace.onLayoutReady(() => {
+			void this.prunePhotoIndex();
+		});
 	}
 
 	override onunload(): void {
+		// Best-effort: onunload cannot await, and the debounced write already made
+		// this session's work durable seconds ago.
+		void this.photoIndex.flush();
 		this.unpatchMapsView();
 		// Explicitly release each embed's MapLibre/WebGL resources.
 		for (const embed of [...this.embeds]) embed.unload();
@@ -206,7 +222,23 @@ export default class AdvancedMapsPlugin extends Plugin {
 	/** A track file has gone or moved: drop its parse, and every memo that named it. */
 	private forgetTrack(path: string): void {
 		this.tracks.invalidate(path);
+		// The stored entry describes a file at this path. After a delete there is
+		// none, and after a rename the bytes answer to another name — either way
+		// it must not be able to place a point.
+		this.photoIndex.forget(path);
 		this.trackLinks = new WeakMap();
+	}
+
+	/** Drop stored entries for photos the vault no longer has. */
+	private async prunePhotoIndex(): Promise<void> {
+		await this.photoIndex.ready();
+		this.photoIndex.prune((path) => this.app.vault.getFileByPath(path) !== null);
+	}
+
+	/** Discard the index outright. Nothing on screen changes; later reads refill it. */
+	async clearPhotoIndex(): Promise<void> {
+		await this.photoIndex.clear();
+		new Notice(t('notice.photoIndex.cleared'));
 	}
 
 	/** Attach a TrackLayer to one native map view, whatever its age. */

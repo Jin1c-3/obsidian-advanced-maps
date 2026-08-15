@@ -425,21 +425,33 @@ export function applyTrackPaint(
 /** What one photo needs to become a registered `map.addImage` bitmap. */
 export interface PhotoIconSource {
 	id: string;
-	thumbnail: ExifThumbnail;
+	/** Present when this session already read the bytes; otherwise `load` has them. */
+	thumbnail?: ExifThumbnail;
+	/** Reads the bytes for a photo restored from the persistent index. */
+	load?: () => Promise<ExifThumbnail | undefined>;
 	orientation: number;
 	/** Tile-space point, so viewport selection uses the same space as the map. */
 	coordinates: [number, number];
 }
 
-/** Shared icon-candidate builder; null when no thumbnail or mapped Point exists. */
+/**
+ * Shared icon-candidate builder; null when the photo has no thumbnail or no
+ * mapped Point.
+ *
+ * A record restored from the persistent index states that a thumbnail exists
+ * without holding it, so eligibility is decided by `has` rather than by the
+ * bytes — the read for those is deferred to `decodePhotoIcon`, which runs only
+ * for the photos actually selected on screen.
+ */
 export function photoIconSource(path: string, rec: TrackRecord, system: CoordSystem): PhotoIconSource | null {
 	const photo = rec.photo;
-	if (!photo?.thumbnail) return null;
+	if (!photo?.has) return null;
 	const point = projectedFeatures(rec, system).find((feature) => feature.geometry.type === 'Point');
 	if (point?.geometry.type !== 'Point') return null;
 	return {
 		id: photoImageId(path),
 		thumbnail: photo.thumbnail,
+		load: photo.load,
 		orientation: photo.orientation,
 		coordinates: [point.geometry.coordinates[0], point.geometry.coordinates[1]] as [number, number],
 	};
@@ -664,8 +676,17 @@ function drawPhotoIcon(bitmap: ImageBitmap, orientation: number): ImageData {
 
 /** Decode, draw, and register one photo, rechecking map/wanted state after awaits. */
 async function decodePhotoIcon(map: MapLibreMap, record: PhotoIconSource): Promise<void> {
-	const { id, thumbnail, orientation } = record;
+	const { id, orientation } = record;
 	try {
+		// A photo restored from the persistent index reaches here without bytes.
+		// This is the one place they are worth reading: the map has already
+		// selected this photo, so the read follows the viewport rather than the
+		// result set. A file that turns out to hold none simply stays a dot.
+		const thumbnail = record.thumbnail ?? (await record.load?.());
+		if (!thumbnail) return;
+		// The selection may have moved on during that read, exactly as it may
+		// during the decode below.
+		if (!photoDecodeStates.get(map)?.wanted.has(id)) return;
 		// `new Uint8Array(thumbnail.bytes)` rather than the bytes themselves: a
 		// `Uint8Array` sliced out of a `SharedArrayBuffer`-backed source types as
 		// `Uint8Array<ArrayBufferLike>`, which `BlobPart` (TS 5.9's lib.dom)

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TFile, type App } from 'obsidian';
-import { pooled, readHead, TrackCache } from '../src/track-cache';
+import { pooled, readHead, TrackCache, type TrackRecord } from '../src/track-cache';
+import { PhotoIndex, type PhotoIndexEntry } from '../src/photo-index';
+import { gcj2wgs } from '../src/coords';
 
 interface Deferred<T> {
 	promise: Promise<T>;
@@ -104,6 +106,9 @@ describe('TrackCache concurrency', () => {
 		const gcj = cache.load(file, 'gcj02');
 		const finalAuto = cache.load(file, 'auto');
 		expect(finalAuto).toBe(firstAuto);
+		// Two distinct reads were started, whichever tick each one reaches `fetch`
+		// on — request identity is what this is about, not read eagerness.
+		await Promise.resolve();
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 
 		autoResponse.resolve(Uint8Array.from([0, 1, 2, 3]).buffer);
@@ -141,6 +146,165 @@ describe('TrackCache concurrency', () => {
 		gcjResponse.resolve(Uint8Array.from([4, 5, 6, 7]).buffer);
 		await expect(gcj).resolves.toBe(auto);
 		expect(cache.get(file.path)).toBe(auto);
+	});
+});
+
+describe('TrackCache over a persistent index', () => {
+	const NOW = 1755300000000;
+
+	function photoFile(mtime = 1, size = 4096): TFile {
+		const file = new TFile();
+		file.path = 'Photos/walk.jpg';
+		file.basename = 'walk';
+		file.extension = 'jpg';
+		file.stat = { ...file.stat, mtime, size };
+		return file;
+	}
+
+	/** An index primed as if a previous session had written it. */
+	async function primed(entries: Record<string, PhotoIndexEntry>): Promise<PhotoIndex> {
+		const index = new PhotoIndex({
+			read: async () => JSON.stringify({ version: 1, entries }),
+			write: async () => undefined,
+			remove: async () => undefined,
+		});
+		await index.ready();
+		return index;
+	}
+
+	/** Every path a photo read could take, all of them failing the test if taken. */
+	function noReads() {
+		const fetchMock = vi.fn(() => {
+			throw new Error('the photo file was read');
+		});
+		vi.stubGlobal('fetch', fetchMock);
+		const readBinary = vi.fn(() => {
+			throw new Error('the photo file was read');
+		});
+		return { fetchMock, app: appWith({ getResourcePath: () => 'app://vault/photo.jpg', readBinary }) };
+	}
+
+	function point(rec: TrackRecord): number[] {
+		const geometry = rec.features[0]?.geometry;
+		if (geometry?.type !== 'Point') throw new Error(`expected one Point, got ${geometry?.type ?? 'nothing'}`);
+		return geometry.coordinates;
+	}
+
+	it('places a photo from a stored entry without reading the file', async () => {
+		const { app } = noReads();
+		const index = await primed({
+			'Photos/walk.jpg': { size: 4096, mtime: 1, used: NOW, lng: 120.1, lat: 30.1, orientation: 6, thumb: true },
+		});
+		const cache = new TrackCache(app, index);
+
+		const rec = await cache.load(photoFile(), 'wgs84');
+		expect(point(rec)).toEqual([120.1, 30.1]);
+		expect(rec.photo?.orientation).toBe(6);
+		// The thumbnail is known to exist without its bytes being in hand, and is
+		// fetchable on demand for the photos a map actually decodes.
+		expect(rec.photo?.has).toBe(true);
+		expect(rec.photo?.thumbnail).toBeUndefined();
+		expect(typeof rec.photo?.load).toBe('function');
+	});
+
+	it('does not re-read a photo already known to carry no GPS', async () => {
+		const { app } = noReads();
+		const index = await primed({ 'Photos/walk.jpg': { size: 4096, mtime: 1, used: NOW } });
+		const cache = new TrackCache(app, index);
+
+		const rec = await cache.load(photoFile(), 'auto');
+		expect(rec.features).toEqual([]);
+		expect(rec.error).toBeUndefined();
+	});
+
+	it('re-reads when the file no longer matches the state the entry was derived from', async () => {
+		vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			arrayBuffer: async () => Uint8Array.from([0, 1, 2, 3]).buffer,
+		});
+		vi.stubGlobal('fetch', fetchMock);
+		const app = appWith({ getResourcePath: () => 'app://vault/photo.jpg', readBinary: vi.fn() });
+		const index = await primed({
+			'Photos/walk.jpg': { size: 4096, mtime: 1, used: NOW, lng: 120.1, lat: 30.1, orientation: 1 },
+		});
+		const cache = new TrackCache(app, index);
+
+		// Edited between sessions: same path, newer mtime.
+		await cache.load(photoFile(2), 'wgs84');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		// Restored from a backup, which can preserve an mtime but not a size.
+		cache.invalidate('Photos/walk.jpg');
+		await cache.load(photoFile(1, 8192), 'wgs84');
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('reinterprets a stored entry into a new datum without reading the file', async () => {
+		const { app } = noReads();
+		const index = await primed({
+			'Photos/walk.jpg': { size: 4096, mtime: 1, used: NOW, lng: 120.1, lat: 30.1, orientation: 1 },
+		});
+		const cache = new TrackCache(app, index);
+		const file = photoFile();
+
+		const asWgs = point(await cache.load(file, 'wgs84'));
+		// The setting changed; nothing about the file did.
+		const asGcj = point(await cache.load(file, 'gcj02'));
+
+		expect(asWgs).toEqual([120.1, 30.1]);
+		expect(asGcj).toEqual(gcj2wgs(120.1, 30.1));
+		expect(asGcj).not.toEqual(asWgs);
+	});
+
+	it('records what a read found, including the no-GPS answer', async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			arrayBuffer: async () => Uint8Array.from([0, 1, 2, 3]).buffer,
+		});
+		vi.stubGlobal('fetch', fetchMock);
+		const app = appWith({ getResourcePath: () => 'app://vault/photo.jpg', readBinary: vi.fn() });
+		const index = await primed({});
+		const cache = new TrackCache(app, index);
+
+		await cache.load(photoFile(), 'auto');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		// Recorded against this exact file state, and recorded as having nothing —
+		// which is the answer this saves re-deriving for most of a real library.
+		const stored = index.get('Photos/walk.jpg', 4096, 1, NOW);
+		expect(stored).toMatchObject({ size: 4096, mtime: 1 });
+		expect(stored?.lat).toBeUndefined();
+		expect(stored?.thumb).toBeUndefined();
+
+		// A second session over the same unchanged file asks the file nothing.
+		cache.invalidate('Photos/walk.jpg');
+		await cache.load(photoFile(), 'auto');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('places no point from the entry of a photo that was deleted or renamed', async () => {
+		vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			arrayBuffer: async () => Uint8Array.from([0, 1, 2, 3]).buffer,
+		});
+		vi.stubGlobal('fetch', fetchMock);
+		const app = appWith({ getResourcePath: () => 'app://vault/photo.jpg', readBinary: vi.fn() });
+		const index = await primed({
+			'Photos/walk.jpg': { size: 4096, mtime: 1, used: NOW, lng: 120.1, lat: 30.1, orientation: 1 },
+		});
+		const cache = new TrackCache(app, index);
+
+		// What main.ts does on a vault delete, and on a rename for the old path.
+		index.forget('Photos/walk.jpg');
+		cache.invalidate('Photos/walk.jpg');
+
+		const rec = await cache.load(photoFile(), 'wgs84');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(rec.features).toEqual([]);
 	});
 });
 

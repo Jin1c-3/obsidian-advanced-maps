@@ -1,8 +1,30 @@
 import type { App, TFile } from 'obsidian';
 import { parseTrack, type ParsedTrack } from './parse';
-import { parseExif, photoTrack, type ExifThumbnail, type PhotoDatum } from './exif';
+import { parseExif, photoTrack, type ExifThumbnail, type PhotoDatum, type PhotoExif } from './exif';
 import { projectGeometry, type CoordSystem } from './coords';
 import { PHOTO_EXTS, PHOTO_HEAD_BYTES, PHOTO_ICON_PREFIX } from './constants';
+import { indexEntry, storedExif, type PhotoIndex } from './photo-index';
+
+/**
+ * A photo's thumbnail state.
+ *
+ * `has` and `thumbnail` are separate because a record restored from the
+ * persistent index knows an embedded thumbnail exists without holding its
+ * bytes — the bytes are two orders of magnitude larger than everything else a
+ * photo contributes, and are wanted for only the few hundred photos actually
+ * being decoded at any moment.
+ */
+export interface PhotoThumbnailState {
+	/** The file has one, whether or not its bytes are in hand. */
+	has: boolean;
+	/** Present once this session has read them. */
+	thumbnail?: ExifThumbnail;
+	orientation: number;
+	/** Reads the bytes now; undefined when there are none to read. */
+	load?: () => Promise<ExifThumbnail | undefined>;
+	/** The in-flight read, so two maps decoding one photo share a single one. */
+	reading?: Promise<ExifThumbnail | undefined>;
+}
 
 export interface TrackRecord extends ParsedTrack {
 	mtime: number;
@@ -10,7 +32,7 @@ export interface TrackRecord extends ParsedTrack {
 	/** Tile-space geometry memoized per non-WGS coordinate system. */
 	projected?: Map<CoordSystem, ParsedTrack['features']>;
 	/** EXIF thumbnail data, present only when a photo supplied a usable coordinate. */
-	photo?: { thumbnail?: ExifThumbnail; orientation: number };
+	photo?: PhotoThumbnailState;
 	/** Coordinate setting used for this photo; part of cache freshness. */
 	photoDatum?: PhotoDatum;
 }
@@ -89,7 +111,12 @@ export class TrackCache {
 	/** Bumped by invalidate(), including while no cache entry exists yet. */
 	private readonly generations = new Map<string, number>();
 
-	constructor(private readonly app: App) {}
+	/** Absent in the tests and tools that only want parsing; a photo then reads
+	 *  its file exactly as it did before there was an index. */
+	constructor(
+		private readonly app: App,
+		private readonly index?: PhotoIndex
+	) {}
 
 	/** Freshness includes photo datum because that setting changes the projected coordinate. */
 	isFresh(file: TFile, datum: PhotoDatum): boolean {
@@ -211,16 +238,51 @@ export class TrackCache {
 		return { ...parseTrack(text, extension), mtime };
 	}
 
-	/** Missing GPS is a normal empty photo record, not a parse error. */
+	/**
+	 * Missing GPS is a normal empty photo record, not a parse error.
+	 *
+	 * The index is consulted first and is asked for this exact file state, so a
+	 * warm start places its points without opening a single photo. A miss reads
+	 * the file exactly as before and records what came out — including the
+	 * no-coordinate answer, which is the majority result on a real library and
+	 * was previously re-derived once per session.
+	 */
 	private async loadPhoto(file: TFile, datum: PhotoDatum, mtime: number): Promise<TrackRecord> {
+		const size = file.stat.size;
+		// Awaited once for the store rather than once per photo: treating a
+		// not-yet-read index as a miss would make the very first map — the one
+		// this exists to speed up — read every file anyway. Guarded rather than
+		// `await this.index?.ready()`, so a cache built without an index does not
+		// even pay the microtask — it reads exactly as it did before there was one.
+		if (this.index) await this.index.ready();
+		const stored = this.index?.get(file.path, size, mtime, Date.now());
+		if (stored) return this.photoRecord(file, storedExif(stored), datum, mtime, stored.thumb === true);
+
 		const head = await readHead(this.app, file, PHOTO_HEAD_BYTES);
 		const exif = parseExif(head);
+		// Recorded against the state this read started from: `mtime` captured by
+		// `load()`, `size` captured above, both before any await. A TFile mutates
+		// in place, so re-reading `file.stat` here could stamp these bytes with a
+		// newer file — which is the one way a stored entry could misplace a pin.
+		this.index?.set(file.path, indexEntry(exif, size, mtime, Date.now()));
+		return this.photoRecord(file, exif, datum, mtime, !!exif?.thumbnail, exif?.thumbnail);
+	}
+
+	/** The one shape a photo becomes, whether its values were read or restored. */
+	private photoRecord(
+		file: TFile,
+		exif: PhotoExif | null,
+		datum: PhotoDatum,
+		mtime: number,
+		hasThumbnail: boolean,
+		thumbnail?: ExifThumbnail
+	): TrackRecord {
 		if (!exif) return { features: [], mtime, photoDatum: datum };
 
 		const track = photoTrack(exif, file.basename, datum);
 		const feature = track.features[0];
 		// Stamp the same id the thumbnail registrar later passes to map.addImage.
-		const imageId = exif.thumbnail ? photoImageId(file.path) : undefined;
+		const imageId = hasThumbnail ? photoImageId(file.path) : undefined;
 		const properties: Record<string, unknown> = {
 			...feature.properties,
 			amRole: 'photo',
@@ -228,12 +290,49 @@ export class TrackCache {
 		};
 		if (imageId) properties.amPhoto = imageId;
 
-		return {
+		const photo: PhotoThumbnailState = { has: hasThumbnail, thumbnail, orientation: exif.orientation };
+		const rec: TrackRecord = {
 			features: [{ ...feature, properties }],
 			mtime,
 			photoDatum: datum,
-			photo: { thumbnail: exif.thumbnail, orientation: exif.orientation },
+			photo,
 		};
+		// Only a restored record carries a loader: one that read its own file
+		// already has whatever bytes that file held.
+		if (hasThumbnail && !thumbnail) photo.load = () => this.readThumbnail(file, rec);
+		return rec;
+	}
+
+	/**
+	 * Read one photo's thumbnail bytes on demand, memoized onto its record.
+	 *
+	 * Reached only from a photo the map has admitted for decoding, so the head
+	 * read that the index avoided at draw time happens for the few hundred
+	 * photos on screen rather than for the whole result. The mtime is rechecked
+	 * after the read: a file rewritten in between would otherwise hand these
+	 * bytes to a point derived from the old one.
+	 */
+	private async readThumbnail(file: TFile, rec: TrackRecord): Promise<ExifThumbnail | undefined> {
+		const photo = rec.photo;
+		if (!photo) return undefined;
+		if (photo.thumbnail) return photo.thumbnail;
+		photo.reading ??= (async () => {
+			try {
+				const head = await readHead(this.app, file, PHOTO_HEAD_BYTES);
+				if (file.stat.mtime !== rec.mtime) return undefined;
+				const thumbnail = parseExif(head)?.thumbnail;
+				if (thumbnail) photo.thumbnail = thumbnail;
+				return thumbnail;
+			} catch (e) {
+				console.warn(`Advanced Maps: could not read a thumbnail from ${file.path}:`, e);
+				return undefined;
+			} finally {
+				// Cleared either way: a failed read should be retried the next time
+				// this photo is admitted, not remembered as "no thumbnail".
+				photo.reading = undefined;
+			}
+		})();
+		return photo.reading;
 	}
 }
 

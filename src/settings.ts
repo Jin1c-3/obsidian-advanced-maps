@@ -708,6 +708,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 						desc: t('setting.photoDatum.desc'),
 						control: { type: 'dropdown', key: 'photoDatum', options: photoDatums },
 					},
+					// An action rather than a setting: there is no state to store, and
+					// what it does is always safe — the index is derived from the
+					// photos, so discarding it costs a re-read and nothing else.
+					{
+						name: t('setting.photoIndex'),
+						desc: t('setting.photoIndex.desc'),
+						action: () => void this.plugin.clearPhotoIndex(),
+					},
 				],
 			},
 		];

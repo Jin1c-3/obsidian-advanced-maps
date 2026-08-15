@@ -17,9 +17,12 @@ import {
 	drawTracks,
 	ensurePhotoImages,
 	PHOTO_DECODE_CONCURRENCY,
+	photoIconSource,
 	selectPhotoIconIds,
 	type PhotoIconSource,
 } from '../src/layers';
+import { photoImageId, type TrackRecord } from '../src/track-cache';
+import type { ExifThumbnail } from '../src/exif';
 import type { GeoJSONSource, MapLibreMap } from '../src/types/obsidian-internals';
 
 class LayerMap {
@@ -214,6 +217,75 @@ describe('photo icon bounds', () => {
 		disposePhotoImages(map);
 
 		expect(removed).toHaveBeenCalledWith(record.id);
+	});
+
+	it('reads a deferred thumbnail only for the photos a map admits for decoding', async () => {
+		const thumbnail: ExifThumbnail = { bytes: Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]), width: 1, height: 1 };
+		const load = vi.fn(() => Promise.resolve(thumbnail));
+		const decode = vi.fn(() => new Promise<ImageBitmap>(() => undefined));
+		vi.stubGlobal('createImageBitmap', decode);
+		// Two photos in one collision cell: the selection admits the first only.
+		const records: PhotoIconSource[] = [0, 1].map((index) => ({
+			id: `deferred-${index}`,
+			load,
+			orientation: 1,
+			coordinates: [24, 24],
+		}));
+		const map = {
+			getStyle: () => ({}),
+			project: ([x, y]: [number, number]) => ({ x, y }),
+			getCanvas: () => ({ clientWidth: 200, clientHeight: 100 }) as HTMLCanvasElement,
+			hasImage: () => false,
+			removeImage: () => undefined,
+		} as unknown as MapLibreMap;
+
+		ensurePhotoImages(map, records);
+		await Promise.resolve();
+
+		// One read, for the one photo on screen — not one per record.
+		expect(load).toHaveBeenCalledTimes(1);
+		expect(decode).toHaveBeenCalledTimes(1);
+	});
+
+	it('never asks for bytes a photo is recorded as not having', () => {
+		const rec: TrackRecord = {
+			mtime: 1,
+			features: [
+				{
+					type: 'Feature',
+					properties: { amRole: 'photo' },
+					geometry: { type: 'Point', coordinates: [120.1, 30.1] },
+				},
+			],
+			photo: { has: false, orientation: 1 },
+		};
+		expect(photoIconSource('Photos/plain.jpg', rec, 'wgs84')).toBeNull();
+
+		// The same record, restored from the index as having one: eligible, with
+		// the bytes still unread.
+		const load = vi.fn(() => Promise.resolve(undefined));
+		const withThumb: TrackRecord = { ...rec, photo: { has: true, orientation: 8, load } };
+		const source = photoIconSource('Photos/plain.jpg', withThumb, 'wgs84');
+		expect(source).toMatchObject({ id: photoImageId('Photos/plain.jpg'), orientation: 8, load });
+		expect(source?.thumbnail).toBeUndefined();
+		expect(load).not.toHaveBeenCalled();
+	});
+
+	it('leaves a photo as a dot when its deferred read comes back empty', async () => {
+		const decode = vi.fn(() => new Promise<ImageBitmap>(() => undefined));
+		vi.stubGlobal('createImageBitmap', decode);
+		const map = {
+			getStyle: () => ({}),
+			hasImage: () => false,
+			removeImage: () => undefined,
+		} as unknown as MapLibreMap;
+
+		ensurePhotoImages(map, [
+			{ id: 'gone', load: () => Promise.resolve(undefined), orientation: 1, coordinates: [0, 0] },
+		]);
+		await Promise.resolve();
+
+		expect(decode).not.toHaveBeenCalled();
 	});
 
 	it('does not let an active decode re-add an image after terminal disposal', async () => {

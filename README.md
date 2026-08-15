@@ -113,6 +113,18 @@ only draw the photo's.
 Only the first few kilobytes of a photo are ever read — never the picture
 itself, and never the vault. A photo is read, never written to.
 
+What that read found is remembered, in one file beside the plugin's settings,
+so opening the vault again draws the same pins without opening the photos: an
+album of twelve thousand went from about a minute of reading on every start to
+none. What is kept is only what came out of the photo — its coordinate, the
+moment, and whether it has a thumbnail; the thumbnail image itself is not
+stored, and is re-read for the few photos on screen. An entry is used only
+while the file still matches what it was read from, so an edited, renamed or
+deleted photo is never drawn from it. **Clear the photo index** throws the
+whole thing away, and so does deleting the file by hand: every map goes on
+showing exactly what it showed, and the photos are simply read again as maps
+ask for them.
+
 ## Inline maps
 
 The same embed renders as a real map in the note — pan it, zoom it, switch its
