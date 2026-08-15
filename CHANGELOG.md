@@ -6,6 +6,8 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.13.5]
+
 ### Fixed
 
 - **Pointing at a track or photo no longer rebuilds its popup on every pointer
@@ -603,7 +605,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.4...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.5...HEAD
+[1.13.5]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.4...1.13.5
 [1.13.4]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.3...1.13.4
 [1.13.3]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.2...1.13.3
 [1.13.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.1...1.13.2
