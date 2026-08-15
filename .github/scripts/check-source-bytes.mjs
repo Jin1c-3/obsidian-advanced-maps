@@ -58,7 +58,16 @@ let checked = 0;
 
 for (const path of tracked) {
 	if (BINARY_EXTENSIONS.has(extensionOf(path))) continue;
-	const bytes = readFileSync(path);
+	let bytes;
+	try {
+		bytes = readFileSync(path);
+	} catch (e) {
+		// `git ls-files` reports the index; the working tree is what has bytes to
+		// check. A file deleted or moved but not yet staged, and a submodule's
+		// gitlink, both appear here with nothing to read.
+		if (e.code === 'ENOENT' || e.code === 'EISDIR') continue;
+		throw e;
+	}
 	let text;
 	try {
 		text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
