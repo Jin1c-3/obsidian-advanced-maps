@@ -6,6 +6,23 @@ where they do not.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pointing at a track or photo no longer rebuilds its popup on every pointer
+  sample.** Each pointer position was rebuilding the note popup once per
+  overlapping layer, for the feature that was already showing — measured at 508
+  rebuilds and 1.9 seconds of work for one sweep along a single track, about 90%
+  of everything that pointer movement cost. The popup is now raised once when
+  the pointer reaches a feature and left alone until it reaches another: the
+  same sweep costs 9 rebuilds and 44 ms, and each pointer sample went from
+  5.2 ms to 0.4 ms. As part of this the popup stays where the pointer entered a
+  track instead of sliding along under the cursor, which is what a marker's own
+  popup has always done.
+
+- **A photo lying on its own track now names the photo on hover, not the
+  track.** Clicking there already gave photos precedence; pointing did not, so
+  the two could disagree about what was under the cursor.
+
 ## [1.13.4]
 
 ### Fixed
