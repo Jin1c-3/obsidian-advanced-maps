@@ -6,6 +6,46 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.13.6]
+
+### Added
+
+- **Reading a photo is now remembered between sessions.** What came out of a
+  photo — its coordinate, altitude, the moment, the datum its tags stated,
+  orientation, and whether it has a thumbnail — is kept in one file beside the
+  plugin's settings, so opening the vault again draws the same pins without
+  opening the photos. On a base of 12,107 photos that is 12,107 file reads and
+  about 8.5 seconds on every start, down to 20 reads and 1.2 seconds, with the
+  same 6,504 points and the same thumbnails on screen. Photos found to carry no
+  GPS are remembered as such rather than re-read to re-learn it every time —
+  5,603 of that base, or nearly half of it.
+
+  The thumbnail images themselves are not stored; they are read on demand for
+  the handful of photos the map is actually displaying, so the file stays small
+  whatever size the album is. Because the raw tag values are kept rather than the
+  converted result, changing **Photo coordinate system** now moves every point
+  without reopening a single photo.
+
+  An entry is used only while its file still reports the same path, size and
+  time, so an edited, renamed or deleted photo is never drawn from it. The file
+  is a cache and nothing else: **Clear the photo index** in settings throws it
+  away, deleting it by hand does the same, and either way every map goes on
+  showing exactly what it showed.
+
+### Fixed
+
+- **A map of thousands of photos no longer reads them all at once.** A base
+  whose results are photo files made the number of files being read at one time
+  follow the size of the result — twelve thousand concurrent reads where the
+  code was written for a few hundred. Reads are now bounded, and a refresh that
+  has been superseded stops starting new ones instead of draining its queue.
+
+- **A map with nothing on it no longer raises an error from the built-in Maps
+  view.** Its marker manager reports empty bounds as a real object rather than
+  as nothing, which the built-in view then treats as a real extent; at large
+  result counts this surfaced as errors in the console. Advanced Maps now hands
+  it the shape it already handles.
+
 ## [1.13.5]
 
 ### Fixed
@@ -605,7 +645,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.5...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.6...HEAD
+[1.13.6]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.5...1.13.6
 [1.13.5]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.4...1.13.5
 [1.13.4]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.3...1.13.4
 [1.13.3]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.2...1.13.3

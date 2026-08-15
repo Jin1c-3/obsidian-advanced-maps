@@ -127,6 +127,7 @@ const en = {
 	'notice.photo.none': '"{file}" has no linked photo with a location',
 	'notice.photo.done': '{property}: {coords}, from the photo',
 	'notice.photo.failed': 'Advanced Maps: could not read a location from that photo — {reason}',
+	'notice.photoIndex.cleared': 'Advanced Maps: cleared the photo index. Photos are read again as maps ask for them.',
 
 	/* ---- the photo a map pin stands for ---- */
 	'photo.openNote': 'Open note',
@@ -310,6 +311,12 @@ const en = {
 	'setting.photoDatum.auto': "Auto — follow the photo's own GPSMapDatum, if it states one",
 	'setting.photoDatum.wgs84': 'WGS-84 — the EXIF specification',
 	'setting.photoDatum.gcj02': 'GCJ-02 — force it',
+	'setting.photoIndex': 'Clear the photo index',
+	'setting.photoIndex.desc':
+		'Reading a photo is remembered, so opening the vault again draws its pin without opening the file. ' +
+		'What is kept is only what was read out of the photo — its coordinate, the moment, and whether it has ' +
+		'a thumbnail — in one file beside these settings. Clearing it changes nothing on any map; the photos ' +
+		'are simply read again as maps ask for them.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -415,6 +422,7 @@ const zh: Record<TranslationKey, string> = {
 	'notice.photo.none': '「{file}」没有带位置信息的链接照片',
 	'notice.photo.done': '{property}：{coords}（来自照片）',
 	'notice.photo.failed': 'Advanced Maps：无法从这张照片读取位置——{reason}',
+	'notice.photoIndex.cleared': 'Advanced Maps：照片索引已清空。地图再要照片时会重新读取。',
 
 	'photo.openNote': '打开笔记',
 
@@ -534,6 +542,9 @@ const zh: Record<TranslationKey, string> = {
 	'setting.photoDatum.auto': '自动 · 采信照片自己的 GPSMapDatum（如果有）',
 	'setting.photoDatum.wgs84': 'WGS-84 · EXIF 规范',
 	'setting.photoDatum.gcj02': 'GCJ-02 · 强制指定',
+	'setting.photoIndex': '清空照片索引',
+	'setting.photoIndex.desc':
+		'读过的照片会被记下来，于是下次打开库时不必再打开文件就能画出它的图钉。存下来的只是从照片里读到的东西——坐标、时间，以及它有没有缩略图——放在这份设置旁边的一个文件里。清空它不会改变任何一张地图；照片只是会在地图再要它们时重新读一遍。',
 };
 
 const LOCALES = { en, zh } as const;
