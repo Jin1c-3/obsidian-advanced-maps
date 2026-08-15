@@ -20,6 +20,61 @@ export function photoImageId(path: string): string {
 	return PHOTO_ICON_PREFIX + path;
 }
 
+/**
+ * Run `read` over `items` with at most `limit` outstanding at once, preserving
+ * input order in the result.
+ *
+ * Rolling admission rather than fixed batches: a batch barrier costs its slowest
+ * member every round, and head-read cost varies by an order of magnitude between
+ * a local disk and a mounted one, so batching would idle most slots most of the
+ * time. This is the same shape `PHOTO_DECODE_CONCURRENCY` already uses one stage
+ * later, in layers.ts.
+ *
+ * `alive` is asked before each item rather than once per refresh, so a superseded
+ * caller stops occupying slots at the next item instead of after the whole queue
+ * drains. Items never started stay `undefined`.
+ *
+ * Rejection semantics match the `Promise.all` this replaces: the first failure is
+ * rethrown. It is rethrown only once the slots already running have settled —
+ * rejecting out from under them would turn a second read error into an unhandled
+ * rejection.
+ */
+export async function pooled<T, R>(
+	items: Iterable<T>,
+	limit: number,
+	read: (item: T) => Promise<R>,
+	alive?: () => boolean
+): Promise<Array<R | undefined>> {
+	const list = [...items];
+	const out = new Array<R | undefined>(list.length);
+	let next = 0;
+	let failure: unknown;
+	let failed = false;
+
+	const worker = async (): Promise<void> => {
+		for (;;) {
+			if (failed) return;
+			if (alive && !alive()) return;
+			const index = next++;
+			if (index >= list.length) return;
+			try {
+				out[index] = await read(list[index]);
+			} catch (e) {
+				if (!failed) {
+					failed = true;
+					failure = e;
+				}
+				return;
+			}
+		}
+	};
+
+	const width = Math.max(1, Math.min(limit, list.length));
+	await Promise.all(Array.from({ length: width }, () => worker()));
+	if (failed) throw failure;
+	return out;
+}
+
 /** Parsed tracks (and photos), keyed by path and invalidated by mtime. */
 export class TrackCache {
 	private readonly entries = new Map<string, TrackRecord>();

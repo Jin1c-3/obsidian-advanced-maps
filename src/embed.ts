@@ -11,6 +11,7 @@ import {
 	PHOTO_EXTS,
 	PHOTO_LAYER,
 	POINT_LAYER,
+	READ_CONCURRENCY,
 } from './constants';
 import { resolveSystem, toTileSpace, toWgs84, type CoordSystem } from './coords';
 import { boundsOf, styleReady, trackFeatures, trackKnob, type TrackFeatureProps } from './geometry';
@@ -41,7 +42,7 @@ import {
 	type TrackStats,
 } from './stats';
 import { PhotoModal } from './photo-modal';
-import { projectedFeatures, type TrackRecord } from './track-cache';
+import { pooled, projectedFeatures, type TrackRecord } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type { BasesMapView, MapLibreMap, MapMouseEvent } from './types/obsidian-internals';
 
@@ -108,13 +109,20 @@ export class TrackEmbed extends Component {
 	 *  `moveend` re-selects from these rather than rebuilding them. */
 	private photoIcons: PhotoIconSource[] = [];
 
-	/** Load independent track/photo inputs concurrently for both build and refresh. */
-	private async loadAll(): Promise<{ rec: TrackRecord; photos: PhotoEntry[] }> {
+	/**
+	 * Load independent track/photo inputs concurrently for both build and refresh.
+	 *
+	 * `alive` is the caller's own "is this read still wanted?" answer — a claimed
+	 * revision for `refresh()`, liveness alone for `build()`, which has none yet.
+	 * It bounds nothing here (this pair is two reads); it is threaded through to
+	 * the companion fan-out below, which is as wide as the host note's album.
+	 */
+	private async loadAll(alive: () => boolean): Promise<{ rec: TrackRecord; photos: PhotoEntry[] }> {
 		this.reading = true;
 		try {
 			const [rec, photos] = await Promise.all([
 				this.plugin.tracks.load(this.file, this.plugin.settings.photoDatum),
-				this.loadPhotos(),
+				this.loadPhotos(alive),
 			]);
 			return { rec, photos };
 		} finally {
@@ -122,7 +130,7 @@ export class TrackEmbed extends Component {
 		}
 	}
 
-	private async loadPhotos(): Promise<PhotoEntry[]> {
+	private async loadPhotos(alive: () => boolean): Promise<PhotoEntry[]> {
 		if (!this.plugin.settings.showPhotos || !this.sourcePath) {
 			this.photoSources = [];
 			return [];
@@ -138,15 +146,18 @@ export class TrackEmbed extends Component {
 		// every time and draws never, so comparing against the drawn set would
 		// read as a change on every edit of the host note.
 		this.photoSources = files.map((f) => f.path);
-		const loaded = await Promise.all(
-			files.map(async (file) => ({
-				file,
-				rec: await this.plugin.tracks.load(file, datum),
-			}))
+		// Bounded like the map layer's, and in note order, because that order is
+		// what the album and the modal's next/previous follow.
+		const loaded = await pooled(
+			files,
+			READ_CONCURRENCY,
+			async (file) => ({ file, rec: await this.plugin.tracks.load(file, datum) }),
+			alive
 		);
 		// A photo whose EXIF carried no coordinate parses to a record with no
 		// features and no error — not a failure, just a picture taken indoors.
-		return loaded.filter((p) => !p.rec.error && p.rec.features.length > 0);
+		// An `undefined` slot is a read this refresh was superseded before starting.
+		return loaded.filter((p): p is PhotoEntry => !!p && !p.rec.error && p.rec.features.length > 0);
 	}
 
 	/** The note this embed was written in; empty when it has no host note. */
@@ -227,7 +238,8 @@ export class TrackEmbed extends Component {
 		// than building once with stale settings and hoping a later event fixes it.
 		do {
 			this.refreshPending = false;
-			loaded = await this.loadAll();
+			// No revision claimed yet at build time, so liveness is the whole answer.
+			loaded = await this.loadAll(() => !this.dead && !!this.rootEl);
 			if (this.dead || !this.rootEl) return;
 		} while (this.refreshPending);
 		this.rec = loaded.rec;
@@ -338,7 +350,7 @@ export class TrackEmbed extends Component {
 			return;
 		}
 		const revision = ++this.operationRevision;
-		const { rec, photos } = await this.loadAll();
+		const { rec, photos } = await this.loadAll(() => !this.dead && revision === this.operationRevision);
 		if (revision !== this.operationRevision || !this.map || this.dead) return;
 		// Answered before anything is torn down, and before `this.rec` is replaced:
 		// an unusable read must not be able to take the last usable one with it.

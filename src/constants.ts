@@ -7,6 +7,22 @@ export const PHOTO_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif',
 /** Maximum prefix retained while looking for EXIF metadata and its thumbnail. */
 export const PHOTO_HEAD_BYTES = 65536;
 
+/**
+ * How many attachment files one refresh reads at a time.
+ *
+ * A base query that returns photo files directly makes the pending set as large
+ * as the result: 12,487 results measured, against the low hundreds this code was
+ * first written for. The limit exists to keep peak concurrent reads a property of
+ * this number rather than of the query.
+ *
+ * Higher than `PHOTO_DECODE_CONCURRENCY` (4, in layers.ts) because a bounded head
+ * read plus an EXIF parse is cheaper than a JPEG decode — but not unbounded,
+ * because both still land on the main thread. At the 9.4 ms per photo measured
+ * over a Windows drive mount, 16 slots put a 12,000-photo refresh near 7 s of
+ * read time, against roughly 60 s when the unbounded version thrashed.
+ */
+export const READ_CONCURRENCY = 16;
+
 /* This plugin's own source and layer ids. The native marker layer is
  * "marker-pins" on the "markers" source; tracks go in below it so a pin sitting
  * on its own track stays clickable. */

@@ -13,6 +13,7 @@ import {
 	PHOTO_DOT_LAYER,
 	PHOTO_LAYER,
 	POINT_LAYER,
+	READ_CONCURRENCY,
 	SRC,
 	type TrackKnob,
 } from './constants';
@@ -46,7 +47,7 @@ import {
 import { customMapLabel, customMapUrl, customMaps, enabledBuiltins, externalMapUrl, resolveBuiltins } from './maplinks';
 import { PhotoModal } from './photo-modal';
 import { iconOffsetExpression, spreadFactor, spreadPins, type SpreadPin, type SpreadPlan } from './spread';
-import { projectedFeatures } from './track-cache';
+import { pooled, projectedFeatures } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type {
 	BasesData,
@@ -214,6 +215,21 @@ export class TrackLayer {
 		const popups = view.popupManager;
 		// What `enhance()` reads to tell an already-wrapped view from a fresh one.
 		view.__advancedMapsLayer = true;
+
+		// Report empty native bounds as absent, so the native framing step takes its
+		// no-bounds path instead of computing a centre from nothing — see the
+		// `getBounds` note in obsidian-internals.d.ts for the crash this prevents.
+		// Nothing here changes this plugin's own framing: `boundsOf()` already
+		// discards an empty seed, so empty and null were always equivalent to it.
+		if (typeof manager.getBounds === 'function') {
+			this.wrap(manager, 'getBounds', (orig) => () => {
+				const bounds = orig.call(manager);
+				// Shape-checked rather than assumed: a host that stops returning a
+				// MapLibre bounds should fall through untouched, not throw.
+				if (!bounds || typeof bounds.isEmpty !== 'function') return bounds;
+				return bounds.isEmpty() ? null : bounds;
+			});
+		}
 
 		this.wrap(manager, 'updateMarkers', (orig) => async (data?: BasesData) => {
 			await orig.call(manager, data);
@@ -870,8 +886,17 @@ export class TrackLayer {
 				if (!this.plugin.tracks.isFresh(trackFile, this.plugin.settings.photoDatum)) pending.add(trackFile);
 			}
 		}
+		// Bounded, because `pending` is as large as the base result: a query that
+		// returns photo files directly makes this thousands of reads, not dozens.
+		// The predicate is asked per file, so a superseded sync stops reading here
+		// rather than at the revision check below.
 		if (pending.size > 0)
-			await Promise.all([...pending].map((f) => this.plugin.tracks.load(f, this.plugin.settings.photoDatum)));
+			await pooled(
+				pending,
+				READ_CONCURRENCY,
+				(f) => this.plugin.tracks.load(f, this.plugin.settings.photoDatum),
+				() => revision === this.syncRevision && !this.detached && !!view.map
+			);
 		if (revision !== this.syncRevision || this.detached || !view.map) return;
 
 		await styleReady(view.map);

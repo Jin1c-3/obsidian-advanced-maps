@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TFile, type App } from 'obsidian';
-import { readHead, TrackCache } from '../src/track-cache';
+import { pooled, readHead, TrackCache } from '../src/track-cache';
 
 interface Deferred<T> {
 	promise: Promise<T>;
@@ -177,5 +177,114 @@ describe('readHead', () => {
 
 		await expect(readHead(app, file, 3)).resolves.toEqual(Uint8Array.from([0, 1, 2]));
 		expect(readBinary).toHaveBeenCalledWith(file);
+	});
+});
+
+describe('pooled', () => {
+	/** Records the high-water mark of simultaneously running reads. */
+	function tracker() {
+		let active = 0;
+		let peak = 0;
+		const gates: Array<Deferred<void>> = [];
+		return {
+			gates,
+			get peak() {
+				return peak;
+			},
+			read: (n: number) => {
+				active++;
+				peak = Math.max(peak, active);
+				const gate = deferred<void>();
+				gates.push(gate);
+				return gate.promise.then(() => {
+					active--;
+					return n * 2;
+				});
+			},
+		};
+	}
+
+	it('never runs more than the limit at once and still processes every item', async () => {
+		const t = tracker();
+		const items = Array.from({ length: 20 }, (_, i) => i);
+		const done = pooled(items, 4, t.read);
+
+		// Release in waves so the pool has to refill slots rather than run once.
+		for (let released = 0; released < 20; released++) {
+			await Promise.resolve();
+			t.gates[released]?.resolve();
+		}
+		await Promise.resolve();
+		for (const gate of t.gates) gate.resolve();
+
+		await expect(done).resolves.toEqual(items.map((i) => i * 2));
+		// Exactly the limit, not merely under it: `toBeLessThanOrEqual` would also
+		// pass for an implementation that lost its parallelism entirely.
+		expect(t.peak).toBe(4);
+	});
+
+	it('preserves input order even when reads settle out of order', async () => {
+		const gates = [deferred<void>(), deferred<void>(), deferred<void>()];
+		const done = pooled([0, 1, 2], 3, async (n: number) => {
+			await gates[n].promise;
+			return `item-${n}`;
+		});
+
+		gates[2].resolve();
+		gates[0].resolve();
+		gates[1].resolve();
+
+		await expect(done).resolves.toEqual(['item-0', 'item-1', 'item-2']);
+	});
+
+	it('a limit above the item count runs everything without stranding a slot', async () => {
+		await expect(pooled([1, 2], 16, async (n: number) => n + 1)).resolves.toEqual([2, 3]);
+		await expect(pooled([], 16, async (n: number) => n)).resolves.toEqual([]);
+	});
+
+	it('rethrows the first failure after in-flight reads settle, without stranding the pool', async () => {
+		const settled: number[] = [];
+		const attempt = await pooled(
+			[0, 1, 2, 3],
+			2,
+			async (n: number) => {
+				if (n === 0) throw new Error('read failed');
+				settled.push(n);
+				return n;
+			},
+			undefined
+		).then(
+			() => 'resolved',
+			(e: unknown) => (e instanceof Error ? e.message : String(e))
+		);
+
+		expect(attempt).toBe('read failed');
+		// The other slot finished its item rather than being abandoned mid-read.
+		expect(settled).toContain(1);
+	});
+
+	it('stops starting reads once the caller is no longer alive', async () => {
+		const started: number[] = [];
+		let alive = true;
+		const result = await pooled(
+			Array.from({ length: 10 }, (_, i) => i),
+			2,
+			async (n: number) => {
+				started.push(n);
+				if (started.length === 4) alive = false;
+				return n;
+			},
+			() => alive
+		);
+
+		expect(started.length).toBeLessThan(10);
+		// Items never started are absent rather than fabricated.
+		expect(result[9]).toBeUndefined();
+	});
+
+	it('starts nothing at all when the caller is already superseded', async () => {
+		const read = vi.fn(async (n: number) => n);
+		await expect(pooled([1, 2, 3], 4, read, () => false)).resolves.toEqual([undefined, undefined, undefined]);
+		expect(read).not.toHaveBeenCalled();
 	});
 });
