@@ -6,7 +6,7 @@ Defines explicit coordinate acquisition and place lookup tools, including provid
 
 ### Requirement: Map links are parsed by provider
 
-The plugin SHALL parse supported full map links and coordinate text using provider-specific axis order and datum rules, normalize successful results to WGS-84, and refuse recognized short links without resolving them over the network.
+The plugin SHALL parse supported full map links and coordinate text using provider-specific axis order and datum rules, normalize successful results to WGS-84, and refuse recognized short links without resolving them over the network. A link SHALL be attributed to a provider only when its host is that provider's own domain or a subdomain of it, never merely because the provider's name appears somewhere in the host.
 
 #### Scenario: Provider axis orders differ
 
@@ -23,9 +23,19 @@ The plugin SHALL parse supported full map links and coordinate text using provid
 - **WHEN** a `geo:` URI explicitly names a CRS other than supported WGS-84
 - **THEN** parsing fails terminally rather than relabeling the same numbers through a generic fallback
 
+#### Scenario: A host imitates a provider domain
+
+- **WHEN** a pasted link's host contains a provider's domain as a prefix or label of a domain someone else controls
+- **THEN** it is not parsed with that provider's axis order and datum
+
+#### Scenario: A regional provider domain is used
+
+- **WHEN** a link uses a provider's country or regional domain
+- **THEN** it is parsed with that provider's rules as before
+
 ### Requirement: Place search respects provider contracts
 
-Place search SHALL support Nominatim without a key and Gaode with a Web-service key, normalize result coordinates to WGS-84, debounce typing, reject superseded responses, cache answers for the modal lifetime, and honor Nominatim's provider-wide request interval.
+Place search SHALL support Nominatim without a key and Gaode with a Web-service key, normalize result coordinates to WGS-84, debounce typing, reject superseded responses, cache answers for the modal lifetime, and honor Nominatim's provider-wide request interval. Writing the chosen place into the note SHALL report its own failure rather than announcing a write that did not happen.
 
 #### Scenario: User types several revisions quickly
 
@@ -41,6 +51,11 @@ Place search SHALL support Nominatim without a key and Gaode with a Web-service 
 
 - **WHEN** a forward or reverse Nominatim request is made
 - **THEN** it identifies the plugin with the supported user-agent header and omits the Referer header that Electron may block
+
+#### Scenario: The note cannot be written after a place is chosen
+
+- **WHEN** writing the chosen coordinate into the note fails
+- **THEN** the user is told the write failed instead of being shown the success notice, and the failure does not escape as an unhandled rejection
 
 ### Requirement: Gaode credentials follow the chosen storage policy
 
@@ -77,7 +92,7 @@ Reverse geocoding SHALL read the configured WGS-84 coordinate, send the provider
 
 ### Requirement: Device location writes only by explicit policy
 
-Automatic location SHALL run only when location is enabled, the active markdown note contains the configured property with an empty value, and the property remains empty after the asynchronous location request; the manual command MAY overwrite an existing value.
+Automatic location SHALL run only when location is enabled, the active markdown note contains the configured property with an empty value, and the property remains empty after the asynchronous location request; the manual command MAY overwrite an existing value. The guard that keeps one note from being filled twice at once SHALL follow the note itself, not the path it had when the request started.
 
 #### Scenario: Property is absent
 
@@ -108,6 +123,11 @@ Automatic location SHALL run only when location is enabled, the active markdown 
 
 - **WHEN** location is disabled in settings
 - **THEN** neither automatic location nor the manual device-location command requests a fix
+
+#### Scenario: The note is renamed while a fix is in flight
+
+- **WHEN** a note is renamed or moved between the start of an automatic location request and its completion
+- **THEN** the guard for that note is released when the request finishes and a later edit of the same note can be filled again
 
 ### Requirement: Photo metadata can populate coordinates on demand
 
