@@ -6,6 +6,28 @@ where they do not.
 
 ## [Unreleased]
 
+## [1.13.3]
+
+### Fixed
+
+- **Pins that share a spot now fan apart at zoom 15, where the setting has
+  always said they would.** The offset is baked into the map's tiles once per
+  zoom level rather than evaluated as the camera moves, so the fan opened a
+  level late and grew in steps the hover card knew nothing about — a card could
+  sit as much as 16 px from the pin it belonged to. The ring now opens at the
+  zoom it names, widens once per level, and the card is placed at the offset the
+  pin was actually drawn with.
+
+- **An inline map no longer jumps back to its own route whenever anything
+  refreshes.** Editing any track file in the vault, or changing a setting,
+  reframed every open inline map — including maps in notes with nothing to do
+  with the file that changed. An inline map is now framed once per route it
+  draws, and never after you have moved it yourself.
+
+- **KML files that write `lon, lat` with a space after the comma now draw.**
+  Every coordinate in such a file was discarded and the whole track reported as
+  having no drawable geometry.
+
 ## [1.13.2]
 
 ### Fixed
@@ -512,7 +534,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.2...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.3...HEAD
+[1.13.3]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.2...1.13.3
 [1.13.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.1...1.13.2
 [1.13.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.0...1.13.1
 [1.13.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.12.2...1.13.0

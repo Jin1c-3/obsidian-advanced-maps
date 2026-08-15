@@ -162,10 +162,25 @@ function firstByLocalName(parent: Element, name: string): Element | undefined {
 	return byLocalName(parent, name)[0];
 }
 
-/** Whitespace-separated KML `lon,lat[,ele]` tuples. */
+/**
+ * Whitespace-separated KML `lon,lat[,ele]` tuples.
+ *
+ * The whitespace around a tuple's own commas goes first: KML permits it, real
+ * exports write it, and splitting on whitespace before removing it would cut
+ * `lon,` away from `lat` and leave the file with no drawable geometry at all.
+ * A stray *trailing* comma therefore joins two tuples into one over-long one,
+ * of which the first three numbers are read and the rest ignored — the same
+ * answer this parser already gives any tuple carrying more than it should.
+ * Where that break was meant to be cannot be recovered without guessing, so
+ * the position is lost rather than invented, and a line left with too few
+ * positions to draw is reported as such by the caller.
+ */
 function parseKmlCoordinates(raw: string): Position[] {
 	const out: Position[] = [];
-	for (const tuple of raw.trim().split(/\s+/)) {
+	for (const tuple of raw
+		.trim()
+		.replace(/\s*,\s*/g, ',')
+		.split(/\s+/)) {
 		if (!tuple) continue;
 		const parts = tuple.split(',').map((p) => parseFloat(p));
 		if (parts.length < 2 || !isFinite(parts[0]) || !isFinite(parts[1])) continue;

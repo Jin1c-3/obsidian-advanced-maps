@@ -46,7 +46,13 @@ export const FOCUS_TRIES = 30;
 
 /** Pin spreading constants in CSS pixels; offsets ramp from `fromZoom` to `toZoom`. */
 export const SPREAD = {
+	/** The first whole zoom level the fan is open at — `icon-offset` is a layout
+	 *  property, so the ramp can only move at whole levels; see `spreadFactor`. */
 	fromZoom: 15,
+	/** Full radius here and above. Must not exceed the native marker source's
+	 *  `maxzoom` (18 for a MapLibre GeoJSON source unless the host says
+	 *  otherwise): past that, tiles are overscaled from it and no later step
+	 *  would ever be baked. */
 	toZoom: 18,
 	/** Centre-to-centre px, at `toZoom`, below which two pins are "the same spot". */
 	groupPx: 26,

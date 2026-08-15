@@ -13,7 +13,6 @@ import {
 	PHOTO_DOT_LAYER,
 	PHOTO_LAYER,
 	POINT_LAYER,
-	SPREAD,
 	SRC,
 	type TrackKnob,
 } from './constants';
@@ -46,14 +45,7 @@ import {
 } from './layers';
 import { customMapLabel, customMapUrl, customMaps, enabledBuiltins, externalMapUrl, resolveBuiltins } from './maplinks';
 import { PhotoModal } from './photo-modal';
-import {
-	iconOffsetExpression,
-	markerIconScale,
-	spreadFactor,
-	spreadPins,
-	type SpreadPin,
-	type SpreadPlan,
-} from './spread';
+import { iconOffsetExpression, spreadFactor, spreadPins, type SpreadPin, type SpreadPlan } from './spread';
 import { projectedFeatures } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type {
@@ -746,8 +738,10 @@ export class TrackLayer {
 		let offset: unknown;
 		try {
 			if (!map.getLayer(MARKER_LAYER)) return;
-			const scale = markerIconScale(map.getLayoutProperty?.(MARKER_LAYER, 'icon-size'), SPREAD.toZoom);
-			offset = iconOffsetExpression(table, scale);
+			// The layer's own `icon-size`, not a number read off it here: the
+			// expression divides by that size level by level, because MapLibre
+			// multiplies each level's offsets by the size it evaluates there.
+			offset = iconOffsetExpression(table, map.getLayoutProperty?.(MARKER_LAYER, 'icon-size'));
 			const applied = JSON.stringify(offset);
 			if (applied === this.spreadApplied) return;
 			map.setLayoutProperty(MARKER_LAYER, 'icon-offset', offset);

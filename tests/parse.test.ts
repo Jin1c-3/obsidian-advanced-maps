@@ -270,6 +270,28 @@ describe('parseKml', () => {
 		expect(features[0].properties).toBeNull();
 	});
 
+	it('reads tuples written with spaces around their commas', () => {
+		const tight = `<kml ${KML_NS}><LineString><coordinates>121.0,31.0,5 121.1,31.1,7</coordinates></LineString></kml>`;
+		const spaced = `<kml ${KML_NS}><LineString><coordinates>121.0, 31.0, 5 121.1 , 31.1 , 7</coordinates></LineString></kml>`;
+		const coords = (text: string) =>
+			(parseKml(text).features[0].geometry as { coordinates: number[][] }).coordinates;
+		expect(coords(spaced)).toEqual(coords(tight));
+		expect(coords(spaced)).toEqual([
+			[121.0, 31.0, 5],
+			[121.1, 31.1, 7],
+		]);
+	});
+
+	it('does not guess at where a stray trailing comma meant to break', () => {
+		// A comma at the end of a tuple swallows the break, so the two arrive as
+		// one over-long tuple: lon/lat/ele are read and the rest ignored, which is
+		// what any over-long tuple has always got here. Nothing is invented to
+		// replace the point that was lost — this line is left with one position,
+		// which is not a line, so the file says so.
+		const kml = `<kml ${KML_NS}><LineString><coordinates>121.0,31.0,5, 121.1,31.1,7</coordinates></LineString></kml>`;
+		expect(() => parseKml(kml)).toThrow('no drawable geometry found');
+	});
+
 	it('reads a <LinearRing> — a Polygon boundary — as a line', () => {
 		const kml = `<kml ${KML_NS}><Placemark><Polygon><outerBoundaryIs><LinearRing>
 			<coordinates>121.0,31.0 121.1,31.0 121.1,31.1 121.0,31.0</coordinates>

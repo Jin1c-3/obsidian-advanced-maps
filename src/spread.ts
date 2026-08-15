@@ -170,12 +170,28 @@ export function spreadPins(pins: readonly SpreadPin[]): SpreadPlan {
  * The one statement of the ramp `iconOffsetExpression` writes into the style,
  * so whoever has to place something *at* a fanned pin — the hover card — cannot
  * drift away from where the pin itself was drawn.
+ *
+ * `icon-offset` is a *layout* property, which MapLibre bakes into a tile's
+ * symbols once, at that tile's whole zoom. The fraction the camera happens to
+ * sit at is therefore never a value any pin was drawn with, so the camera zoom
+ * is quantised here rather than read continuously.
  */
 export function spreadFactor(zoom: number): number {
+	if (!isFinite(zoom)) return 0;
+	return levelFactor(Math.floor(zoom));
+}
+
+/**
+ * The fan at one whole zoom level: shut below `fromZoom`, one even step per
+ * level after that, full at `toZoom`. `fromZoom` is the first level that shows
+ * a fan, which is what the settings text promises — a ramp that started *at*
+ * zero there would leave the whole of that level looking like no fan at all.
+ */
+function levelFactor(level: number): number {
 	const { fromZoom, toZoom } = SPREAD;
-	if (!isFinite(zoom) || zoom <= fromZoom) return 0;
-	if (zoom >= toZoom || toZoom <= fromZoom) return 1;
-	return (zoom - fromZoom) / (toZoom - fromZoom);
+	if (level < fromZoom) return 0;
+	if (level >= toZoom) return 1;
+	return (level - fromZoom + 1) / (toZoom - fromZoom + 1);
 }
 
 /**
@@ -207,18 +223,37 @@ export function markerIconScale(value: unknown, zoom: number): number {
 }
 
 /**
- * Build the zoom-ramped native icon-offset expression. Integer slots survive
- * vector-tile serialization; the outer interpolation is MapLibre's required zoom shape.
+ * Build the native icon-offset expression: one branch per slot, one step per
+ * whole zoom level, from the layer's own `icon-size` value.
+ *
+ * A `step` rather than an `interpolate` because a layout property is only ever
+ * evaluated at whole zooms (see `spreadFactor`), so interpolating would only
+ * promise a smoothness the renderer never delivers. Each level divides its
+ * offsets by the icon size *at that level*, since that is the number MapLibre
+ * multiplies them back by when it bakes that level's tiles. Slot numbers stay
+ * integers, so they survive vector-tile serialization.
  */
-export function iconOffsetExpression(table: ReadonlyArray<readonly [number, number]>, scale: number): unknown {
-	if (table.length < 2 || !(scale > 0)) return [0, 0];
+export function iconOffsetExpression(table: ReadonlyArray<readonly [number, number]>, iconSize: unknown): unknown {
+	const shut: unknown = ['literal', [0, 0]];
+	const stops: unknown[] = [];
+	if (table.length >= 2) {
+		for (let level = SPREAD.fromZoom; level <= SPREAD.toZoom; level++) {
+			stops.push(level, slotMatch(table, levelFactor(level) / markerIconScale(iconSize, level)));
+		}
+	}
+	if (stops.length === 0) return [0, 0];
+	return ['step', ['zoom'], shut, ...stops];
+}
+
+/** The slot table at one zoom level; a slot nobody carries is not moved. */
+function slotMatch(table: ReadonlyArray<readonly [number, number]>, scale: number): unknown {
 	const match: unknown[] = ['match', ['get', 'amSlot']];
 	for (let slot = 1; slot < table.length; slot++) {
 		const [x, y] = table[slot];
-		match.push(slot, ['literal', [round(x / scale), round(y / scale)]]);
+		match.push(slot, ['literal', [round(x * scale), round(y * scale)]]);
 	}
 	match.push(['literal', [0, 0]]);
-	return ['interpolate', ['linear'], ['zoom'], SPREAD.fromZoom, ['literal', [0, 0]], SPREAD.toZoom, match];
+	return match;
 }
 
 function round(value: number): number {
