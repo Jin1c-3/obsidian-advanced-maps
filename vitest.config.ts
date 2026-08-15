@@ -27,6 +27,7 @@ export default defineConfig({
 				'src/geometry.ts',
 				'src/map-events.ts',
 				'src/geolink.ts',
+				'src/registration.ts',
 				'src/geocode.ts',
 				'src/view-options.ts',
 				'src/map-block.ts',

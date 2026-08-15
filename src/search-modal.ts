@@ -88,8 +88,18 @@ export class PlaceSearchModal extends SuggestModal<Place> {
 	onChooseSuggestion(place: Place): void {
 		const [lng, lat] = toWgs84(place.system, place.lng, place.lat);
 		const coords = formatLatLng(lat, lng);
-		void Promise.resolve(this.onPick(coords, place)).then(() => {
-			new Notice(t('notice.locate.done', { property: this.property, coords }));
-		});
+		void Promise.resolve(this.onPick(coords, place)).then(
+			() => {
+				new Notice(t('notice.locate.done', { property: this.property, coords }));
+			},
+			(e: unknown) => {
+				// The modal has already closed by now, so an unreported failure is
+				// a note that silently did not change — and, before this, an
+				// unhandled rejection in the console rather than a message.
+				const reason = e instanceof Error ? e.message : String(e);
+				console.error('Advanced Maps: could not write the chosen place', e);
+				new Notice(t('notice.write.failed', { reason }));
+			}
+		);
 	}
 }

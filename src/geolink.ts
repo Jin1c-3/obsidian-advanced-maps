@@ -189,12 +189,24 @@ function readOsm(url: URL): ParsedPoint | null {
 
 /* ---- host routing ---- */
 
+/**
+ * Google is the one provider without a single registrable domain — it maps on
+ * `google.com`, `google.de`, `google.co.uk`, `google.com.hk` and the rest — so
+ * the shape has to be spelled out: one country label, or `co`/`com` and a
+ * two-letter country. `google\.[a-z.]+$` looked equivalent and was not: it
+ * accepts any host whose remainder is letters and dots, so `google.evil.com`
+ * and `maps.google.com.attacker.tld` were parsed with Google's axis order and
+ * datum. Failing to recognize an unusual Google host is the safe direction —
+ * the text falls through to the plain coordinate readers.
+ */
+const GOOGLE_HOST = /(^|\.)google\.(?:[a-z]{2,3}|(?:com|co)\.[a-z]{2})$/i;
+
 /* One expression per registrable provider domain; `(^|\.)` covers subdomains. */
 const HOSTS: ReadonlyArray<[RegExp, (url: URL) => ParsedPoint | null]> = [
 	[/(^|\.)amap\.com$|(^|\.)autonavi\.com$|(^|\.)gaode\.com$/i, readAmap],
 	[/(^|\.)baidu\.com$/i, readBaidu],
 	[/(^|\.)qq\.com$/i, readTencent],
-	[/(^|\.)google\.[a-z.]+$/i, readGoogle],
+	[GOOGLE_HOST, readGoogle],
 	[/(^|\.)apple\.com$/i, readApple],
 	[/(^|\.)openstreetmap\.org$|(^|\.)osm\.org$/i, readOsm],
 ];

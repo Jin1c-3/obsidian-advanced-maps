@@ -85,6 +85,27 @@ describe('spreadSlots', () => {
 		}
 	});
 
+	it('keeps a group that exactly fills its ring on that one ring', () => {
+		// Fifteen is the size whose ring is sized to hold precisely fifteen, so
+		// the capacity check multiplies back the same division that produced the
+		// radius and used to land an ulp short of the whole number.
+		const radii = spreadSlots(15).map(([x, y]) => Math.hypot(x, y));
+		expect(Math.max(...radii) - Math.min(...radii)).toBeLessThan(1);
+	});
+
+	it('opens a ring only when the pins do not fit or the ring has stopped growing', () => {
+		for (let count = 2; count <= 70; count++) {
+			const radii = spreadSlots(count).map(([x, y]) => Math.hypot(x, y));
+			const inner = Math.min(...radii);
+			// Sub-pixel spread within one ring is the 2-decimal rounding of the
+			// slot coordinates, not a second ring; a real one is a whole step out.
+			if (Math.max(...radii) - inner < 1) continue;
+			// A further ring is legitimate only once the first has reached its cap;
+			// below that cap, one ring is by construction wide enough for them all.
+			expect(inner).toBeGreaterThanOrEqual(SPREAD.ringMaxPx - 0.01);
+		}
+	});
+
 	it('opens a second ring rather than growing one without limit', () => {
 		const slots = spreadSlots(64);
 		const radii = slots.map(([x, y]) => Math.hypot(x, y));

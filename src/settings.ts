@@ -139,6 +139,10 @@ export function isExcluded(path: string, setting: string): boolean {
 
 const BASE_PATH_PLACEHOLDER = 'places.base';
 
+/** Marks a rendered description's mention of the coordinate property, so a
+ *  rename can find it without re-rendering the pane; see `propertyDesc`. */
+const PROPERTY_MENTION = 'advanced-maps-property-name';
+
 /**
  * The secret minted when a key is moved out of the settings file.
  *
@@ -368,6 +372,32 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		vars?: Record<string, string>
 	): SettingDefinition<Key> {
 		return { name: t(name), desc: t(desc, vars), control: { type: 'toggle', key } };
+	}
+
+	/**
+	 * A description that names the coordinate property, as a fragment whose
+	 * mention of it carries a class the pane can be searched for later.
+	 *
+	 * `desc` is read once per render, and the pane is not re-rendered while the
+	 * property is being typed in — a re-render would take the focus out of the
+	 * box mid-word, which is the same reason the list fields above avoid it. So
+	 * the text is patched in place instead: see `setControlValue`.
+	 *
+	 * Found through the rendered DOM rather than by holding the nodes this
+	 * built: `getSettingDefinitions()` is also called to index the pane for
+	 * search, and nodes from a call that rendered nothing are not the ones the
+	 * reader is looking at.
+	 */
+	private propertyDesc(desc: TranslationKey): DocumentFragment {
+		const frag = createFragment();
+		const parts = t(desc).split('{property}');
+		parts.forEach((part, index) => {
+			if (index > 0) {
+				frag.createSpan({ cls: PROPERTY_MENTION, text: this.plugin.settings.coordsProperty });
+			}
+			frag.appendText(part);
+		});
+		return frag;
 	}
 
 	/**
@@ -626,9 +656,11 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 
 			this.group('locate', [
 				this.toggle('settings.locate.enable.name', 'settings.locate.enable.desc', 'locate'),
-				this.toggle('settings.locate.auto.name', 'settings.locate.auto.desc', 'autoFillCoords', {
-					property: this.plugin.settings.coordsProperty,
-				}),
+				{
+					name: t('settings.locate.auto.name'),
+					desc: this.propertyDesc('settings.locate.auto.desc'),
+					control: { type: 'toggle', key: 'autoFillCoords' },
+				},
 				this.text('settings.locate.exclude.name', 'settings.locate.exclude.desc', 'autoFillExclude', {
 					placeholder: DEFAULT_SETTINGS.autoFillExclude,
 				}),
@@ -749,6 +781,13 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		switch (key) {
 			case 'coordSystem':
 				this.plugin.reprojectAll();
+				break;
+			case 'coordsProperty':
+				// Rewritten rather than re-rendered: this fires on every keystroke
+				// in the box, and `update()` would take the caret with it.
+				for (const span of this.containerEl.querySelectorAll(`.${PROPERTY_MENTION}`)) {
+					span.textContent = String(next);
+				}
 				break;
 			case 'basePath':
 				// Another base has other views. This re-renders with what is known

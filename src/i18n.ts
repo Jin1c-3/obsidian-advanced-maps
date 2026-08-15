@@ -114,6 +114,7 @@ const en = {
 	'search.keyStore.plugin': 'Plugin settings — synced, in plain text',
 	'notice.search.failed': 'Advanced Maps: the search failed — {reason}',
 	'notice.search.needsKey': 'Advanced Maps: add an Amap web-service key in the plugin settings, or switch provider.',
+	'notice.write.failed': 'Advanced Maps: could not write to the note — {reason}',
 
 	/* ---- reverse geocoding ---- */
 	'notice.reverseGeocode.failed': 'Advanced Maps: could not look up a place name — {reason}',
@@ -404,6 +405,7 @@ const zh: Record<TranslationKey, string> = {
 	'search.keyStore.plugin': '插件设置 —— 跟着同步，明文保存',
 	'notice.search.failed': 'Advanced Maps：搜索失败 —— {reason}',
 	'notice.search.needsKey': 'Advanced Maps：请在插件设置里填高德 Web 服务 key，或者换一个搜索源。',
+	'notice.write.failed': 'Advanced Maps：写入笔记失败 —— {reason}',
 
 	'notice.reverseGeocode.failed': 'Advanced Maps：查找地名失败——{reason}',
 	'notice.reverseGeocode.done': '{property}：{value}',

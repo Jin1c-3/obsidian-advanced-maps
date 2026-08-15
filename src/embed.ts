@@ -18,6 +18,7 @@ import { t } from './i18n';
 import {
 	applyTrackPaint,
 	cancelPhotoImages,
+	disposePhotoImages,
 	drawTracks,
 	ensurePhotoImages,
 	fitTo,
@@ -69,6 +70,12 @@ export class TrackEmbed extends Component {
 	private operationRevision = 0;
 	/** A settings/file refresh requested while initializeMap still owns the map. */
 	private refreshPending = false;
+	/** A build or refresh is reading its files and has not committed them yet;
+	 *  read by the style.load handler, which must not draw across that read. */
+	private reading = false;
+	/** A style reload happened during a read and is owed a draw if that read
+	 *  turns out to have nothing to draw. */
+	private styleDrawPending = false;
 	/** Guards map.on(), which survives style.load and refresh() — see
 	 *  bindInteractions() for why binding twice would be wrong. */
 	private interactionsBound = false;
@@ -94,25 +101,43 @@ export class TrackEmbed extends Component {
 
 	/** Host-note photos stay separate so track statistics/profile remain track-only. */
 	private photos: PhotoEntry[] = [];
+	/** Which photo files the host note resolved to on the last read, in note
+	 *  order and before the no-coordinate filter; see `hostPhotosMoved()`. */
+	private photoSources: string[] = [];
 	/** The thumbnail candidates the last draw built — camera-independent, so
 	 *  `moveend` re-selects from these rather than rebuilding them. */
 	private photoIcons: PhotoIconSource[] = [];
 
 	/** Load independent track/photo inputs concurrently for both build and refresh. */
 	private async loadAll(): Promise<{ rec: TrackRecord; photos: PhotoEntry[] }> {
-		const [rec, photos] = await Promise.all([
-			this.plugin.tracks.load(this.file, this.plugin.settings.photoDatum),
-			this.loadPhotos(),
-		]);
-		return { rec, photos };
+		this.reading = true;
+		try {
+			const [rec, photos] = await Promise.all([
+				this.plugin.tracks.load(this.file, this.plugin.settings.photoDatum),
+				this.loadPhotos(),
+			]);
+			return { rec, photos };
+		} finally {
+			this.reading = false;
+		}
 	}
 
 	private async loadPhotos(): Promise<PhotoEntry[]> {
-		if (!this.plugin.settings.showPhotos || !this.sourcePath) return [];
+		if (!this.plugin.settings.showPhotos || !this.sourcePath) {
+			this.photoSources = [];
+			return [];
+		}
 		const host = this.plugin.app.vault.getFileByPath(this.sourcePath);
-		if (!host) return [];
+		if (!host) {
+			this.photoSources = [];
+			return [];
+		}
 		const datum = this.plugin.settings.photoDatum;
 		const files = this.plugin.resolveTracks(host).filter((f) => PHOTO_EXTS.has(f.extension));
+		// Recorded before the GPS filter below: a picture taken indoors resolves
+		// every time and draws never, so comparing against the drawn set would
+		// read as a change on every edit of the host note.
+		this.photoSources = files.map((f) => f.path);
 		const loaded = await Promise.all(
 			files.map(async (file) => ({
 				file,
@@ -122,6 +147,29 @@ export class TrackEmbed extends Component {
 		// A photo whose EXIF carried no coordinate parses to a record with no
 		// features and no error — not a failure, just a picture taken indoors.
 		return loaded.filter((p) => !p.rec.error && p.rec.features.length > 0);
+	}
+
+	/** The note this embed was written in; empty when it has no host note. */
+	get hostPath(): string {
+		return this.sourcePath;
+	}
+
+	/**
+	 * Does the host note now point at a different set of photos than the one
+	 * this embed last read?
+	 *
+	 * Asked before refreshing on a metadata change, because that fires on every
+	 * edit of the note while a refresh re-reads every file behind the map. The
+	 * comparison is order-sensitive on purpose: note order is what the album and
+	 * the modal's next/previous follow.
+	 */
+	hostPhotosMoved(): boolean {
+		if (!this.plugin.settings.showPhotos || !this.sourcePath) return false;
+		const host = this.plugin.app.vault.getFileByPath(this.sourcePath);
+		if (!host) return false;
+		const now = this.plugin.resolveTracks(host).filter((f) => PHOTO_EXTS.has(f.extension));
+		if (now.length !== this.photoSources.length) return true;
+		return now.some((file, i) => file.path !== this.photoSources[i]);
 	}
 
 	/** The embed API calls this when the file is swapped underneath us. */
@@ -225,21 +273,48 @@ export class TrackEmbed extends Component {
 				if (this.view && this.view.map) this.view.updateMapStyle();
 			})
 		);
-		// A theme or background change replaces the style and takes the track
-		// with it; the built-in view only knows how to put its markers back.
-		this.map.on('style.load', () => {
-			this.draw(this.operationRevision).catch(() => {});
-		});
-
 		// refresh() may have been requested while initializeMap() was awaiting.
 		// Now that a real map exists it can run normally and owns the next revision.
 		if (this.refreshPending) {
 			this.refreshPending = false;
 			await this.refresh();
-			return;
+		} else {
+			await this.draw(revision);
+			if (revision === this.operationRevision && !this.dead) this.renderStats();
 		}
-		await this.draw(revision);
-		if (revision === this.operationRevision && !this.dead) this.renderStats();
+		// Bound after the first draw, not before it: that draw already waits for
+		// `styleReady()`, so binding earlier would make the initial style load
+		// draw the same track a second time.
+		if (this.map && !this.dead) this.watchStyleReloads(this.map);
+	}
+
+	/**
+	 * A theme or background change replaces the style and takes the track with
+	 * it; the built-in view only knows how to put its markers back.
+	 *
+	 * The redraw claims its own revision, so a draw still running against the
+	 * discarded style gives way to it. While a read has not committed, though,
+	 * this stands down entirely: that read draws onto the new style when it
+	 * lands, and claiming a revision here would cancel it and leave the map
+	 * showing data the file no longer has.
+	 */
+	private watchStyleReloads(map: MapLibreMap): void {
+		map.on('style.load', () => {
+			if (this.dead) return;
+			if (this.reading) {
+				// Noted rather than drawn, so the one path that ends a read without
+				// drawing — an unreadable file — can still put the last good track
+				// back onto the style that just replaced it.
+				this.styleDrawPending = true;
+				return;
+			}
+			this.redraw();
+		});
+	}
+
+	/** Draw the committed data as its own operation, superseding any older one. */
+	private redraw(): void {
+		this.draw(++this.operationRevision).catch(() => {});
 	}
 
 	/** Release a map which initializeMap() created after this embed lost ownership. */
@@ -268,7 +343,13 @@ export class TrackEmbed extends Component {
 		// Answered before anything is torn down, and before `this.rec` is replaced:
 		// an unusable read must not be able to take the last usable one with it.
 		// See failInPlace() for why this is not the `fail()` build() calls.
-		if (rec.error) return this.failInPlace(rec.error);
+		if (rec.error) {
+			this.failInPlace(rec.error);
+			// This read is ending without a draw, so a style reload that stood
+			// down for it has nobody else to put the last good track back.
+			if (this.styleDrawPending) this.redraw();
+			return;
+		}
 		this.rec = rec;
 		this.photos = photos;
 		removeTrackLayers(this.map);
@@ -291,6 +372,9 @@ export class TrackEmbed extends Component {
 		if (!view) return;
 		await styleReady(map);
 		if (!this.map || this.dead || revision !== this.operationRevision) return;
+		// Whatever a style reload was owed, this draw pays: it waited for the
+		// style that replaced it and is about to put the owned content back.
+		this.styleDrawPending = false;
 
 		const color = view.markerManager.resolveColor(this.plugin.settings.trackColor);
 		// An embed has one owning note, so every feature uses index 0.
@@ -377,13 +461,23 @@ export class TrackEmbed extends Component {
 			const icon = photoIconSource(photo.file.path, photo.rec, system);
 			if (icon) icons.push(icon);
 		}
+		// Kept whether or not they are drawn, so switching thumbnails back on
+		// selects from these rather than waiting for the next full redraw.
 		this.photoIcons = icons;
-		if (this.map) ensurePhotoImages(this.map, icons);
+		if (!this.map) return;
+		// Hiding the layer is not enough: decoding is what costs the memory, and
+		// an album can hold tens of megabytes of it for a layer drawing nothing.
+		if (!this.plugin.settings.photoThumbnails) {
+			disposePhotoImages(this.map);
+			return;
+		}
+		ensurePhotoImages(this.map, icons);
 	}
 
 	/** Reselect cached icon candidates after camera movement. */
 	private reselectPhotoIcons(): void {
 		if (!this.map || this.photoIcons.length === 0) return;
+		if (!this.plugin.settings.photoThumbnails) return;
 		ensurePhotoImages(this.map, this.photoIcons);
 	}
 
@@ -581,7 +675,16 @@ export class TrackEmbed extends Component {
 		// LineStrings, so it comes back empty (or a single point) and there is
 		// nothing worth a chart over.
 		if (samples.length < 2) return;
-		this.renderProfile(this.panelEl, samples, stats.minEle, stats.maxEle);
+		// Scaled to the samples drawn, not to `stats`, which counts waypoint
+		// elevations this chart never plots — one 0 m waypoint on a ridge walk
+		// would otherwise flatten the whole route into the top of the box.
+		let low = Infinity;
+		let high = -Infinity;
+		for (const sample of samples) {
+			if (sample.ele < low) low = sample.ele;
+			if (sample.ele > high) high = sample.ele;
+		}
+		this.renderProfile(this.panelEl, samples, low, high);
 	}
 
 	/**
