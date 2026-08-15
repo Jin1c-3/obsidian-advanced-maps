@@ -27,6 +27,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Invisible bytes
+        run: node .github/scripts/check-source-bytes.mjs
+
       - name: Prettier
         run: npm run format:check
 
