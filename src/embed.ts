@@ -188,9 +188,20 @@ export class TrackEmbed extends Component {
 		try {
 			await view.initializeMap();
 		} catch (e) {
+			if (this.dead || this.view !== view) {
+				this.destroyUnownedView(view);
+				return;
+			}
 			return this.fail(e instanceof Error ? e.message : String(e));
 		}
-		if (this.dead || !view.map) return;
+		// initializeMap() can finish after unload has already destroyed the
+		// headless view. Use the local view rather than this.view here: the late
+		// MapLibre instance belongs to it even though the embed no longer does.
+		if (this.dead || this.view !== view) {
+			this.destroyUnownedView(view);
+			return;
+		}
+		if (!view.map) return;
 
 		this.map = view.map;
 		const revision = ++this.operationRevision;
@@ -224,6 +235,16 @@ export class TrackEmbed extends Component {
 		}
 		await this.draw(revision);
 		if (revision === this.operationRevision && !this.dead) this.renderStats();
+	}
+
+	/** Release a map which initializeMap() created after this embed lost ownership. */
+	private destroyUnownedView(view: BasesMapView): void {
+		try {
+			view.destroyMap();
+		} catch {
+			/* native initialization did not finish far enough to destroy */
+		}
+		view.containerEl?.detach();
 	}
 
 	/** Re-read the file and start the layers over — the track or a visual setting changed. */

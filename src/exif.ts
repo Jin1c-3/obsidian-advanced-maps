@@ -86,6 +86,8 @@ function readUIntBE(bytes: Uint8Array, offset: number, size: number): number | n
 }
 
 const EXIF_PREFIX = [0x45, 0x78, 0x69, 0x66, 0x00, 0x00]; // "Exif\0\0"
+const TIFF_LE_HEADER = [0x49, 0x49, 0x2a, 0x00];
+const TIFF_BE_HEADER = [0x4d, 0x4d, 0x00, 0x2a];
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 /* ---------------------------------------------------------------------- *
@@ -166,7 +168,7 @@ function findExifWebp(bytes: Uint8Array): Uint8Array | null {
 /* ---------------------------------------------------------------------- *
  * ISOBMFF (HEIC/HEIF/AVIF) — a box tree: `meta` → `iinf` names the item whose
  * type is "Exif", `iloc` says where that item's bytes live, and the item's
- * own payload carries a 4-byte offset in front of the "Exif\0\0" + TIFF data.
+ * own payload carries a 4-byte offset to the TIFF header that follows it.
  * ---------------------------------------------------------------------- */
 
 interface Box {
@@ -332,18 +334,25 @@ function findIlocExtent(bytes: Uint8Array, iloc: Box, itemId: number): { offset:
 	return null;
 }
 
-/** The Exif item's own payload: a 4-byte big-endian offset, then (usually
- *  right away) "Exif\0\0" followed by the TIFF block. The declared offset is
- *  trusted first; a plain "starts right after the offset field" layout — the
- *  common case — is the fallback when it does not resolve. */
+function isTiffHeader(bytes: Uint8Array, offset: number): boolean {
+	return matchesBytes(bytes, offset, TIFF_LE_HEADER) || matchesBytes(bytes, offset, TIFF_BE_HEADER);
+}
+
+/** The Exif item's own payload starts with a big-endian offset, relative to
+ *  the byte immediately after that field, which points directly to TIFF. A
+ *  few legacy encoders instead put an immediate "Exif\0\0" marker there and
+ *  write a bad offset; that one bounded layout remains supported. */
 function extractExifPayload(payload: Uint8Array): Uint8Array | null {
 	if (payload.length < 4) return null;
 	const declared = readU32(payload, 0, false);
 	if (declared != null) {
 		const p = 4 + declared;
-		if (matchesBytes(payload, p, EXIF_PREFIX)) return payload.slice(p + EXIF_PREFIX.length);
+		if (isTiffHeader(payload, p)) return payload.slice(p);
 	}
-	if (matchesBytes(payload, 4, EXIF_PREFIX)) return payload.slice(4 + EXIF_PREFIX.length);
+	const legacyTiffStart = 4 + EXIF_PREFIX.length;
+	if (matchesBytes(payload, 4, EXIF_PREFIX) && isTiffHeader(payload, legacyTiffStart)) {
+		return payload.slice(legacyTiffStart);
+	}
 	return null;
 }
 

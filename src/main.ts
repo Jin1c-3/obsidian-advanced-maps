@@ -142,7 +142,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 		const factory: BasesViewFactory = (controller, containerEl) => {
 			const view = nativeFactory(controller, containerEl);
-			this.enhance(view);
+			this.enhance(view, false);
 			return view;
 		};
 		factory.__advancedMaps = true;
@@ -166,7 +166,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 	}
 
 	/** Attach a TrackLayer to one native map view, whatever its age. */
-	private enhance(view: BasesMapView | null | undefined): TrackLayer | null {
+	private enhance(view: BasesMapView | null | undefined, adopted: boolean): TrackLayer | null {
 		if (!view || !view.markerManager) return null;
 		// An embed's map is a native view too, but it has no query behind it:
 		// enhancing it would hand its track over to a layer that thinks the
@@ -180,14 +180,18 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// recognised.
 		if (view.__advancedMapsLayer) return null;
 		try {
-			const layer = new TrackLayer(this, view).attach();
+			const layer = new TrackLayer(this, view, adopted).attach();
 			this.layers.add(layer);
 			// A view adopted after the fact has already built its map, so the
 			// initializeMap wrapper will never fire for it — and its markers were
 			// placed before we could move them, so redo those too.
 			if (view.map) {
-				layer.onMapCreated(view.map);
+				layer.onMapCreated(view.map, adopted ? 'adopted' : 'current');
 				layer.reproject().catch((e) => console.error('Advanced Maps: could not draw tracks', e));
+			} else if (adopted) {
+				// The pre-existing native initializer may still be fetching a style;
+				// wait for it rather than invoking it a second time.
+				layer.watchAdoptedMap();
 			}
 			return layer;
 		} catch (e) {
@@ -204,7 +208,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 			seen.add(node);
 			const candidate = node as BasesMapView;
 			if (candidate.type === 'map' && candidate.markerManager && candidate.mapEl) {
-				this.enhance(candidate);
+				this.enhance(candidate, true);
 				return;
 			}
 			const component = node as ComponentNode;
