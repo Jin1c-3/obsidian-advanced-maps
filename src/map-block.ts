@@ -1,24 +1,4 @@
-/*
- * "Around this note": a map of the notes a note links to, the notes that link to
- * it, and itself.
- *
- * Nothing here is a data structure of this plugin's own. Bases already answers
- * "which notes" — inside an embedded base `this` is the *embedding* file, so a
- * filter can name the host note's own links — and it already draws them with the
- * base's icons, colours and popups. The plugin contributes one view in the base
- * file and one embed line in the note; adding a place afterwards is dragging a
- * note into the body, which is Obsidian's own behaviour and reaches no code of
- * ours.
- *
- * The view lives in the **base file** rather than being copied into each note.
- * A copy would be self-contained, but it freezes the base's formulas at the
- * moment it was written: change a colour rule and every map inserted before then
- * keeps the old one, with no way to know. Referencing the view instead means
- * there is nothing to refresh, because there is nothing that can go stale.
- *
- * The cost is that the link names the view. Rename it in Bases and the embeds
- * stop resolving, silently — Obsidian does not rewrite `#view` fragments.
- */
+/* Pure builders for the shared base-file view embedded by “Around this note”. */
 
 export interface BaseView {
 	name?: string;
@@ -31,26 +11,10 @@ export interface BaseSpec {
 	[key: string]: unknown;
 }
 
-/**
- * Rows the embedding note links to.
- *
- * Verified against a running Obsidian 1.13 rather than assumed: both this and
- * `file.backlinks.contains(this)` answer with exactly the linked notes, but the
- * documentation calls `file.backlinks` performance heavy, and this side of the
- * link is the one already in the metadata cache.
- */
+/** Rows the embedding note links to, using the metadata-backed direction. */
 export const LINKED_FROM_NOTE = 'this.file.hasLink(file)';
 
-/**
- * The other direction: notes that link **to** the host.
- *
- * Not `file.backlinks.contains(this)`, which reads as the opposite and is not —
- * a row whose backlinks hold the host is a row the host links to, which is
- * `LINKED_FROM_NOTE` again. Measured: the two return the same set.
- *
- * Note the asymmetry. The outward clause reads one file's links, the host's;
- * this one reads the links of every row the base offers it.
- */
+/** Rows whose own links point to the embedding note. */
 export const LINKS_TO_NOTE = 'file.hasLink(this.file)';
 
 /** The host note itself. A link resolving to a file equates with it. */
@@ -66,7 +30,7 @@ export const THIS_NOTE = 'file == this.file';
  *
  * The property is reached with `this["name"]` rather than `this.name` because
  * the property is configurable and `this.my coords` is a syntax error. The
- * bracket form was checked against a running Obsidian; it is not a guess.
+ * bracket form also supports configurable property names containing spaces.
  */
 export function pointerFilter(coordsProperty?: string): unknown {
 	const clauses: unknown[] = [LINKED_FROM_NOTE, LINKS_TO_NOTE];
@@ -94,15 +58,7 @@ export function aroundViewState(base: BaseSpec, name: string): 'missing' | 'map'
 	return existing.type === 'map' ? 'map' : 'occupied';
 }
 
-/**
- * Every map view a base holds, by name — what the settings dropdown offers.
- *
- * Map views only, because that is the whole of what the setting picks. This and
- * `pickMapView` deliberately use the same type+name predicate, so a stale or
- * hand-edited setting cannot open a table as the map it is not. A view with no
- * name cannot be referred to at all, by this setting or by an `![[base#view]]`
- * embed, so it is left out rather than offered as a blank line.
- */
+/** Names of referable map views only; unnamed/non-map views cannot satisfy the setting. */
 export function mapViewNames(base: BaseSpec): string[] {
 	const names: string[] = [];
 	for (const view of base.views ?? []) {

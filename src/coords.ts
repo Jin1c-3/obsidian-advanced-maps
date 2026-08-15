@@ -1,16 +1,4 @@
-/*
- * Coordinate systems.
- *
- * Chinese tile providers do not serve WGS-84. Amap and Tencent serve GCJ-02 and
- * Baidu serves BD-09; both are deliberate, non-linear offsets that land
- * 300–600 m away from the true position. Raster tiles cannot be nudged back, so
- * the data moves instead: every coordinate is shifted on its way onto the map,
- * and shifted back on its way out. MapLibre never learns the difference — it
- * draws the numbers it is handed on top of the numbers the tile server used.
- *
- * Nothing on disk is touched. Notes and .gpx files stay WGS-84; switching the
- * option back to WGS-84 restores the original positions exactly.
- */
+/* Keep vault data in WGS-84; convert only at tile-space input/output boundaries. */
 
 import type { Geometry } from 'geojson';
 import type { MapConfig } from './types/obsidian-internals';
@@ -21,12 +9,7 @@ export type CoordSystem = 'wgs84' | 'gcj02' | 'bd09';
 export const COORD_MODES = ['auto', 'wgs84', 'gcj02', 'bd09'] as const;
 export type CoordMode = (typeof COORD_MODES)[number];
 
-/**
- * The coordinate system belongs to the tile source, not to the view — one note
- * can hold an OpenStreetMap embed and an Amap base view at the same time, and
- * the background switcher swaps tile sets under a live map. So "auto" reads the
- * answer off the tile URL, which is the thing that actually decides it.
- */
+/** Automatic coordinate mode follows tile URLs because live views can switch sources. */
 const TILE_SYSTEM_HINTS: Array<[CoordSystem, string[]]> = [
 	['gcj02', ['autonavi.com', 'amap.com', 'qq.com', 'gtimg.cn', 'gtimg.com', 'google.cn']],
 	['bd09', ['bdimg.com', 'bdstatic.com', 'baidu.com']],
@@ -45,8 +28,7 @@ export function systemFromTiles(tiles: string | string[] | undefined | null): Co
 }
 
 const KRASOVSKY_A = 6378245; // Krasovsky 1940 semi-major axis, the ellipsoid GCJ-02 is defined on
-// First eccentricity squared. Published as 0.00669342162296594323; written out
-// to the digits a double actually keeps, which is the same number at runtime.
+// Krasovsky first eccentricity squared at double precision.
 const KRASOVSKY_EE = 0.006693421622965943;
 const BD_OFFSET = (Math.PI * 3000) / 180;
 
@@ -200,12 +182,7 @@ function numberish(value: unknown): number {
  */
 export const COORD_DIGITS = 6;
 
-/**
- * The shape a coordinate takes whenever this plugin writes one down: "lat,lng",
- * no space. Stated here, beside `projectCenter` which reads the same shape back,
- * because four places used to write it out themselves — and a drift in any one
- * of them shows up as a note that appears to have moved.
- */
+/** Canonical persisted coordinate shape: `lat,lng`, no space. */
 export function formatLatLng(lat: number, lng: number): string {
 	return `${lat.toFixed(COORD_DIGITS)},${lng.toFixed(COORD_DIGITS)}`;
 }

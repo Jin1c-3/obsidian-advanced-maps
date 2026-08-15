@@ -1,48 +1,11 @@
-/*
- * Turning a place name into a coordinate, and back again.
- *
- * This is the first thing in the plugin that talks to anybody. It happens only
- * while the search box is open and only with what was typed into it — or, for
- * the reverse direction, only when the "fill place name from coordinates"
- * command is run by hand — and the provider is a setting rather than a default
- * nobody chose, because a vault is private and "which places did you look up"
- * is exactly the kind of thing that should not leak by accident.
- *
- * Two providers, because one is not enough for the case this plugin exists for:
- *
- *   · Nominatim (OpenStreetMap) needs no key, covers the world, answers in
- *     WGS-84, and is thin on Chinese POIs — it will find 西湖 but not 楼外楼.
- *   · 高德 needs a free web-service key, knows every restaurant in the country,
- *     and answers in GCJ-02. Which is fine: this file states the datum and
- *     coords.ts does the conversion, exactly as with a pasted link.
- *
- * The reverse direction reuses both — one dropdown and one key cover asking
- * "where is 楼外楼" and "what is at 30.25,120.14" alike, so there is no second
- * provider concept to configure.
- *
- * Request building and response reading are pure and live here; the one line
- * that actually goes to the network is in the caller (the search modal, or
- * main.ts's reverse-geocode handler). That is what lets the provider quirks —
- * 高德 signalling failure with `status: "1"`/`"0"` and an empty array meaning
- * "no matches", Nominatim putting the whole address in one string — be tested
- * without a network at all.
- */
+/* Pure forward/reverse request builders and response parsers; callers own network I/O. */
 
 import { wgs2gcj, type CoordSystem } from './coords';
 
 export const GEOCODE_PROVIDERS = ['nominatim', 'amap'] as const;
 export type GeocodeProvider = (typeof GEOCODE_PROVIDERS)[number];
 
-/**
- * The two places 高德's key can live, which is a real choice and not a default
- * anyone can make for somebody else.
- *
- * `secret` is Obsidian's own SecretStorage: the key never enters `data.json`,
- * so it is never synced, backed up or committed — and never leaves the device,
- * so each one needs its own copy. `plugin` is the settings file, which travels
- * with everything else in plain text. Privacy or convenience; the settings pane
- * states both and lets the reader pick.
- */
+/** SecretStorage stays device-local; plugin settings may sync in plain text. */
 export const KEY_STORES = ['secret', 'plugin'] as const;
 export type KeyStore = (typeof KEY_STORES)[number];
 
@@ -77,17 +40,7 @@ const LIMIT = 10;
  */
 const NOMINATIM_USER_AGENT = 'obsidian-advanced-maps (https://github.com/Jin1c-3/obsidian-advanced-maps)';
 
-/**
- * The usage policy asks for an identifying User-Agent and no more than one
- * request a second. This covers the identification; the rate is held by the
- * one caller that can produce a burst — `search-modal.ts`, whose module-wide
- * clock spaces request *starts* a second apart on top of its quiet period.
- *
- * User-Agent only. Setting `Referer` as well looks harmless and is not:
- * Electron refuses the whole request with `net::ERR_BLOCKED_BY_CLIENT`, and
- * measured through `requestUrl` that arrives as a promise that never settles
- * rather than as an error — a search box that simply stays empty forever.
- */
+/** Identify Nominatim requests with User-Agent only; Electron blocks an explicit Referer. */
 export function nominatimRequest(query: string, language: string): GeocodeRequest {
 	const params = new URLSearchParams({
 		q: query,
@@ -154,13 +107,7 @@ interface NominatimReverseBody {
 	error?: string;
 }
 
-/**
- * `/reverse` answers **one** object, not an array like `/search` — there is
- * only ever one address for a point. Failure still arrives as HTTP 200:
- * verified live, an out-of-range point (`lat=99,lon=200`) and a mid-ocean one
- * (`0,-140`) both come back `{"error":"Unable to geocode"}` rather than a 4xx,
- * so `error` is checked before `display_name` is trusted.
- */
+/** Nominatim reverse returns one object and may encode failure in an HTTP-200 `error`. */
 export function parseNominatimReverse(body: unknown): string {
 	const data = (body ?? {}) as NominatimReverseBody;
 	if (typeof data.error === 'string' && data.error !== '') throw new GeocodeError(data.error);
@@ -259,13 +206,7 @@ interface AmapReverseBody {
 	regeocode?: { formatted_address?: unknown };
 }
 
-/**
- * Same `status`/`info` gate as `parseAmap` — verified live against a real
- * invalid key: HTTP 200, `{"status":"0","info":"INVALID_USER_KEY",
- * "infocode":"10001"}`, a well-formed failure exactly like the forward case.
- * `formatted_address` is typed `unknown` before it is trusted, the same
- * caution `parseAmap` already applies to `address`.
- */
+/** Apply Amap's HTTP-200 status gate before trusting the reverse address. */
 export function parseAmapReverse(body: unknown): string {
 	const data = (body ?? {}) as AmapReverseBody;
 	if (data.status !== '1') throw new GeocodeError(data.info || 'AMAP_REQUEST_FAILED');

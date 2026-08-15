@@ -7,45 +7,15 @@ import { PHOTO_EXTS, PHOTO_HEAD_BYTES, PHOTO_ICON_PREFIX } from './constants';
 export interface TrackRecord extends ParsedTrack {
 	mtime: number;
 	error?: string;
-	/**
-	 * Tile-space geometry, one entry per system asked for. A `Map` rather than a
-	 * single slot because two views can be live in two different systems at once
-	 * — a GCJ-02 base view and a BD-09 embed of the same file — and a one-slot
-	 * memo makes those two thrash, re-projecting the whole track on every redraw
-	 * for as long as both are on screen. Bounded at two entries by construction:
-	 * `wgs84` never gets stored, since it is the identity.
-	 */
+	/** Tile-space geometry memoized per non-WGS coordinate system. */
 	projected?: Map<CoordSystem, ParsedTrack['features']>;
-	/**
-	 * Set only for a file `PHOTO_EXTS` claims, and only when EXIF actually
-	 * stated a usable coordinate — a photo with none still caches with
-	 * `features: []`, no `error` and no `photo`, because a photo taken indoors
-	 * is not a failure to report. Carries the decoded thumbnail bytes
-	 * (`thumbnail` is undefined when the file had none) and the EXIF
-	 * orientation the thumbnail — and only the thumbnail — was written under,
-	 * for whoever registers it with `map.addImage`.
-	 */
+	/** EXIF thumbnail data, present only when a photo supplied a usable coordinate. */
 	photo?: { thumbnail?: ExifThumbnail; orientation: number };
-	/**
-	 * Which `PhotoDatum` setting this record's coordinate was converted under.
-	 * Undefined for a non-photo file, where the setting plays no part at all.
-	 * The mtime memo alone is blind to a datum change — the file on disk has
-	 * not moved — so `load()` also compares this before trusting the cache;
-	 * see the comment on `load()` for why the argument exists in the first
-	 * place rather than reading `photoDatum` off a stored settings object.
-	 */
+	/** Coordinate setting used for this photo; part of cache freshness. */
 	photoDatum?: PhotoDatum;
 }
 
-/**
- * A photo's `map.addImage` id, deterministic from its own vault path. The one
- * function that writes this formula — `loadPhoto` below stamps it onto a
- * photo's `amPhoto` property, and whoever later calls `map.addImage` for the
- * decoded bitmap needs the identical string to land on the same id. Exported
- * rather than duplicated at the call site, on the same reasoning `trackFeatures`
- * in geometry.ts is centralised: two independent formulas for the same id are
- * exactly the kind of pair that drifts the moment one of them is edited.
- */
+/** The single formula for a photo's `map.addImage` id. */
 export function photoImageId(path: string): string {
 	return PHOTO_ICON_PREFIX + path;
 }
@@ -66,17 +36,7 @@ export class TrackCache {
 
 	constructor(private readonly app: App) {}
 
-	/**
-	 * Whether the cached record for this file can stand in for a reparse.
-	 * Mtime alone answers it for a track file, but a photo's coordinate also
-	 * depends on `datum` (see `photoDatum` above): a `photoDatum` setting
-	 * change moves nothing on disk, so mtime alone would never notice it and
-	 * `TrackLayer.sync()` would keep drawing a pin computed under the old
-	 * setting until the file's own mtime happened to change. `load()` already
-	 * makes this same comparison before trusting its own cache — this is the
-	 * read-only half of it, for a caller (`sync()`) that wants to know whether
-	 * a reload is needed *before* deciding whether to await one at all.
-	 */
+	/** Freshness includes photo datum because that setting changes the projected coordinate. */
 	isFresh(file: TFile, datum: PhotoDatum): boolean {
 		const rec = this.entries.get(file.path);
 		if (!rec || rec.mtime !== file.stat.mtime) return false;
@@ -100,16 +60,7 @@ export class TrackCache {
 		this.generations.set(path, (this.generations.get(path) ?? 0) + 1);
 	}
 
-	/**
-	 * `datum` only matters for a photo — a GPX/KML/TCX/GeoJSON file carries its
-	 * own coordinate system already resolved by the time it reaches
-	 * `parseTrack`, so the argument does nothing for one of those. It is
-	 * threaded in as a parameter rather than the cache reaching for
-	 * `plugin.settings.photoDatum` itself, because a `TrackCache` is
-	 * constructed from nothing but an `App` — see the constructor — and
-	 * pulling in the whole plugin just to read one setting would make this
-	 * class know about its own owner, which nothing else in it does.
-	 */
+	/** `datum` participates only in photo cache identity; ordinary tracks ignore it. */
 	load(file: TFile, datum: PhotoDatum): Promise<TrackRecord> {
 		// Everything identifying this read is captured before the first await. A
 		// TFile is mutable: Obsidian updates its path/stat object in place, so
@@ -205,13 +156,7 @@ export class TrackCache {
 		return { ...parseTrack(text, extension), mtime };
 	}
 
-	/**
-	 * A photo with no usable EXIF coordinate is not a failure — most photos in
-	 * a vault were never near a GPS fix, and reporting that as an `error` would
-	 * paint an alarming line under every indoor picture a note happens to
-	 * embed. It caches as an empty, unremarkable record instead, exactly like a
-	 * base-view query that currently matches nothing.
-	 */
+	/** Missing GPS is a normal empty photo record, not a parse error. */
 	private async loadPhoto(file: TFile, datum: PhotoDatum, mtime: number): Promise<TrackRecord> {
 		const head = await readHead(this.app, file, PHOTO_HEAD_BYTES);
 		const exif = parseExif(head);
@@ -219,9 +164,7 @@ export class TrackCache {
 
 		const track = photoTrack(exif, file.basename, datum);
 		const feature = track.features[0];
-		// The formula photoImageId() writes is the only thing that has to agree
-		// with whoever later calls map.addImage for this bitmap — the id itself
-		// carries no meaning beyond "the same string both sides compute".
+		// Stamp the same id the thumbnail registrar later passes to map.addImage.
 		const imageId = exif.thumbnail ? photoImageId(file.path) : undefined;
 		const properties: Record<string, unknown> = {
 			...feature.properties,
@@ -240,52 +183,17 @@ export class TrackCache {
 }
 
 /**
- * A ranged read of a file's first `bytes` bytes — EXIF sits in the first few
- * KB of even a multi-megabyte photo (see `PHOTO_HEAD_BYTES` in constants.ts),
- * and reading the whole file to get at it does not scale to a base with
- * hundreds of photos. Measured, 50 concurrent reads of a real 3 MB photo:
- * `vault.readBinary` 711 ms and 152.6 MB allocated; this ranged fetch 100 ms
- * and 0.2 MB.
- *
- * `getResourcePath` hands back an `app://` URL Obsidian itself serves, and a
- * `Range` header on it really does seek — measured live. It answers **200
- * with no `Content-Range`**, but the body is already cut down to the
- * requested length, so this never checks for 206. The range asked for is
- * always `bytes=0-(n-1)` and never anything longer than the file: a range
- * that *starts* past EOF throws `TypeError: Failed to fetch` outright, where
- * one that merely runs past EOF just answers with the whole file and no
- * error — so `end` is clamped against `file.stat.size` up front rather than
- * trusted to the file always being at least `bytes` long.
- *
- * `fetch` trips `eslint-plugin-obsidianmd`'s `no-restricted-globals` (warn
- * only): `requestUrl` cannot stand in for it here, because it throws
- * "ClientRequest only supports http: and https: protocols" on an `app://`
- * URL, measured live — and this needs the `Range` header `requestUrl` cannot
- * be given either way. Left as a plain, unsuppressed warning rather than an
- * `eslint-disable` comment — `eslint-plugin-obsidianmd`'s recommended config
- * brings `eslint-comments` with it and names `no-restricted-globals` as one
- * rule that may not be disabled, so silencing it here trades one warning for
- * two *errors* (`no-restricted-disable` and `require-description`). Measured,
- * not assumed. `npm run lint` is a bare `eslint .`, which fails on errors and
- * not on warnings, so leaving it is also what keeps `npm run check` green.
- *
- * Any failure at all — a platform that refuses `Range`, an `app://` scheme
- * this build blocks, anything — falls back to a plain `vault.readBinary` and a
- * slice, so a photo's coordinate is never lost to *how* it was read. A platform
- * that silently ignores the header cannot be distinguished from Obsidian's
- * measured 200 response (neither carries `Content-Range`), so its response is
- * explicitly sliced too: it may still transfer the whole file, but never keeps
- * or parses more than the requested head. Not verified on mobile; said here
- * rather than assumed, same as the rest of this file's measurements were taken
- * on desktop.
+ * Read a bounded prefix through Obsidian's ranged `app://` resource URL.
+ * Clamp the range before EOF, slice even successful responses because some
+ * platforms ignore Range, and fall back to `vault.readBinary` on any failure.
+ * `requestUrl` cannot serve `app://` ranges, so the fetch lint warning is intentional.
  */
 export async function readHead(app: App, file: TFile, bytes: number): Promise<Uint8Array> {
 	try {
 		if (file.stat.size <= 0) throw new Error('empty file');
 		const end = Math.min(bytes, file.stat.size) - 1;
 		const url = app.vault.getResourcePath(file);
-		// See readHead's own doc comment for why this is `fetch`, not
-		// `requestUrl`, and why the resulting lint warning is left unsuppressed.
+		// `requestUrl` cannot read ranged app:// resources.
 		const res = await fetch(url, { headers: { Range: `bytes=0-${end}` } });
 		if (!res.ok) throw new Error(`ranged read of ${file.path} failed: ${res.status}`);
 		// Some app:// implementations may ignore Range and return the whole file.
@@ -298,24 +206,7 @@ export async function readHead(app: App, file: TFile, bytes: number): Promise<Ui
 	}
 }
 
-/**
- * A track's geometry in tile space, remembered on the cache record.
- *
- * Shifting is cheap per point but a single watch export runs to five figures,
- * and sync() re-runs on every data change and every style swap. Memoising by
- * system means the arithmetic happens once per file, not once per redraw; a
- * fresh parse replaces the whole record, so the memo cannot go stale.
- *
- * Properties are otherwise dropped on the way through — this used to carry
- * nothing but a waypoint's own `name`. It now also carries a photo's
- * `amRole`/`amPhoto`/`amPath` (see `loadPhoto` above), because those three are
- * a photo's *only* handle back to its own thumbnail image and its own file:
- * dropping them here would empty out the map album on every Chinese tile set
- * while leaving it populated on OpenStreetMap, since `wgs84` is the one
- * system this function never touches at all. `times` still does not survive —
- * nothing downstream needs a timestamp on a *drawn* feature; stats read
- * `rec.features`, never this.
- */
+/** Project once per tile system, preserving only properties used by map layers. */
 export function projectedFeatures(rec: TrackRecord | undefined, system: CoordSystem): ParsedTrack['features'] {
 	if (!rec || !rec.features) return [];
 	if (system === 'wgs84') return rec.features;

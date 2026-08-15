@@ -1,15 +1,4 @@
-/*
- * "Search for a place".
- *
- * A SuggestModal fires `getSuggestions` on every keystroke, which is one HTTP
- * request per character typed — past what Nominatim's usage policy allows and
- * rude to 高德 besides. So every query waits out a quiet period first and is
- * dropped if a newer one has arrived, and answers are remembered for the length
- * of the modal: backspacing through a query then re-typing it costs nothing.
- *
- * The result is converted to WGS-84 on the way out, like everything else this
- * plugin writes to disk.
- */
+/* Debounced, cached place search with provider throttling and WGS-84 output. */
 
 import { getLanguage, Notice, SuggestModal, requestUrl } from 'obsidian';
 import type { App } from 'obsidian';

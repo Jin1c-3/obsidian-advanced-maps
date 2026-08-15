@@ -1,29 +1,7 @@
 /*
- * EXIF — a photo's own coordinate, pulled out of whatever container it ships
- * in, with no dependency and no `obsidian` import: this is a pure byte reader,
- * exactly the shape `coords.ts` and `parse.ts` already are, so it can sit on
- * the 90 % coverage list and be tested with a hand-built buffer rather than a
- * fixture file.
- *
- * A photo becomes "a track file with one Point in it" — `photoTrack()` hands
- * back the same `ParsedTrack` shape `parse.ts`'s readers already produce, so
- * everything downstream (the track cache, `trackFeatures()`, the draw path)
- * needs nothing new to know about a photo.
- *
- * Four containers, one shared TIFF reader. `findExif()` is the part that
- * differs per format — JPEG segments, PNG/WebP chunks, an ISOBMFF box tree —
- * and it hands back nothing but the raw TIFF block; `readTiffExif()` never
- * learns which container it came from.
- *
- * The caller is very often handing this a *truncated* buffer — a head read of
- * a multi-megabyte file — so every offset this file follows is bounds-checked
- * against the array it is actually holding, and an offset that lands past the
- * end is treated as "not there", never thrown and never read as garbage. IFD
- * entry counts are capped and the IFD0→IFD1 pointer is required to move
- * forward, both so a corrupted file cannot turn into a long loop.
- *
- * The datum EXIF coordinates are written in is WGS-84 by the specification,
- * and that is what a real Xiaomi export measured out to — see `photoWgs84()`.
+ * Pure JPEG/PNG/WebP/ISOBMFF EXIF reader. Container walkers yield a TIFF block;
+ * every offset is checked against the possibly truncated input, and malformed
+ * structures stand down instead of throwing or looping.
  */
 
 import { gcj2wgs } from './coords';
@@ -675,9 +653,7 @@ export function parseExif(bytes: Uint8Array): PhotoExif | null {
 export function photoWgs84(exif: PhotoExif, setting: PhotoDatum): [number, number] {
 	if (setting === 'wgs84') return [exif.lng, exif.lat];
 	if (setting === 'gcj02') return gcj2wgs(exif.lng, exif.lat);
-	// 'auto': trust a datum the file actually states when it names GCJ-02;
-	// otherwise WGS-84, which is both what the EXIF specification calls for
-	// and what the measured Xiaomi export turned out to be written in.
+	// Auto trusts an explicit GCJ datum; EXIF otherwise defaults to WGS-84.
 	return exif.datum && /gcj/i.test(exif.datum) ? gcj2wgs(exif.lng, exif.lat) : [exif.lng, exif.lat];
 }
 

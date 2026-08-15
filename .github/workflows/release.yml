@@ -56,11 +56,8 @@ jobs:
             manifest.json
             styles.css
 
-      # Not `--generate-notes`: that builds a body out of the pull requests
-      # merged since the last tag, and this repo pushes to main, so it found
-      # none and published nothing but a "Full Changelog" link. The changelog
-      # already holds the prose, and a version missing from it fails here
-      # rather than shipping an unreadable release.
+      # Release prose comes from the curated changelog rather than generated PR
+      # titles. A version missing from it fails instead of publishing an empty body.
       - name: Release notes, from the changelog
         run: node .github/scripts/release-notes.mjs "${GITHUB_REF_NAME}" > release-notes.md
 

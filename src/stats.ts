@@ -1,17 +1,4 @@
-/*
- * Track statistics — distance, elevation gain, moving time — computed straight
- * from a parsed track's own GeoJSON features.
- *
- * Everything here is measured in WGS-84, and it has to stay that way. The
- * GCJ-02 and BD-09 offsets used to draw a track on a Chinese tile set are
- * non-linear, so a distance summed after that shift is a distance measured in
- * the wrong space — and the error is small enough per pair of points to look
- * plausible, which is what makes it dangerous rather than merely wrong. Callers
- * must hand this module a track's own `features` — the values it was parsed
- * into — never the output of `projectGeometry` / a view's `projectedFeatures()`.
- * This module imports nothing from Obsidian and touches no DOM, on purpose: it
- * has to run the same way in a test as it does in the app.
- */
+/* Pure track statistics over raw WGS-84 features, never tile-projected geometry. */
 
 import type { Feature, Geometry } from 'geojson';
 
@@ -31,30 +18,13 @@ export interface TrackStats {
 	speed: number | null; // m/s over movingTime
 }
 
-/**
- * Consumer GPS elevation is noisy at the ±3–5 m level, so a naive sum of every
- * upward step between consecutive points inflates a dead-flat track into
- * hundreds of metres of "climb". 5 m is the conventional hysteresis threshold:
- * big enough to sit above the noise floor, small enough not to eat real hills.
- */
+/** Metres of elevation change required to commit through consumer-GPS noise. */
 export const ASCENT_THRESHOLD_M = 5;
 
-/**
- * Below any walking pace: an interval slower than this is standing still, not
- * moving slowly.
- *
- * 0.25 m/s is 0.9 km/h, and it is deliberately far under the 0.5 m/s such
- * thresholds are usually set to. Measured on a real 3.2 km stair climb — 300 m
- * of ascent, ten minutes of it spent resting — 0.5 m/s reported 45:36 of moving
- * time against 1:14:57 elapsed, throwing away nearly twenty minutes of genuine
- * uphill walking: 1.8 km/h is a perfectly ordinary pace on steps, so a
- * threshold there does not separate resting from climbing, it just penalises
- * climbing. At 0.25 m/s the same track reports the ten minutes it actually
- * stopped for.
- */
+/** 0.25 m/s (0.9 km/h) keeps slow uphill walking while excluding stationary intervals. */
 export const MOVING_SPEED_MPS = 0.25;
 
-// WGS-84 mean radius. Good to well under a metre at GPS accuracy; Vincenty buys nothing here.
+// WGS-84 mean radius in metres; adequate at consumer GPS accuracy.
 const EARTH_RADIUS_M = 6371008.8;
 
 /** Great-circle distance between two `[lon, lat, ...]` positions, in metres. Extra members (elevation) are ignored. */
@@ -70,22 +40,7 @@ export function haversine(a: number[], b: number[]): number {
 	return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(Math.min(1, h)));
 }
 
-/**
- * Ascent/descent over one ordered, already-elevation-only sequence, via
- * hysteresis rather than a running sum.
- *
- * A naive sum of every positive delta between consecutive points is wrong: GPS
- * elevation jitters at the ±3–5 m level even standing still, so a flat track
- * "climbs" by the sum of its own noise — hundreds of metres over a long enough
- * export. The fix is to compare each new point against the last *committed*
- * elevation (`base`) rather than against its immediate predecessor. Small
- * back-and-forth wobble never moves `base`, so it never accumulates; only once
- * a point has drifted `ASCENT_THRESHOLD_M` or more away from the last committed
- * value does that whole move get credited to ascent or descent, and `base`
- * jumps to the new point. A real, gradual climb still gets counted in full: it
- * simply commits in `ASCENT_THRESHOLD_M`-ish increments as it goes, and those
- * increments sum to the true climb.
- */
+/** Commit ascent/descent only after movement from the last base crosses the noise threshold. */
 function hysteresisClimb(elevations: number[]): { ascent: number; descent: number } {
 	let ascent = 0;
 	let descent = 0;
@@ -319,13 +274,7 @@ export function elevationProfile(features: Features, samples = 160): ProfileSamp
 	if (full.length === 0 || full.length <= samples) return full;
 	if (samples <= 1) return [full[full.length - 1]];
 
-	// Evenly-spaced indices rather than peak-preserving simplification: a
-	// sparkline only has to look roughly right at a glance, and this is O(n),
-	// trivial to reason about, and always lands on the same points for the same
-	// input. Spacing by index (not by distance) and rounding each one means the
-	// first and last samples land exactly on index 0 and full.length - 1 — the
-	// two points a sparkline can least afford to distort — while the count never
-	// exceeds `samples`, unlike a fixed stride that overshoots by up to one.
+	// Even index spacing is deterministic, O(n), bounded, and preserves endpoints.
 	const out: ProfileSample[] = [];
 	for (let i = 0; i < samples; i++) {
 		out.push(full[Math.round((i * (full.length - 1)) / (samples - 1))]);
@@ -333,19 +282,7 @@ export function elevationProfile(features: Features, samples = 160): ProfileSamp
 	return out;
 }
 
-/**
- * The index of the sample whose cumulative distance `d` is closest to
- * `targetD` — how a hover on the profile itself (pixel → fraction → distance)
- * finds the sample to highlight.
- *
- * A plain linear scan, not a binary search: `samples` is capped at ~160
- * entries (see `elevationProfile`'s own `samples` parameter) and this runs on
- * every `mousemove`, so an O(n) scan over that few candidates is the cheap
- * side of that trade, not the expensive one — and while `d` is monotonically
- * non-decreasing by construction, leaning on that for a binary search would
- * buy nothing a reader could feel. Ties resolve to the first candidate seen,
- * via `<` rather than `<=`.
- */
+/** Closest cumulative-distance sample; bounded linear scan, first match wins ties. */
 export function nearestByDistance(samples: ProfileSample[], targetD: number): number {
 	let best = 0;
 	let bestDist = Infinity;
@@ -359,23 +296,7 @@ export function nearestByDistance(samples: ProfileSample[], targetD: number): nu
 	return best;
 }
 
-/**
- * The index of the sample geographically closest to (`lng`, `lat`) — both
- * WGS-84, the space every sample's own lng/lat already lives in — how a hover
- * on the track itself finds the sample to highlight on the profile.
- *
- * Squared planar distance in degree-space, not haversine: this picks the
- * nearest of at most ~160 candidates already known to lie along one track, not
- * a real-world distance anybody reads, so the distortion haversine exists to
- * correct buys nothing here — and skipping the square root costs nothing
- * either, since only the *ordering* of the candidates matters, never the
- * distance's own value. An out-and-back or looped track can have two
- * different along-track distances land at nearly the same physical point;
- * this does not try to disambiguate that (it would need every sample tagged
- * with which LineString it came from, which is more than a hover cursor was
- * asked to carry) — a known, accepted gap, not an oversight. Ties resolve to
- * the first candidate seen, the same as `nearestByDistance`.
- */
+/** Closest WGS-84 sample by squared degree-space distance; first match wins ties. */
 export function nearestByPosition(samples: ProfileSample[], lng: number, lat: number): number {
 	let best = 0;
 	let bestDist = Infinity;

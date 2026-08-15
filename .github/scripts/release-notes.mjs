@@ -1,11 +1,8 @@
 /*
  * Cuts one version's section out of CHANGELOG.md, for the release body.
  *
- * `gh release create --generate-notes` builds its notes from the pull requests
- * merged since the last tag. This repo pushes to main, so there are none to
- * find and the generated body came out as nothing but the "Full Changelog"
- * link — every release since 1.0.0. The changelog is where the prose already
- * is; this hands it over verbatim.
+ * The changelog is the curated source for release prose, so this hands the
+ * matching section to GitHub instead of deriving notes from PR titles.
  *
  * A version with no section is a hard failure rather than an empty body, on
  * the same grounds as the manifest check next door: a release nobody can read

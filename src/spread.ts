@@ -1,33 +1,8 @@
-/*
- * Fanning apart the pins that land on the same spot.
- *
- * A base of places written by hand collects notes that share a coordinate
- * exactly: one address typed into twenty notes, one geocoded place picked
- * twenty times. Measured on a real 292-pin base, 30 coordinates carried more
- * than one note and the busiest carried nine — and nine pins on one pixel is
- * one clickable note and eight that cannot be reached at all, because the
- * native click handler takes `features[0]` and there is no second pixel to aim
- * at.
- *
- * So the pins are pushed apart on screen once the map is zoomed in far enough
- * for the room to exist. Everything in here is pure arithmetic over positions:
- * where each pin goes, in CSS pixels, and how far the fan has opened at a given
- * zoom. Nothing here touches MapLibre, a map, or a note — see `track-layer.ts`
- * for the seam that stamps the answer onto the features, and CLAUDE.md for why
- * this is drawn with `icon-offset` instead of by moving the coordinates.
- */
+/* Pure screen-space layout for overlapping pins; source coordinates stay unchanged. */
 
 import { SPREAD } from './constants';
 
-/**
- * MapLibre's Mercator world is `512 * 2^zoom` pixels across, whatever tile size
- * the source happens to use.
- *
- * Measured rather than taken from the docs: two coordinates 0.01° apart at
- * zoom 14 projected 233.0169 px apart on a live map, against a normalized
- * Mercator separation of 2.777778e-5 — a world of 8388608.000003 px, where
- * `512 * 2^14` is 8388608 exactly.
- */
+/** MapLibre Mercator world width is `512 * 2^zoom` CSS pixels. */
 const WORLD_TILE_PX = 512;
 
 /** Web Mercator's own latitude limit, past which `tan` runs away. */
@@ -204,20 +179,8 @@ export function spreadFactor(zoom: number): number {
 }
 
 /**
- * The native marker layer's own `icon-size`, evaluated at one zoom.
- *
- * `icon-offset` is documented as being **multiplied by `icon-size`** before it
- * becomes pixels, and measured that way: an offset of 200 landed a pin 47 px
- * from its anchor at zoom 17, where `icon-size` interpolates to 0.235. So the
- * table has to be divided by whatever the native layer is asking for, and this
- * reads that rather than assuming it — an Obsidian release that draws bigger
- * pins should get a wider fan, not a fan that silently shrinks relative to the
- * icons it is meant to separate.
- *
- * Only the two shapes Maps actually ships are understood — a bare number, and a
- * linear `interpolate` on `zoom` — and anything else falls back to the constant.
- * A misread here is a fan of the wrong size, which is visible; guessing at an
- * exponential base would be a fan of the wrong size that looks deliberate.
+ * Evaluate native `icon-size` at one zoom. MapLibre multiplies icon offsets by
+ * this scale, so callers divide desired CSS-pixel offsets by the result.
  */
 export function markerIconScale(value: unknown, zoom: number): number {
 	if (typeof value === 'number' && isFinite(value) && value > 0) return value;
@@ -244,23 +207,8 @@ export function markerIconScale(value: unknown, zoom: number): number {
 }
 
 /**
- * The `icon-offset` the native marker layer is given: closed below
- * `SPREAD.fromZoom`, fully open at `SPREAD.toZoom`, and per-pin in between by
- * the slot each feature carries as `amSlot`.
- *
- * A `match` over integer slots rather than an array-valued feature property,
- * which also works and is a shorter expression. Measured on a live map: an
- * array property does reach the layout evaluation intact, but the *same*
- * property read back through `querySourceFeatures` comes out as the string
- * `"[200,0]"` — the tile is serialized for querying and vector tiles have no
- * array type. Rendering and querying disagreeing about what a property holds is
- * exactly the kind of thing that turns into a silent failure two versions
- * later; an integer means the same thing on both paths.
- *
- * `zoom` may only appear as the input of the outermost `interpolate` or `step`,
- * which is why the ramp wraps the match rather than the other way round. A
- * feature with no `amSlot` — every pin that shares its spot with nobody — falls
- * through to the match's own default and is not moved.
+ * Build the zoom-ramped native icon-offset expression. Integer slots survive
+ * vector-tile serialization; the outer interpolation is MapLibre's required zoom shape.
  */
 export function iconOffsetExpression(table: ReadonlyArray<readonly [number, number]>, scale: number): unknown {
 	if (table.length < 2 || !(scale > 0)) return [0, 0];
