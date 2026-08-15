@@ -58,7 +58,12 @@ export class TrackEmbed extends Component {
 	private map: MapLibreMap | null = null;
 	private rec: TrackRecord | null = null;
 	private locate: LocateGuard | null = null;
-	private framed = false;
+	/** The dataset signature the camera was last framed for; null until it has
+	 *  been framed at all. */
+	private framedFor: string | null = null;
+	/** Set once the reader takes the wheel on this map; never cleared, so no
+	 *  later redraw can take the camera back off them. */
+	private userMoved = false;
 	private dead = false;
 	/** Only the newest asynchronous build/refresh may commit its data. */
 	private operationRevision = 0;
@@ -270,7 +275,8 @@ export class TrackEmbed extends Component {
 		// Recreate private hover layers with shared layers to preserve stack order.
 		removeHoverLayers(this.map);
 		this.locate?.replaceDot();
-		this.framed = false;
+		// No `framed` reset here: draw() reframes when the data it draws is not the
+		// data the camera was framed for, and leaves the camera alone otherwise.
 		await this.draw(revision);
 		if (revision !== this.operationRevision || this.dead) return;
 		// Statistics settings reach open embeds through refresh().
@@ -328,7 +334,11 @@ export class TrackEmbed extends Component {
 
 		this.bindInteractions();
 
-		if (this.framed) return;
+		// Framed once per dataset, and never once the reader has moved this map:
+		// a refresh reaches every open embed, including maps in notes that have
+		// nothing to do with the file that changed.
+		const framing = this.framingSignature(system);
+		if (this.framedFor === framing || this.userMoved) return;
 		// Tighter than the base view's 24: an inline map is a fraction of a note's
 		// width, and padding that reads as breathing room there reads as a wasted
 		// margin here.
@@ -337,8 +347,26 @@ export class TrackEmbed extends Component {
 			data.features.map((feature) => feature.geometry)
 		);
 		if (!bounds) return;
-		this.framed = true;
+		this.framedFor = framing;
 		fitTo(map, bounds, 16, trackKnob('fitMaxZoom', settings.fitMaxZoom));
+	}
+
+	/**
+	 * What the camera was framed for: everything that decides where the bounds
+	 * are — this embed's own track and the host's photos, by path and mtime, in
+	 * the space they are drawn in. Paint, statistics and height are deliberately
+	 * absent, so a visual setting still refreshes without moving the map.
+	 *
+	 * '\0' written as an escape rather than as a raw byte, for the reason
+	 * `TrackLayer.signature()` gives.
+	 */
+	private framingSignature(system: CoordSystem): string {
+		const parts: string[] = [system, this.plugin.settings.photoDatum];
+		// mtime, so an edit to a file counts even though its path has not moved.
+		for (const file of [this.file, ...this.photos.map((photo) => photo.file)]) {
+			parts.push(file.path, String(file.stat.mtime));
+		}
+		return parts.join('\0');
 	}
 
 	/** `photoIconSource()` (layers.ts) is the one builder this and the base-view
@@ -368,6 +396,14 @@ export class TrackEmbed extends Component {
 		const map = this.map;
 		if (!map) return;
 		this.interactionsBound = true;
+		// Once the reader takes the wheel, stop re-framing the map underneath
+		// them. Programmatic moves carry no originalEvent, so they do not count.
+		const mark = (ev?: { originalEvent?: unknown }) => {
+			if (ev && ev.originalEvent) this.userMoved = true;
+		};
+		for (const name of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) {
+			map.on(name, mark);
+		}
 		map.on('moveend', () => this.reselectPhotoIcons());
 		map.on('mousemove', POINT_LAYER, (ev: MapMouseEvent) => this.hoverWaypoint(ev));
 		map.on('mouseleave', POINT_LAYER, () => this.hideTooltip());

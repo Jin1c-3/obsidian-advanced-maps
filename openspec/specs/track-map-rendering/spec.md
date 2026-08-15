@@ -30,7 +30,7 @@ A note in a base result SHALL contribute supported track files referenced by bod
 
 ### Requirement: Supported track formats preserve equivalent data
 
-The plugin SHALL read GPX, GeoJSON, KML, and TCX geometry and SHALL preserve available elevation, timestamps, waypoint names, and line names needed by downstream map features.
+The plugin SHALL read GPX, GeoJSON, KML, and TCX geometry and SHALL preserve available elevation, timestamps, waypoint names, and line names needed by downstream map features. Reading SHALL tolerate the formatting a valid file is permitted to vary, including whitespace around the separators inside a KML coordinate tuple.
 
 #### Scenario: Equivalent route is supplied in each format
 
@@ -46,6 +46,11 @@ The plugin SHALL read GPX, GeoJSON, KML, and TCX geometry and SHALL preserve ava
 
 - **WHEN** KML uses alternate namespace prefixes or TCX includes samples without a position
 - **THEN** recognized geometry is read by semantic element name and position-less samples are skipped without inventing coordinates
+
+#### Scenario: KML coordinate tuples carry whitespace around their separators
+
+- **WHEN** a KML file writes its tuples as `lon, lat` or `lon , lat , ele` rather than unspaced
+- **THEN** the same positions are read as from the unspaced form, and the file draws rather than being rejected as having no drawable geometry
 
 ### Requirement: Tracks inherit note ownership
 

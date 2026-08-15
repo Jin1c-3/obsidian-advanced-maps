@@ -171,17 +171,29 @@ describe('spreadPins', () => {
 });
 
 describe('spreadFactor', () => {
-	it('is shut below the opening zoom and open above it', () => {
-		expect(spreadFactor(SPREAD.fromZoom)).toBe(0);
+	it('is shut below the opening zoom and open from it', () => {
 		expect(spreadFactor(SPREAD.fromZoom - 3)).toBe(0);
+		expect(spreadFactor(SPREAD.fromZoom - 0.1)).toBe(0);
+		// The zoom the setting names is the zoom something happens at.
+		expect(spreadFactor(SPREAD.fromZoom)).toBeGreaterThan(0);
 		expect(spreadFactor(SPREAD.toZoom)).toBe(1);
 		expect(spreadFactor(SPREAD.toZoom + 4)).toBe(1);
 		expect(spreadFactor(Number.NaN)).toBe(0);
 	});
 
-	it('opens evenly in between', () => {
-		const mid = (SPREAD.fromZoom + SPREAD.toZoom) / 2;
-		expect(spreadFactor(mid)).toBeCloseTo(0.5, 12);
+	it('opens by one even step per whole zoom level', () => {
+		const levels = [];
+		for (let level = SPREAD.fromZoom; level <= SPREAD.toZoom; level++) levels.push(spreadFactor(level));
+		const steps = SPREAD.toZoom - SPREAD.fromZoom + 1;
+		expect(levels).toEqual(levels.map((_, i) => (i + 1) / steps));
+	});
+
+	it('holds one value across a whole zoom level, because that is all the renderer bakes', () => {
+		// `icon-offset` is a layout property, evaluated once per tile at that
+		// tile's whole zoom — a factor that drifted with the fraction would be
+		// placing hover cards where no pin was ever drawn.
+		expect(spreadFactor(SPREAD.fromZoom + 0.9)).toBe(spreadFactor(SPREAD.fromZoom));
+		expect(spreadFactor(SPREAD.fromZoom + 1)).not.toBe(spreadFactor(SPREAD.fromZoom));
 	});
 });
 
@@ -220,25 +232,30 @@ describe('markerIconScale', () => {
 	});
 });
 
+/** The slot table one `['step', ['zoom'], shut, level, match, …]` branch carries. */
+function branchAt(expr: unknown, level: number): unknown[] {
+	const parts = expr as unknown[];
+	return parts[parts.indexOf(level) + 1] as unknown[];
+}
+
 describe('iconOffsetExpression', () => {
 	it('is the native default when there is nothing to fan', () => {
 		expect(iconOffsetExpression([[0, 0]], 0.24)).toEqual([0, 0]);
 		expect(iconOffsetExpression([], 0.24)).toEqual([0, 0]);
 	});
 
-	it('refuses to divide by an icon size that is not one', () => {
-		expect(
-			iconOffsetExpression(
-				[
-					[0, 0],
-					[24, 0],
-				],
-				0
-			)
-		).toEqual([0, 0]);
+	it('falls back to the assumed icon size rather than to no fan at all', () => {
+		// An icon size that cannot be read is `markerIconScale`'s question, and it
+		// answers it with SPREAD.iconScale — the same answer this layer has always
+		// been drawn with when the native layout expression changed shape.
+		const table: Array<[number, number]> = [
+			[0, 0],
+			[24, 0],
+		];
+		expect(iconOffsetExpression(table, 0)).toEqual(iconOffsetExpression(table, SPREAD.iconScale));
 	});
 
-	it('ramps from shut to open with the zoom, and only there', () => {
+	it('steps at whole zooms rather than pretending to interpolate', () => {
 		const expr = iconOffsetExpression(
 			[
 				[0, 0],
@@ -246,11 +263,14 @@ describe('iconOffsetExpression', () => {
 			],
 			0.24
 		) as unknown[];
-		expect(expr[0]).toBe('interpolate');
-		expect(expr[2]).toEqual(['zoom']);
-		expect(expr[3]).toBe(SPREAD.fromZoom);
-		expect(expr[4]).toEqual(['literal', [0, 0]]);
-		expect(expr[5]).toBe(SPREAD.toZoom);
+		expect(expr[0]).toBe('step');
+		expect(expr[1]).toEqual(['zoom']);
+		// Below the first stop nothing is moved at all.
+		expect(expr[2]).toEqual(['literal', [0, 0]]);
+		const levels = expr.filter((part) => typeof part === 'number');
+		const whole = [];
+		for (let level = SPREAD.fromZoom; level <= SPREAD.toZoom; level++) whole.push(level);
+		expect(levels).toEqual(whole);
 	});
 
 	it('divides the table out by the icon size MapLibre will multiply it back by', () => {
@@ -260,8 +280,8 @@ describe('iconOffsetExpression', () => {
 				[24, -12],
 			],
 			0.24
-		) as unknown[];
-		const match = expr[6] as unknown[];
+		);
+		const match = branchAt(expr, SPREAD.toZoom);
 		expect(match[0]).toBe('match');
 		expect(match[1]).toEqual(['get', 'amSlot']);
 		expect(match[2]).toBe(1);
@@ -277,7 +297,7 @@ describe('iconOffsetExpression', () => {
 			[-24, 0],
 			[0, 24],
 		];
-		const match = (iconOffsetExpression(table, 1) as unknown[])[6] as unknown[];
+		const match = branchAt(iconOffsetExpression(table, 1), SPREAD.toZoom);
 		expect(match.slice(2, -1)).toEqual([
 			1,
 			['literal', [24, 0]],
@@ -286,5 +306,54 @@ describe('iconOffsetExpression', () => {
 			3,
 			['literal', [0, 24]],
 		]);
+	});
+
+	it('opens the fan at the zoom the setting names, in steps to full', () => {
+		const table: Array<[number, number]> = [
+			[0, 0],
+			[100, 0],
+		];
+		const expr = iconOffsetExpression(table, 1);
+		const at = (level: number) => (branchAt(expr, level)[3] as [string, [number, number]])[1][0];
+		expect(at(SPREAD.fromZoom)).toBeGreaterThan(0);
+		expect(at(SPREAD.toZoom)).toBe(100);
+		for (let level = SPREAD.fromZoom; level < SPREAD.toZoom; level++) {
+			expect(at(level + 1)).toBeGreaterThan(at(level));
+		}
+	});
+});
+
+describe('the pin the renderer draws and the pin the hover card assumes', () => {
+	// The native marker layer's own value, read off a running Obsidian: a curve,
+	// so the icon size at the open end of the ramp is not the one at its start.
+	const native = ['interpolate', ['linear'], ['zoom'], 0, 0.12, 4, 0.18, 14, 0.22, 18, 0.24];
+	const offset: [number, number] = [24, -12];
+	const table: Array<[number, number]> = [[0, 0], offset];
+
+	/** Where MapLibre puts the icon, in CSS px: the baked offset for the tile's
+	 *  whole zoom, times the icon size it evaluates at that same zoom. */
+	function drawnAt(camera: number): [number, number] {
+		// How `step` reads: the last stop at or below the tile's whole zoom, which
+		// past `toZoom` is `toZoom` itself — as are the tiles, overscaled from it.
+		const level = Math.min(Math.floor(camera), SPREAD.toZoom);
+		const literal = branchAt(iconOffsetExpression(table, native), level)[3] as [string, [number, number]];
+		const scale = markerIconScale(native, level);
+		return [literal[1][0] * scale, literal[1][1] * scale];
+	}
+
+	/** Where `fanned()` puts the card, in CSS px, for the same camera. */
+	function cardAt(camera: number): [number, number] {
+		const factor = spreadFactor(camera);
+		return [offset[0] * factor, offset[1] * factor];
+	}
+
+	it('agree at every camera zoom across the ramp, not only at its ends', () => {
+		for (const camera of [15, 15.4, 15.99, 16, 16.5, 17, 17.5, 18, 19.25]) {
+			const [dx, dy] = drawnAt(camera);
+			const [cx, cy] = cardAt(camera);
+			// Within the two decimals the slot literals are rounded to.
+			expect(dx).toBeCloseTo(cx, 1);
+			expect(dy).toBeCloseTo(cy, 1);
+		}
 	});
 });
