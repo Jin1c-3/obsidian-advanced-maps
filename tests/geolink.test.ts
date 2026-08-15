@@ -114,6 +114,26 @@ describe('parseGeoLink: Google', () => {
 		const p = parseGeoLink('https://maps.google.com/?q=loc:51.5033,-0.1196');
 		expect(p).toMatchObject({ lat: 51.5033, lng: -0.1196 });
 	});
+
+	it('recognizes the country and regional domains Google actually maps on', () => {
+		for (const host of ['www.google.de', 'maps.google.co.uk', 'www.google.com.hk', 'google.cn']) {
+			expect(parseGeoLink(`https://${host}/maps/@51.5033,-0.1196,15z`)?.provider).toBe('google');
+		}
+	});
+
+	it('does not hand a look-alike host to Google', () => {
+		// Whoever owns evil.example can put "google" anywhere in the name; only
+		// the shape of the domain says whether Google's axis order and datum are
+		// the right ones to read it with.
+		for (const host of [
+			'google.evil.example',
+			'maps.google.com.evil.example',
+			'www.google.co.uk.evil.example',
+			'notgoogle.com',
+		]) {
+			expect(parseGeoLink(`https://${host}/maps/@30.2586,120.1517,15z`)).toBeNull();
+		}
+	});
 });
 
 describe('parseGeoLink: Apple and OpenStreetMap', () => {

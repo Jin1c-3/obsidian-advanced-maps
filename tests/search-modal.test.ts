@@ -98,6 +98,25 @@ describe('PlaceSearchModal request ordering', () => {
 		expect(request).toHaveBeenCalledTimes(2);
 	});
 
+	it('reports a failed write rather than announcing one that did not happen', async () => {
+		const notices: string[] = [];
+		vi.spyOn(obsidian, 'Notice').mockImplementation(function (this: unknown, message: string) {
+			notices.push(message);
+		} as never);
+		const failed = vi.fn().mockRejectedValue(new Error('frontmatter is not an object'));
+		vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		const search = new PlaceSearchModal({} as App, 'amap', 'key', 'coords', failed);
+
+		search.onChooseSuggestion({ name: 'West Lake', detail: '', system: 'wgs84', lat: 30.2, lng: 120.1 });
+		// The write is chained, so the notice is decided a microtask later.
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(failed).toHaveBeenCalledTimes(1);
+		expect(notices).toHaveLength(1);
+		expect(notices[0]).toContain('frontmatter is not an object');
+		expect(notices[0]).not.toContain('30.2');
+	});
+
 	it('starts Nominatim requests no faster than once per second across modal instances', async () => {
 		const request = vi
 			.spyOn(obsidian, 'requestUrl')

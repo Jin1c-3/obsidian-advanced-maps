@@ -146,8 +146,8 @@ export function trackStats(features: Features): TrackStats {
 				if (start === null || t < start) start = t;
 				if (end === null || t > end) end = t;
 
-				if (lastTime !== null) {
-					const dt = t - lastTime;
+				const dt = lastTime === null ? null : t - lastTime;
+				if (dt !== null) {
 					// A merged export can carry a point or two whose timestamp runs
 					// backwards relative to the last one. dt <= 0 makes "implied
 					// speed" meaningless (division by zero or a negative duration),
@@ -161,7 +161,10 @@ export function trackStats(features: Features): TrackStats {
 					}
 				}
 				lastTime = t;
-				distSinceLastTime = 0;
+				// Only an interval that counted consumes the distance behind it.
+				// Zeroing this unconditionally is what used to discard the ground
+				// covered before a backwards timestamp, against the promise above.
+				if (dt === null || dt > 0) distSinceLastTime = 0;
 			}
 		}
 

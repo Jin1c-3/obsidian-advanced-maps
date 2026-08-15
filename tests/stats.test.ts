@@ -385,6 +385,40 @@ describe('trackStats — times, duration, moving time, speed', () => {
 		expect(s.start).toBe(1000);
 		expect(s.end).toBe(3000);
 	});
+
+	it('carries the ground covered before a backwards timestamp into the next interval', () => {
+		// A 1.1 km hop whose timestamp runs backwards, then an 11 m shuffle over
+		// 200 s. The rewound interval cannot be measured, but the kilometre it
+		// covered is real: folded into the next interval it implies 5.6 m/s and
+		// counts, while the 11 m on its own implies 0.06 m/s and would not — so
+		// this asserts the carry rather than just the dt <= 0 rule.
+		const s = trackStats([
+			line(
+				[
+					[0, 0],
+					[0, 0.01],
+					[0, 0.0101],
+				],
+				[100_000, 50_000, 250_000]
+			),
+		]);
+		expect(s.movingTime).toBe(200_000);
+	});
+
+	it('does not count an interval whose timestamp did not advance', () => {
+		// Both points at one instant: a real duplicate sample, not motion.
+		const s = trackStats([
+			line(
+				[
+					[0, 0],
+					[0, 0.01],
+				],
+				[1000, 1000]
+			),
+		]);
+		expect(s.movingTime).toBe(0);
+		expect(s.duration).toBe(0);
+	});
 });
 
 describe('formatDistance', () => {

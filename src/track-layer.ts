@@ -919,15 +919,25 @@ export class TrackLayer {
 				if (icon) records.push(icon);
 			}
 		}
+		// Kept whether or not they are drawn, so switching thumbnails back on
+		// selects from these rather than waiting for the next base query.
 		this.photoIcons = records;
 		const map = this.view.map;
-		if (map) ensurePhotoImages(map, records);
+		if (!map) return;
+		// Hiding the layer is not enough: decoding is what costs the memory, and
+		// an album can hold tens of megabytes of it for a layer drawing nothing.
+		if (!this.plugin.settings.photoThumbnails) {
+			disposePhotoImages(map);
+			return;
+		}
+		ensurePhotoImages(map, records);
 	}
 
 	/** Camera movement reselects from cached candidates without walking base rows again. */
 	private reselectPhotoIcons(): void {
 		const map = this.view.map;
 		if (!map || this.photoIcons.length === 0) return;
+		if (!this.plugin.settings.photoThumbnails) return;
 		ensurePhotoImages(map, this.photoIcons);
 	}
 

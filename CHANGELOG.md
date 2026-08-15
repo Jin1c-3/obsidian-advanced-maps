@@ -6,6 +6,56 @@ where they do not.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reloading the plugin no longer leaves every map unenhanced until Obsidian
+  restarts.** Advanced Maps marked the map registration it wrapped with a flag
+  that could not tell its own wrapper from one a previous, already-unloaded copy
+  of the plugin had left behind — so after a reload, especially alongside
+  another plugin that wraps the same registration, it concluded its work was
+  already done and did nothing at all: no tracks, no pin spreading, no controls,
+  and no message saying so. A wrapper now says which instance installed it and
+  what it replaced, so a fresh instance takes the registration back, and a
+  wrapper it cannot remove stops acting.
+
+- **Photo thumbnails switched off no longer decode or hold memory.** Turning the
+  setting off only hid the layer; a large album still decoded and kept tens of
+  megabytes of images for something that drew nothing. They are now released
+  when the setting goes off and decoded again when it comes back on.
+
+- **Adding a photo to a note updates that note's inline map.** Only the base map
+  noticed; the inline map kept the album it was built with until the note was
+  reopened. Edits that do not change which photos a note points at still cost
+  nothing.
+
+- **A background or theme change redraws an inline map exactly once**, and no
+  longer draws over a refresh that is still reading its files.
+
+- **The elevation profile is scaled to the route it draws.** A single waypoint
+  with an elevation far off the route — a summit marker, a 0 m default — was
+  counted in the chart's range and flattened the whole profile.
+
+- **One backwards timestamp no longer discards the distance before it.** In a
+  merged export, the ground covered leading up to an out-of-order point was
+  dropped instead of counting toward the next interval, which could report a
+  walk as barely moving.
+
+- **A group of exactly fifteen pins at one spot stays on one ring** instead of
+  pushing its last pin onto a ring of its own for no reason.
+
+- **A pasted link is attributed to Google only when its host really is a Google
+  domain.** `google.evil.example` and `maps.google.com.attacker.tld` were parsed
+  with Google's axis order and datum.
+
+- **Renaming a note while it is being stamped with your location no longer
+  leaves it permanently ineligible** for automatic filling.
+
+- **A failed note write after choosing a search result is reported.** It
+  previously showed the success notice and lost the error.
+
+- **The auto-fill setting's description keeps up with the coordinate property
+  name** while the settings pane is open.
+
 ## [1.13.3]
 
 ### Fixed

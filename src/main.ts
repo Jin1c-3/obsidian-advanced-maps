@@ -29,12 +29,19 @@ import {
 	type BaseView,
 } from './map-block';
 import { MapModal } from './modal';
+import { nativeBehind, ownedBy, stamp, type RegistrationOwner } from './registration';
 import { PlaceSearchModal } from './search-modal';
 import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMapsSettings } from './settings';
 import { TrackCache } from './track-cache';
 import { TrackLayer, type FocusTarget } from './track-layer';
 import { appendTrackOptions } from './view-options';
-import type { BasesMapView, BasesViewFactory, BasesViewRegistration, ComponentNode } from './types/obsidian-internals';
+import type {
+	BasesMapView,
+	BasesViewFactory,
+	BasesViewOptionsFn,
+	BasesViewRegistration,
+	ComponentNode,
+} from './types/obsidian-internals';
 
 export default class AdvancedMapsPlugin extends Plugin {
 	/** Declared on Plugin as `unknown` since 1.13; narrowed here. */
@@ -43,15 +50,26 @@ export default class AdvancedMapsPlugin extends Plugin {
 	locator!: Locator;
 	readonly layers = new Set<TrackLayer>();
 	readonly embeds = new Set<TrackEmbed>();
-	/** Notes whose blank coordinate property is already being filled in. */
-	private readonly filling = new Set<string>();
+	/** Notes whose blank coordinate property is already being filled in. Keyed on
+	 *  the file rather than its path: Obsidian renames a `TFile` in place, so a
+	 *  move during the seconds a fix takes used to leave the entry stranded and
+	 *  that note ineligible for the rest of the session. */
+	private readonly filling = new WeakSet<TFile>();
 	/** The pane the followed notes are opening in; see `followTarget`. */
 	private followPane: WorkspaceLeaf | null = null;
 	/** Which track files a note embeds, memoised against the metadata that answered. */
 	private trackLinks = new WeakMap<CachedMetadata, TFile[]>();
 
 	private nativeFactory: BasesViewFactory | null = null;
-	private patched: { factory: BasesViewFactory; options?: BasesViewRegistration['options'] } | null = null;
+	/** This instance's identity on the wrappers it installs; see `registration.ts`. */
+	private readonly owner: RegistrationOwner = { alive: true };
+	private patched: {
+		/** What this instance put in the registration, to restore only its own. */
+		factory: BasesViewFactory;
+		options?: BasesViewRegistration['options'];
+		nativeFactory: BasesViewFactory;
+		nativeOptions?: BasesViewRegistration['options'];
+	} | null = null;
 	private ownedExtensions: string[] = [];
 
 	override async onload(): Promise<void> {
@@ -96,6 +114,20 @@ export default class AdvancedMapsPlugin extends Plugin {
 			})
 		);
 
+		// A note's own text changed. A base map re-queries by itself, but an inline
+		// map's photos come from the links of the note it sits in, and the gate
+		// above never fires for that note. This is the metadata event rather than
+		// the vault one because the links are read out of the cache, and only this
+		// one says the cache has caught up with the file.
+		this.registerEvent(
+			this.app.metadataCache.on('changed', (file: TFile) => {
+				for (const embed of this.embeds) {
+					if (embed.hostPath !== file.path || !embed.hostPhotosMoved()) continue;
+					embed.refresh().catch((e) => console.error('Advanced Maps: could not redraw embed', e));
+				}
+			})
+		);
+
 		// File lifecycle invalidates parsed data and note-link resolution memos.
 		this.registerEvent(this.app.vault.on('delete', (file: TAbstractFile) => this.forgetTrack(file.path)));
 		// The old path is the one the cache is keyed under; the new one cannot be
@@ -134,27 +166,39 @@ export default class AdvancedMapsPlugin extends Plugin {
 	private patchMapsView(): boolean {
 		const entry = this.mapRegistration();
 		if (!entry || typeof entry.factory !== 'function') return false;
-		if (entry.factory.__advancedMaps) return true;
+		// Only *this* instance's wrapper counts as already patched. A wrapper an
+		// unloaded instance left behind looks identical from the outside and used
+		// to end the method here, which left the registration owned by a dead
+		// plugin and enhanced nothing at all until Obsidian restarted.
+		if (ownedBy(entry.factory, this.owner)) return true;
 
-		const nativeFactory = entry.factory;
-		const nativeOptions = entry.options;
+		// Peels any wrapper of ours off the front, so a re-take wraps the host's
+		// own function rather than stacking on a dead instance — which for the
+		// options half would also append the track group twice.
+		const nativeFactory = nativeBehind(entry.factory);
+		const nativeOptions = typeof entry.options === 'function' ? nativeBehind(entry.options) : entry.options;
 		this.nativeFactory = nativeFactory;
+		const owner = this.owner;
 
 		const factory: BasesViewFactory = (controller, containerEl) => {
 			const view = nativeFactory(controller, containerEl);
-			this.enhance(view, false);
+			// Through the owner cell rather than `this`: a copy of this wrapper
+			// that outlives the instance stops enhancing instead of handing views
+			// to an unloaded plugin.
+			if (owner.alive) this.enhance(view, false);
 			return view;
 		};
-		factory.__advancedMaps = true;
+		stamp(factory, nativeFactory, owner);
 		entry.factory = factory;
 
 		if (typeof nativeOptions === 'function') {
-			const options = () => appendTrackOptions(nativeOptions());
-			options.__advancedMaps = true;
+			const options: BasesViewOptionsFn = () =>
+				owner.alive ? appendTrackOptions(nativeOptions()) : nativeOptions();
+			stamp(options, nativeOptions, owner);
 			entry.options = options;
 		}
 
-		this.patched = { factory: nativeFactory, options: nativeOptions };
+		this.patched = { factory, options: entry.options, nativeFactory, nativeOptions };
 		this.adoptOpenViews();
 		return true;
 	}
@@ -220,10 +264,19 @@ export default class AdvancedMapsPlugin extends Plugin {
 	}
 
 	private unpatchMapsView(): void {
+		// First, and whether or not the registration can be restored: a wrapper
+		// another plugin has since wrapped cannot be taken out of the chain, so
+		// retiring the owner is what stops it acting for an unloaded instance.
+		this.owner.alive = false;
 		const entry = this.mapRegistration();
-		if (entry && this.patched && entry.factory && entry.factory.__advancedMaps) {
-			entry.factory = this.patched.factory;
-			if (this.patched.options) entry.options = this.patched.options;
+		// Identity, not "has a stamp": restoring over someone else's wrapper would
+		// discard their augmentation, and restoring over a newer instance's would
+		// undo a patch this instance never installed.
+		if (entry && this.patched && entry.factory === this.patched.factory) {
+			entry.factory = this.patched.nativeFactory;
+			if (this.patched.nativeOptions && entry.options === this.patched.options) {
+				entry.options = this.patched.nativeOptions;
+			}
 		}
 		for (const layer of [...this.layers]) layer.detach();
 		this.layers.clear();
@@ -975,7 +1028,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		if (!this.settings.locate || !this.settings.autoFillCoords) return;
 		if (!(file instanceof TFile) || file.extension !== 'md') return;
 		if (isExcluded(file.path, this.settings.autoFillExclude)) return;
-		if (this.filling.has(file.path)) return;
+		if (this.filling.has(file)) return;
 		if (!this.locator.available()) return;
 
 		const key = this.settings.coordsProperty;
@@ -986,7 +1039,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		if (!frontmatter || !Object.prototype.hasOwnProperty.call(frontmatter, key)) return;
 		if (!isBlank(frontmatter[key])) return;
 
-		this.filling.add(file.path);
+		this.filling.add(file);
 		try {
 			const fix = await this.locator.locate();
 			if (!fix) return;
@@ -1000,7 +1053,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		} catch (e) {
 			console.error('Advanced Maps: could not write coordinates', e);
 		} finally {
-			this.filling.delete(file.path);
+			this.filling.delete(file);
 		}
 	}
 

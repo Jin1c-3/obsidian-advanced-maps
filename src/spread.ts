@@ -73,8 +73,11 @@ export function spreadSlots(count: number): Array<[number, number]> {
 		const fitted = Math.max(ringMinPx, (left * ringStepPx) / (2 * Math.PI));
 		radius = radius === 0 ? Math.min(ringMaxPx, fitted) : radius + ringStepPx;
 		// At least one, so a ring narrower than one step still takes a pin and the
-		// loop cannot spin forever.
-		const capacity = Math.max(1, Math.floor((2 * Math.PI * radius) / ringStepPx));
+		// loop cannot spin forever. The epsilon is not cosmetic: `radius` came out
+		// of a division by 2π that this multiplies back, so a ring sized to hold
+		// exactly `left` pins measures 14.999999999 and floors to 14, flinging the
+		// last pin onto a second ring for nothing.
+		const capacity = Math.max(1, Math.floor((2 * Math.PI * radius) / ringStepPx + 1e-9));
 		const here = Math.min(capacity, left);
 		const turn = (ring * Math.PI) / here;
 		for (let i = 0; i < here; i++) {

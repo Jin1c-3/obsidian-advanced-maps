@@ -15,6 +15,7 @@
 
 import type { App, Component, TFile } from 'obsidian';
 import type { Feature, Geometry } from 'geojson';
+import type { RegistrationStamp } from '../registration';
 
 declare module 'obsidian' {
 	interface App {
@@ -90,11 +91,20 @@ export interface ViewOptionGroup {
 	[key: string]: unknown;
 }
 
+/**
+ * Provenance: this plugin's own mark on the functions it installs over the
+ * native registration, not something Bases reads. `boolean` is what versions up
+ * to 1.13.3 wrote; `registration.ts` still recognizes it.
+ */
+type AdvancedMapsStamp<T> = RegistrationStamp<T> | boolean;
+
 export type BasesViewFactory = ((controller: unknown, containerEl: HTMLElement) => BasesMapView) & {
-	__advancedMaps?: boolean;
+	__advancedMaps?: AdvancedMapsStamp<BasesViewFactory>;
 };
 
-export type BasesViewOptionsFn = (() => ViewOptionGroup[]) & { __advancedMaps?: boolean };
+export type BasesViewOptionsFn = (() => ViewOptionGroup[]) & {
+	__advancedMaps?: AdvancedMapsStamp<BasesViewOptionsFn>;
+};
 
 export interface BasesViewRegistration {
 	name?: string;
