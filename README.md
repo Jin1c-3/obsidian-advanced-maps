@@ -14,7 +14,7 @@ the first-party Maps view instead of replacing it: MapLibre, backgrounds,
 markers, popups, and every built-in map option remain native. No Leaflet, no
 bundled renderer, no runtime dependencies.
 
-![A native Obsidian Maps view whose Base directly contains seven geotagged photos; animal thumbnails appear at their EXIF locations around a zoo](docs/photo-album.png)
+![A native Maps view whose Base is one folder of 1,811 geotagged photos: thumbnails sit at their EXIF locations across China, and every photo the zoom leaves no room for keeps a dot](docs/photo-album.png)
 
 ## The three big workflows
 
@@ -161,6 +161,8 @@ frontmatter all count. Each resolved photo participates once. The Base does not
 need to include the attachment folder, and an actual embed is only needed when
 you also want the image visible in the note.
 
+![One note's own walk on satellite imagery, its photos drawn as thumbnails wherever their EXIF says they were taken](docs/photo-map.jpg)
+
 ### Show a route on one map without creating another inline map
 
 Use a normal link — no `!`:
@@ -244,6 +246,8 @@ Zoomed out, colliding thumbnails thin to a stable subset instead of piling into
 an unreadable stack; every mapped photo still has a dot. Zoom in and eligible
 thumbnails return. **Show photos on the map** and **Show photo thumbnails** can
 disable the two layers independently.
+
+![The same photos at three zoom levels: thumbnails everywhere close in, thinning to a stable few over a field of dots as the map zooms out](docs/photo-thinning.gif)
 
 Hovering a photo shows the owning note when it has one. Clicking opens the
 photo at full size without replacing the map, with an **Open note** row below.
@@ -381,9 +385,12 @@ the provider receives it with the request.
 ## Attribution
 
 Screenshots use third-party basemaps and search services only to demonstrate
-the plugin; provider attribution remains visible. Demo notes are synthetic.
-Zoo photographs and the route through them are the author's own and contain no
-private subject matter.
+the plugin; provider attribution remains visible. Demo notes are synthetic. The
+photographs and the route through them are the author's own and contain no
+private subject matter — no faces, no identifiable people. The nationwide album
+above is a demo too: those same photographs, copied to real landmark
+coordinates, so that one screenshot can show what a large album does without
+publishing where anybody has been.
 
 Advanced Maps bundles no map data. Basemap copyright, licensing, and survey
 requirements belong to the selected provider and user. If you hold rights to
