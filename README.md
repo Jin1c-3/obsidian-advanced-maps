@@ -14,7 +14,10 @@ the first-party Maps view instead of replacing it: MapLibre, backgrounds,
 markers, popups, and every built-in map option remain native. No Leaflet, no
 bundled renderer, no runtime dependencies.
 
-![A native Maps view whose Base is one folder of 1,811 geotagged photos: thumbnails sit at their EXIF locations across China, and every photo the zoom leaves no room for keeps a dot](docs/photo-album.png)
+![One Base holding a photo folder and a note folder: 16,273 results — red pins for the notes, photo thumbnails at their EXIF locations, a walked GPX track between them, and a dot for every photo the zoom leaves no room for](docs/photo-album.png)
+
+_One Base, one map: red pins are place notes, thumbnails are photos placed by
+their own EXIF, the line is a `.gpx` a note links to. 16,273 results._
 
 ## The three big workflows
 
@@ -385,12 +388,13 @@ the provider receives it with the request.
 ## Attribution
 
 Screenshots use third-party basemaps and search services only to demonstrate
-the plugin; provider attribution remains visible. Demo notes are synthetic. The
-photographs and the route through them are the author's own and contain no
-private subject matter — no faces, no identifiable people. The nationwide album
-above is a demo too: those same photographs, copied to real landmark
-coordinates, so that one screenshot can show what a large album does without
-publishing where anybody has been.
+the plugin; provider attribution remains visible. No screenshot shows a face or
+an identifiable person: the first one is the author's own vault with the days
+that hold photographs of people filtered out of the Base, and the rest are
+either synthetic demo notes or the author's own photographs — a zoo walk,
+animals only. The thumbnail-thinning animation is demo data as well: those same
+photographs, copied onto real landmark coordinates, so that one image can show
+what a large album does without publishing where anybody has been.
 
 Advanced Maps bundles no map data. Basemap copyright, licensing, and survey
 requirements belong to the selected provider and user. If you hold rights to
