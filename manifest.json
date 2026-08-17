@@ -1,7 +1,7 @@
 {
 	"id": "advanced-maps",
 	"name": "Advanced Maps",
-	"version": "1.14.0",
+	"version": "1.15.0",
 	"minAppVersion": "1.13.1",
 	"description": "Extends the native Bases Maps view: geotagged photo albums, GPX/GeoJSON/KML/TCX routes with distance and elevation, inline track maps, a map of the notes around a note, and GCJ-02/BD-09 basemap alignment.",
 	"author": "Jin1c-3",
