@@ -76,3 +76,58 @@ An inline track map also draws geotagged photos linked from its host note. Route
 statistics continue to describe the route alone.
 
 ![An inline GPX map with the host note's photo thumbnails placed along the route](../photo-embed.png)
+
+## Statistics a Base can sort on
+
+Those numbers live in the embed, where no filter can reach them. **Write track
+statistics to properties** measures the track files the current note links and
+writes the figures into the note's own frontmatter, as numbers:
+
+```yaml
+track-distance-km: 13.62
+track-ascent-m: 512
+track-descent-m: 499
+track-lowest-m: 12
+track-highest-m: 1850
+track-duration-min: 161
+track-moving-min: 148
+track-speed-kmh: 5.5
+track-start: 2024-05-01T09:30:15
+```
+
+| Property             | Unit                           | Source                                    |
+| -------------------- | ------------------------------ | ----------------------------------------- |
+| `track-distance-km`  | kilometres, 2 decimals         | Every route segment, summed               |
+| `track-ascent-m`     | metres                         | Climb past the 5 m noise threshold        |
+| `track-descent-m`    | metres                         | The same, downhill                        |
+| `track-lowest-m`     | metres                         | Lowest elevation anywhere in the file     |
+| `track-highest-m`    | metres                         | Highest                                   |
+| `track-duration-min` | minutes                        | Last timestamp minus first                |
+| `track-moving-min`   | minutes                        | Intervals above 0.9 km/h                  |
+| `track-speed-kmh`    | kilometres per hour, 1 decimal | Distance over moving time                 |
+| `track-start`        | local datetime                 | Earliest timestamp, in this device's zone |
+
+The unit is in the name because a bare number in frontmatter is otherwise
+unlabelled. Now a Base can sort a column of rides by distance, filter to
+`track-ascent-m > 800`, or total a month.
+
+Only what the file recorded is written. A GeoJSON route with no elevation and no
+timestamps leaves one property; a GPX from a watch leaves all nine. A figure with
+nothing behind it this run is removed rather than left saying something the file
+no longer says.
+
+Three things worth knowing:
+
+- **It runs when you run it.** Editing a track file afterwards does not rewrite
+  the notes that link it — run the command again.
+- **A note is one row.** If a note links two track files, one set of properties
+  describes both. Distance, climb and moving time add up; `track-duration-min`
+  is first stamp to last, so it spans the gap between a morning hike and an
+  afternoon ride, exactly as it would inside one two-segment file.
+- **It owns its prefix and nothing else.** **Track property prefix** in the
+  settings decides the names, `track` by default. Anything outside that prefix is
+  never read, written, or removed — and if the prefix would collide with the
+  coordinate or place property, the command refuses instead of overwriting it.
+
+Linked photos are left out: a photo is one point with no distance, climb, or
+duration.

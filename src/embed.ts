@@ -35,6 +35,7 @@ import {
 	formatDuration,
 	formatElevation,
 	formatSpeed,
+	hasStats,
 	nearestByDistance,
 	nearestByPosition,
 	trackStats,
@@ -819,14 +820,9 @@ export class TrackEmbed extends Component {
 
 /** Build compact value-only fields; omit unknowns and an entirely empty bar. */
 function statsFields(stats: TrackStats): Array<{ title: string; text: string }> | null {
-	const hasExtra =
-		stats.ascent !== null ||
-		stats.descent !== null ||
-		(stats.minEle !== null && stats.maxEle !== null) ||
-		stats.duration !== null ||
-		stats.movingTime !== null ||
-		stats.speed !== null;
-	if (stats.distance === 0 && !hasExtra) return null;
+	// Shared with the command that writes these figures into a note's properties,
+	// so the two surfaces cannot disagree about what "has statistics" means.
+	if (!hasStats(stats)) return null;
 
 	const fields: Array<{ title: string; text: string }> = [
 		{ title: t('stats.distance'), text: formatDistance(stats.distance) },

@@ -7,10 +7,15 @@ import {
 	formatDuration,
 	formatElevation,
 	formatSpeed,
+	hasStats,
 	haversine,
+	localStamp,
 	nearestByDistance,
 	nearestByPosition,
+	statsProperties,
 	trackStats,
+	type StatsProperty,
+	type TrackStats,
 } from '../src/stats';
 import type { Feature, Geometry } from 'geojson';
 
@@ -540,6 +545,174 @@ describe('formatElevation', () => {
 
 	it('never prints NaN for a non-finite input', () => {
 		expect(formatElevation(NaN)).toBe('0 m');
+	});
+});
+
+/** Every figure absent — what `trackStats` answers for a file it could measure nothing in. */
+const NOTHING_MEASURED: TrackStats = {
+	distance: 0,
+	points: 0,
+	ascent: null,
+	descent: null,
+	minEle: null,
+	maxEle: null,
+	start: null,
+	end: null,
+	duration: null,
+	movingTime: null,
+	speed: null,
+};
+
+function measured(figures: Partial<TrackStats>): TrackStats {
+	return { ...NOTHING_MEASURED, ...figures };
+}
+
+function byKey(properties: StatsProperty[]): Record<string, number | string | null> {
+	return Object.fromEntries(properties.map(({ key, value }) => [key, value]));
+}
+
+describe('hasStats', () => {
+	it('is false for a file nothing could be measured in', () => {
+		expect(hasStats(NOTHING_MEASURED)).toBe(false);
+	});
+
+	it('is false for a file holding only areas', () => {
+		// The polygon reaches trackStats and contributes nothing; this is the
+		// condition both the inline bar and the property command are gated on.
+		const areaOnly = trackStats([
+			{
+				type: 'Feature',
+				properties: null,
+				geometry: {
+					type: 'Polygon',
+					coordinates: [
+						[
+							[0, 0],
+							[0, 1],
+							[1, 1],
+							[0, 0],
+						],
+					],
+				},
+			},
+		]);
+		expect(hasStats(areaOnly)).toBe(false);
+	});
+
+	it('is true once there is a distance', () => {
+		expect(hasStats(measured({ distance: 12 }))).toBe(true);
+	});
+
+	it('is true for a standing recording with a duration and no distance', () => {
+		expect(hasStats(measured({ duration: 60000 }))).toBe(true);
+	});
+
+	it('is true for a single elevation extreme pair with nothing else', () => {
+		expect(hasStats(measured({ minEle: 12, maxEle: 12 }))).toBe(true);
+	});
+});
+
+describe('statsProperties', () => {
+	const watch = measured({
+		distance: 13618.4,
+		points: 2201,
+		ascent: 512.4,
+		descent: 498.6,
+		minEle: 12.2,
+		maxEle: 1849.7,
+		duration: 9665000,
+		movingTime: 8880000,
+		speed: 1.5337,
+		// Constructed in local time so the expectation below holds in any timezone.
+		start: new Date(2024, 4, 1, 9, 30, 15).getTime(),
+	});
+
+	it('names every property after its unit, in a fixed order', () => {
+		expect(statsProperties(watch, 'track').map(({ key }) => key)).toEqual([
+			'track-distance-km',
+			'track-ascent-m',
+			'track-descent-m',
+			'track-lowest-m',
+			'track-highest-m',
+			'track-duration-min',
+			'track-moving-min',
+			'track-speed-kmh',
+			'track-start',
+		]);
+	});
+
+	it('rounds each figure to what its source supports', () => {
+		expect(byKey(statsProperties(watch, 'track'))).toEqual({
+			'track-distance-km': 13.62,
+			'track-ascent-m': 512,
+			'track-descent-m': 499,
+			'track-lowest-m': 12,
+			'track-highest-m': 1850,
+			'track-duration-min': 161,
+			'track-moving-min': 148,
+			'track-speed-kmh': 5.5,
+			'track-start': '2024-05-01T09:30:15',
+		});
+	});
+
+	it('leaves a null behind for every figure the file did not record', () => {
+		const plain = measured({ distance: 4210 });
+		expect(byKey(statsProperties(plain, 'track'))).toEqual({
+			'track-distance-km': 4.21,
+			'track-ascent-m': null,
+			'track-descent-m': null,
+			'track-lowest-m': null,
+			'track-highest-m': null,
+			'track-duration-min': null,
+			'track-moving-min': null,
+			'track-speed-kmh': null,
+			'track-start': null,
+		});
+	});
+
+	it('writes a below-sea-level elevation as the negative figure it is', () => {
+		const deadSea = measured({ distance: 100, minEle: -430.6, maxEle: -418.2 });
+		const values = byKey(statsProperties(deadSea, 'track'));
+		expect(values['track-lowest-m']).toBe(-431);
+		expect(values['track-highest-m']).toBe(-418);
+	});
+
+	it('renames every key with the configured prefix', () => {
+		expect(statsProperties(watch, 'ride').map(({ key }) => key)).toContain('ride-distance-km');
+		expect(statsProperties(watch, '路线').map(({ key }) => key)).toContain('路线-start');
+	});
+
+	it('does not double the separator a prefix was typed with', () => {
+		for (const typed of ['track-', 'track ', ' track_ ']) {
+			expect(statsProperties(watch, typed)[0].key).toBe('track-distance-km');
+		}
+	});
+
+	it('produces bare names rather than ones starting with the separator when the prefix is empty', () => {
+		expect(statsProperties(watch, '')[0].key).toBe('distance-km');
+	});
+
+	it('never writes a NaN into a note', () => {
+		const broken = measured({ distance: NaN, speed: NaN, ascent: NaN });
+		const values = byKey(statsProperties(broken, 'track'));
+		expect(values['track-distance-km']).toBe(0);
+		expect(values['track-speed-kmh']).toBe(0);
+		expect(values['track-ascent-m']).toBe(0);
+	});
+});
+
+describe('localStamp', () => {
+	it('is local time on this device, to the second', () => {
+		expect(localStamp(new Date(2024, 4, 1, 9, 30, 15).getTime())).toBe('2024-05-01T09:30:15');
+	});
+
+	it('pads every field so the value stays sortable as text', () => {
+		expect(localStamp(new Date(2024, 0, 5, 7, 4, 9).getTime())).toBe('2024-01-05T07:04:09');
+	});
+
+	it('round-trips through the local-time parser Obsidian reads it with', () => {
+		const at = new Date(2019, 10, 3, 23, 59, 58).getTime();
+		expect(new Date(localStamp(at)).getTime()).toBe(at);
 	});
 });
 

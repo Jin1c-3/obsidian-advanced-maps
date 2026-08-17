@@ -39,6 +39,10 @@ export interface AdvancedMapsSettings {
 	/** The numbers under an inline map, and the chart under those. */
 	trackStats: boolean;
 	elevationProfile: boolean;
+	/** What the command that writes those numbers into a note names its
+	 *  properties — `track` gives `track-distance-km` and its siblings. Every
+	 *  property the command reads, writes or removes is under this prefix. */
+	statsPrefix: string;
 	/** Start/end pins, direction arrows, and — inline only — a waypoint's name on hover. */
 	trackMarkers: boolean;
 	/** A linked photo's own EXIF coordinate, drawn the same way a one-point track is. */
@@ -94,6 +98,7 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	embedHeight: 320,
 	trackStats: true,
 	elevationProfile: true,
+	statsPrefix: 'track',
 	trackMarkers: true,
 	showPhotos: true,
 	photoThumbnails: true,
@@ -185,7 +190,13 @@ export function refreshesTracks(key: string): boolean {
 }
 
 /** Cleared placeholder-backed fields restore defaults; exclusion stays privacy-safe. */
-const PLACEHOLDER_DEFAULT_KEYS = ['coordsProperty', 'placeProperty', 'trackColor', 'autoFillExclude'] as const;
+const PLACEHOLDER_DEFAULT_KEYS = [
+	'coordsProperty',
+	'placeProperty',
+	'statsPrefix',
+	'trackColor',
+	'autoFillExclude',
+] as const;
 
 type PlaceholderDefaultKey = (typeof PLACEHOLDER_DEFAULT_KEYS)[number];
 
@@ -693,6 +704,12 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				this.toggle('settings.tracks.stats.name', 'settings.tracks.stats.desc', 'trackStats'),
 				this.toggle('settings.tracks.profile.name', 'settings.tracks.profile.desc', 'elevationProfile'),
 				this.toggle('settings.tracks.markers.name', 'settings.tracks.markers.desc', 'trackMarkers'),
+				// Last in the group, and the only row here that changes nothing already
+				// drawn: it names the properties a command writes, so it is deliberately
+				// absent from TRACK_REFRESH_KEYS above.
+				this.text('settings.tracks.statsPrefix.name', 'settings.tracks.statsPrefix.desc', 'statsPrefix', {
+					placeholder: DEFAULT_SETTINGS.statsPrefix,
+				}),
 			]),
 
 			// Photos have distinct privacy/context text from deliberate track attachments.

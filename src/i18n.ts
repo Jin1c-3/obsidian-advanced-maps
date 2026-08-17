@@ -80,6 +80,7 @@ const en = {
 	'command.searchPlace': 'Search for a place and set coordinates',
 	'command.reverseGeocode': 'Fill place name from coordinates',
 	'command.fillFromPhoto': 'Set coordinates from a photo',
+	'command.writeStats': 'Write track statistics to properties',
 
 	/* ---- "set coordinates from a link" ---- */
 	'link.title': 'Set coordinates from a map link',
@@ -128,6 +129,14 @@ const en = {
 	'notice.photo.done': '{property}: {coords}, from the photo',
 	'notice.photo.failed': 'Advanced Maps: could not read a location from that photo — {reason}',
 	'notice.photoIndex.cleared': 'Advanced Maps: cleared the photo index. Photos are read again as maps ask for them.',
+
+	/* ---- track statistics written to a note ---- */
+	'notice.stats.done': 'Advanced Maps: wrote {count} properties — {distance}',
+	'notice.stats.none': '"{file}" has no track data to measure',
+	'notice.stats.failed': 'Advanced Maps: could not read that track — {reason}',
+	'notice.stats.propertyClash':
+		'Advanced Maps: the track property prefix produces "{property}", which is already in use — change the ' +
+		'prefix in settings, or this would overwrite that property.',
 
 	/* ---- the photo a map pin stands for ---- */
 	'photo.openNote': 'Open note',
@@ -288,6 +297,10 @@ const en = {
 	'settings.tracks.markers.desc':
 		'A start and an end pin on every track, direction arrows along it, and — on inline maps — a waypoint’s ' +
 		'own name on hover.',
+	'settings.tracks.statsPrefix.name': 'Track property prefix',
+	'settings.tracks.statsPrefix.desc':
+		'What "Write track statistics to properties" names what it writes: "track" gives track-distance-km, ' +
+		'track-ascent-m, track-duration-min and so on. The command touches nothing outside this prefix.',
 
 	/* ---- settings: photos ----
 	 * A group of its own beside the track knobs above: a track comes from a
@@ -381,6 +394,7 @@ const zh: Record<TranslationKey, string> = {
 	'command.searchPlace': '搜索地点并填写坐标',
 	'command.reverseGeocode': '从坐标填写地名',
 	'command.fillFromPhoto': '从照片填写坐标',
+	'command.writeStats': '把轨迹数据写进属性',
 
 	'link.title': '从地图链接填写坐标',
 	'link.intro':
@@ -423,6 +437,12 @@ const zh: Record<TranslationKey, string> = {
 	'notice.photo.done': '{property}：{coords}（来自照片）',
 	'notice.photo.failed': 'Advanced Maps：无法从这张照片读取位置——{reason}',
 	'notice.photoIndex.cleared': 'Advanced Maps：照片索引已清空。地图再要照片时会重新读取。',
+
+	'notice.stats.done': 'Advanced Maps：写入了 {count} 个属性——{distance}',
+	'notice.stats.none': '「{file}」没有可统计的轨迹数据',
+	'notice.stats.failed': 'Advanced Maps：无法读取这条轨迹——{reason}',
+	'notice.stats.propertyClash':
+		'Advanced Maps：按当前前缀会写出「{property}」，而这个属性已经另有用途——请在设置里改前缀，否则会覆盖它。',
 
 	'photo.openNote': '打开笔记',
 
@@ -527,6 +547,10 @@ const zh: Record<TranslationKey, string> = {
 	'settings.tracks.markers.name': '显示轨迹标记',
 	'settings.tracks.markers.desc':
 		'每条轨迹的起点和终点图钉、沿线的方向箭头，以及——仅内联地图——悬停显示途经点自己的名称。',
+	'settings.tracks.statsPrefix.name': '轨迹属性前缀',
+	'settings.tracks.statsPrefix.desc':
+		'「把轨迹数据写进属性」写出来的属性名怎么起：填 track 就是 track-distance-km、track-ascent-m、' +
+		'track-duration-min 等等。这个命令只碰这个前缀底下的属性。',
 
 	'setting.photos': '照片',
 	'setting.photos.desc':
