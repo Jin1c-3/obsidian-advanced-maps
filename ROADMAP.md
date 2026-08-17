@@ -17,6 +17,13 @@ The numbers under an inline `![[track.gpx]]` exist now. A track drawn on a
 **base** map view shows none of them, because the surface it would use is the
 note's own popup — and that popup is the native manager's.
 
+The cheap half of this shipped in 1.14.0: **Write track statistics to
+properties** puts the same figures into the note's own frontmatter, where a base
+sorts, filters, totals and columns them without a popup being involved at all.
+It is not a substitute — those are a note's tracks summed, and a cursor over one
+track still wants that track's own numbers — but what is left here is now only
+the popup.
+
 The landing place already exists: `hover()` in `track-layer.ts` reuses the
 native popup when the cursor is over a track. So the question is what goes into
 that card, and the card belongs to a **note**, which may carry several tracks.
@@ -75,47 +82,6 @@ per-track statistics line, a waypoint's name, and a photo's own thumbnail are
 all "one more thing this plugin wants inside a card it did not build."
 
 ## Worth doing
-
-### Polygons, which a linked file can already hold
-
-`layers.ts` draws lines, waypoint dots, endpoints, arrows and photos. The line
-layer filters `LineString` and `MultiLineString`, the circle layer filters
-`Point` and `MultiPoint`, and nothing filters `Polygon` at all. So a `.geojson`
-holding one — an administrative boundary, a park, a Google Earth area — draws
-**nothing**, while `extendBounds` still walks its ring, counts the vertices and
-pulls zoom-to-fit onto a blank patch of map. KML comes off better by accident:
-`parse.ts` reads a `<Polygon>`'s `<LinearRing>` as a LineString, so the outline
-survives and the fill never existed.
-
-One `fill` layer below the line layer closes it, reading the same `amColor` the
-other layers read and following the same add and remove ordering. It is also
-the missing half of _Lighting up where you have been_ below, which has been
-waiting on exactly this.
-
-Map View has both halves open as requests — esm7/obsidian-map-view#292 for
-areas as things you can attach a note to, and #356 because a filled polygon
-swallows the right-click that would have put a note inside it. The second is
-worth answering in the same change: a fill that eats the map's own context menu
-trades one feature for another.
-
-### Track statistics where a filter can reach them
-
-`trackStats()` already computes distance, ascent, descent, elevation range,
-elapsed and moving time, and pace — and they exist only under an inline
-`![[track.gpx]]`. A command that writes them into the owning note's frontmatter,
-through the `processFrontMatter` seam _Fill coordinates from a photo_ already
-uses, turns them into something Bases sorts, filters, and shows as a column.
-
-It is also the cheap half of _Statistics on a base map_ at the top of this file.
-That entry is blocked on reaching inside a popup this plugin does not own; a
-number living in a property does not need the popup at all. Not a substitute —
-hovering one track still wants that track's own numbers — but it ships without
-solving the hard one first.
-
-Two rules if it gets built: it writes when asked and never during a scan, and it
-does not overwrite a value the reader put there. Map View has the same gap from
-the other side, esm7/obsidian-map-view#376 — a saved route keeps its geometry
-and loses its numbers.
 
 ### Basemap tiles that are already on disk
 
@@ -188,8 +154,9 @@ one means owning it.
 ### Lighting up where you have been
 
 Filling in the provinces or cities a vault has notes in — the "footprint map"
-every Chinese travel app is built around. MapLibre draws it with one fill layer,
-which is the same seam the tracks already use.
+every Chinese travel app is built around. The fill layer it needs is no longer
+missing: since 1.14.0 a GeoJSON or KML holding a region is drawn as an area, in
+the colour of the note that links it.
 
 Naming a coordinate is no longer the missing half: `reverseRequest`/
 `parseReverse` in `geocode.ts` and the _Fill place name from coordinates_
@@ -199,12 +166,18 @@ than it was: a geotagged photo now reaches a coordinate through the exact same
 pipeline a note's own `coords` property does — see CLAUDE.md's "Coordinates
 from a photo's EXIF" — so a footprint built from every note's coordinate could
 just as well be built from every photo's, without a second reader to write.
-What is still undone is the one part that was never about geocoding — the
-boundary polygons, which should be a GeoJSON file **the reader keeps in their
-vault** rather than data bundled into the plugin, and the fill layer that draws
-them. That layer is now its own entry, _Polygons, which a linked file can
-already hold_ above: a boundary file drawn as a shape is useful on its own, and
-this is what it is useful for.
+What is still undone is the one part that was never about geocoding, and it is
+now the only part: the boundaries themselves — a GeoJSON file **the reader keeps
+in their vault** rather than data bundled into the plugin — and the join between
+them and the notes, deciding which region a coordinate falls inside and colouring
+that region by how many landed there rather than by whichever note linked the
+file. Drawing an area is solved; asking what is inside one is not.
+
+Map View has the neighbouring half open as esm7/obsidian-map-view#292, areas as
+things a note can be attached to, and #356 because a filled polygon there
+swallows the right-click that would have put a note inside it. The second is
+already answered here — an area is the lowest-priority pointer target, so the
+map's own context menu opens over one exactly as it does anywhere else.
 
 ### Import a KML's placemarks as notes
 
@@ -235,26 +208,16 @@ link sitting in a note could go through the same reader from the editor's own
 right-click menu, with no box to open. Cheap, and it is where somebody who just
 pasted a share link actually is.
 
-### A line that crosses the antimeridian
-
-Two consecutive positions on either side of ±180° are drawn the long way round
-— west across Asia rather than east across the Pacific — and `extendBounds`,
-seeing one longitude near −180 and the next near +180, grows a bounds spanning
-the globe, so zoom-to-fit answers with the whole world. One pass before the
-geometry reaches the source fixes both: unwrap each longitude so no step
-exceeds 180°, letting values run past ±180 the way MapLibre expects them to.
-
-Reported against Map View as esm7/obsidian-map-view#408, and the arithmetic
-here is the same arithmetic. A GPX walk never triggers it. A flight, a ferry,
-and the entry below drawing an edge between two notes all do.
-
 ### Edges between linked notes
 
 Map View draws lines between the markers of notes that link to each other. One
 more GeoJSON source and one more line layer — the shape `layers.ts` already has
 — and the same idea as _a map of the notes around a note_, drawn instead of
 filtered. Worth a guard: it is recomputed on every metadata change, and Map
-View's own documentation warns about thousands of edges.
+View's own documentation warns about thousands of edges. An edge between a note
+in Fiji and a note in Chile is a line across the antimeridian, which 1.14.0
+already unwraps for tracks — `unwrapGeometry()` in `geometry.ts` is the same
+arithmetic, reached the same way.
 
 ### Obsidian CLI commands, and a skill
 
