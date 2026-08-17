@@ -53,6 +53,19 @@ const en = {
 
 	/* ---- the map's right-click menu ---- */
 	'menu.openExternal': 'Open in external map',
+	/* Beside the native "New note here", whose other half it is. */
+	'menu.stampNote': "Set a note's coordinates here",
+
+	/* ---- picking the note a clicked point belongs to ---- */
+	'picker.placeholder': 'Which note is at {coords}?',
+	'picker.empty': 'No note by that name.',
+	'replace.title': 'Replace this coordinate?',
+	'replace.body': '“{file}” already has a {property}.',
+	'replace.from': 'Now: {coords}',
+	'replace.to': 'After: {coords}',
+	'replace.cancel': 'Leave it',
+	'replace.confirm': 'Replace',
+	'notice.stamp.done': '{file} — {property}: {coords}',
 
 	/* ---- coordinate systems ---- */
 	/* Named by provider, not by standard: nobody picks a basemap by its datum. */
@@ -372,6 +385,17 @@ const zh: Record<TranslationKey, string> = {
 	'stats.profile': '高程剖面',
 
 	'menu.openExternal': '用外部地图打开',
+	'menu.stampNote': '把某篇笔记的坐标设成这里',
+
+	'picker.placeholder': '{coords} 是哪篇笔记？',
+	'picker.empty': '没有叫这个名字的笔记。',
+	'replace.title': '要替换这个坐标吗？',
+	'replace.body': '「{file}」已经有 {property} 了。',
+	'replace.from': '现在：{coords}',
+	'replace.to': '改成：{coords}',
+	'replace.cancel': '保持原样',
+	'replace.confirm': '替换',
+	'notice.stamp.done': '{file} —— {property}：{coords}',
 
 	'coord.auto': '自动 · 跟随当前底图',
 	'coord.wgs84': 'OpenStreetMap、天地图、ArcGIS · WGS-84',

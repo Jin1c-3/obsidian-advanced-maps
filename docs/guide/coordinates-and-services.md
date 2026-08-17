@@ -31,6 +31,28 @@ streets away.
 
 ![The map context menu with external-map destinations](../external-map.png)
 
+## Place a note you already wrote
+
+The map's right-click menu can create a note at the spot you clicked. **Set a
+note's coordinates here** is the other half: you wrote the note months ago
+without a coordinate, and you are looking straight at where it belongs.
+
+Right-click the spot, choose it, and pick the note. Each row shows its folder
+and, when the note already has a coordinate, the value it holds — so a fuzzy
+match is checked before it is taken, not after. Choosing a note with no
+coordinate writes immediately; choosing one that already has a coordinate names
+the old value and the new one first, because frontmatter has no undo.
+
+Your templates are left out of the list, read from the folder the core
+**Templates** plugin names. A template is not a place, and a coordinate written
+into one would go into every note stamped from it afterwards.
+
+Only the coordinate property is written. If the note is not in that map's own
+query the pin will not appear, which is Bases filtering rather than a failure —
+the notice names the note and the value either way.
+
+![The map's right-click menu with "set a note's coordinates here" beside New note and Copy coordinates; the note picker, where an already-placed note shows the coordinate it holds; and the confirmation naming the old value and the new one](../stamp-note.png)
+
 ## Set coordinates from a map link
 
 **Set coordinates from a map link** understands common mainland and

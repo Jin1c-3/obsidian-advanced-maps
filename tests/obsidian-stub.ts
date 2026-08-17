@@ -80,6 +80,31 @@ export class Setting {
 	addToggle(): this {
 		return this;
 	}
+	/** Unlike its siblings this one runs the callback: a test drives a modal's
+	 *  buttons by capturing the components it builds. */
+	addButton(cb: (button: ButtonStub) => unknown): this {
+		cb(new ButtonStub());
+		return this;
+	}
+}
+
+/** Just enough of ButtonComponent to be built and clicked. */
+export class ButtonStub {
+	text = '';
+	cta = false;
+	click: () => void = () => undefined;
+	setButtonText(text: string): this {
+		this.text = text;
+		return this;
+	}
+	setCta(): this {
+		this.cta = true;
+		return this;
+	}
+	onClick(cb: () => void): this {
+		this.click = cb;
+		return this;
+	}
 }
 
 export class Modal {
@@ -104,6 +129,16 @@ export class SuggestModal<T> extends Modal {
 	}
 	renderSuggestion(_value: T, _el: HTMLElement): void {}
 	onChooseSuggestion(_value: T): void {}
+}
+
+export class FuzzySuggestModal<T> extends SuggestModal<unknown> {
+	getItems(): T[] {
+		return [];
+	}
+	getItemText(_item: T): string {
+		return '';
+	}
+	onChooseItem(_item: T, _evt?: unknown): void {}
 }
 
 export class TFile {
