@@ -30,7 +30,7 @@ normalized back into range exactly once (`src/track-layer.ts:394`).
   click, and both menu items read the same pair — zero conversions and two look
   identical on screen and land the pin about 500 m out.
 - Show each candidate note's current coordinate in the picker, and confirm before
-  replacing one. A note *without* a coordinate — the case this exists for — is
+  replacing one. A note _without_ a coordinate — the case this exists for — is
   stamped with no extra step; a note that already has one names the old value and
   the new one before anything is written.
 - Write through the same `processFrontMatter` seam as every other coordinate

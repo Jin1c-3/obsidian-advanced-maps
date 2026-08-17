@@ -29,6 +29,7 @@ import {
 	type BaseView,
 } from './map-block';
 import { MapModal } from './modal';
+import { currentCoords, NotePickerModal, ReplaceCoordsModal } from './note-picker';
 import { PhotoIndex, pluginIndexIO } from './photo-index';
 import { nativeBehind, ownedBy, stamp, type RegistrationOwner } from './registration';
 import { PlaceSearchModal } from './search-modal';
@@ -849,11 +850,55 @@ export default class AdvancedMapsPlugin extends Plugin {
 		).open();
 	}
 
-	/** The one place a coordinate reaches disk from a deliberate command. */
-	private async writeCoords(file: TFile, coords: string): Promise<void> {
+	/** The one place a coordinate reaches disk from a deliberate command — the four
+	 *  above, and the map's own "set a note's coordinates here" below. */
+	async writeCoords(file: TFile, coords: string): Promise<void> {
 		await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
 			frontmatter[this.settings.coordsProperty] = coords;
 		});
+	}
+
+	/* ---- a point on the map, into a note that already exists ---- */
+
+	/**
+	 * Reached from the map's right-click menu with a WGS-84 pair the menu already
+	 * converted exactly once. Everything from here on is about *which* note —
+	 * the question no other command in this plugin has to ask, because every one
+	 * of them acts on the note the reader is looking at.
+	 */
+	stampNoteAt(lat: number, lng: number): void {
+		const coords = formatLatLng(lat, lng);
+		const property = this.settings.coordsProperty;
+		new NotePickerModal(this.app, coords, property, (file) => {
+			const held = currentCoords(this.app, file, property);
+			if (held === null) {
+				void this.commitStamp(file, coords);
+				return;
+			}
+			new ReplaceCoordsModal(
+				this.app,
+				file,
+				property,
+				held,
+				coords,
+				() => void this.commitStamp(file, coords)
+			).open();
+		}).open();
+	}
+
+	/**
+	 * The note is named in the notice because the map may show nothing: a note
+	 * outside this base's own query gains its coordinate and no pin, which
+	 * without a word would read as the command having done nothing.
+	 */
+	private async commitStamp(file: TFile, coords: string): Promise<void> {
+		try {
+			await this.writeCoords(file, coords);
+		} catch (e) {
+			new Notice(t('notice.write.failed', { reason: e instanceof Error ? e.message : String(e) }));
+			return;
+		}
+		new Notice(t('notice.stamp.done', { file: file.basename, property: this.settings.coordsProperty, coords }));
 	}
 
 	/* ---- reverse geocoding ---- */

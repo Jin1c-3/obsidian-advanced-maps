@@ -156,24 +156,34 @@ still need `addProtocol` and stays out of reach, so the shape is a directory
 tree of tiles, unpacked once, plus a source this plugin owns and can bound.
 Mobile (`capacitor://`) is untested.
 
-### Adding a coordinate to an existing note from the map
+### Dropping a note onto the map to place it
 
-The map's right-click menu creates a **new** note at the click, and opens the
-spot in an external map app. Stamping a note that already exists is the missing
-third: you wrote _楼外楼_ months ago with no coordinate, and you are looking
-straight at where it is.
+The menu half of this is done: **Set a note's coordinates here** picks a note and
+writes the clicked coordinate into it, through `clickedCoordinate()` in
+`track-layer.ts` and the same `processFrontMatter` seam every other coordinate
+command uses. Dropping a note from the file explorer onto the map is the second
+trigger, asked for as esm7/obsidian-map-view#49, and it reuses all of that — what
+is missing is only the drop itself.
 
-Needs a note picker — a `FuzzySuggestModal`, which this plugin does not have yet
-— and `processFrontMatter`. The coordinate must be un-shifted exactly once; zero
-and two look identical on screen and land the pin ~500 m out.
+Measured rather than assumed, so the next attempt does not start from scratch:
 
-Two triggers, sharing everything behind them. The map's own right-click menu is
-where `addExternalMapItems` in `track-layer.ts` already holds an un-shifted
-WGS-84 pair for the clicked pixel. Dropping a note from the file explorer onto
-the map is the other, asked for as esm7/obsidian-map-view#49, and it needs no
-native marker to cooperate — which is why dragging an existing pin (#43, #236,
-and an open pull request there) is the one to leave alone. Those markers belong
-to the native manager, and moving one means owning it.
+- `app.dragManager` exists and exposes `draggable`, `dragFile`, `handleDrag`,
+  `handleDrop`, `onDragOver`, `showOverlay` and an `isDragOverHandled` flag.
+  Entirely undocumented, so it would need a declaration with provenance in
+  `src/types/obsidian-internals.d.ts`.
+- `dragManager.dragFile(event, file)` returns `{source, type: 'file', icon,
+title, file}` **and** writes into the event's `dataTransfer`: `text/plain` and
+  `text/uri-list` both carry `obsidian://open?vault=<name>&file=<path>`, the
+  app's own public URI with the extension dropped. A drop handler therefore has a
+  documented payload to read and need not depend on the internal at all.
+- What is unmeasured is the part that decides it: whether a real drag from the
+  file explorer reaches the map container, or is taken by the workspace's own
+  drag-over pipeline first. A synthetic `DragEvent` proves only that a listener
+  is wired; this one needs a human dragging a file.
+
+Dragging an existing **pin** is still the one to leave alone (#43, #236, and an
+open pull request there). Those markers belong to the native manager, and moving
+one means owning it.
 
 ### Lighting up where you have been
 

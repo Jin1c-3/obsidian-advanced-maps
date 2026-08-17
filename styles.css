@@ -358,3 +358,27 @@
 	width: var(--icon-s);
 	height: var(--icon-s);
 }
+
+/* ---- placing an existing note from the map ---- */
+
+/* The row's second line carries the folder and, when the note already has one,
+ * the coordinate about to be replaced — which is what makes the choice informed
+ * rather than a guess at a fuzzy match. */
+.advanced-maps-picker-detail {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.advanced-maps-replace-modal {
+	width: min(420px, 94vw);
+}
+
+.advanced-maps-replace-values {
+	margin: var(--size-4-2) 0;
+	padding: var(--size-4-2) var(--size-4-3);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	user-select: text;
+}

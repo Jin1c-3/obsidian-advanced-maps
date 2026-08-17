@@ -319,7 +319,9 @@ export class TrackLayer {
 				} finally {
 					restore();
 				}
-				// External items read native tile space after the temporary wrapper is restored.
+				// Both read native tile space after the temporary wrapper is restored,
+				// through the one helper that converts a click exactly once.
+				this.addStampNoteItem(ev, map, system);
 				this.addExternalMapItems(ev, map, system);
 			});
 		}
@@ -378,21 +380,61 @@ export class TrackLayer {
 		return this;
 	}
 
-	/** Append to the event-keyed native menu, falling back to flat items without `setSubmenu`. */
-	private addExternalMapItems(ev: MouseEvent, map: NonNullable<BasesMapView['map']>, system: CoordSystem): void {
-		if (typeof map.unproject !== 'function') return;
+	/**
+	 * The clicked pixel as a vault coordinate: `[lng, lat]` in WGS-84, or null
+	 * when the map cannot answer.
+	 *
+	 * The one place a click becomes a coordinate, because the correction has to
+	 * happen exactly once and there is no way to tell zero from two by looking:
+	 * both land the pin about 500 m out on a Chinese basemap. `unproject` is
+	 * native tile space here — the temporary wrapper the menu installs has been
+	 * restored by now — so this converts the datum first and then brings back a
+	 * longitude the camera may have carried past the meridian.
+	 */
+	private clickedCoordinate(
+		ev: MouseEvent,
+		map: NonNullable<BasesMapView['map']>,
+		system: CoordSystem
+	): [number, number] | null {
+		if (typeof map.unproject !== 'function') return null;
 		let lngLat: LngLat;
 		try {
 			// The same pixel showMapContextMenu itself reads the click from.
 			lngLat = map.unproject([ev.offsetX, ev.offsetY]);
 		} catch {
-			return;
+			return null;
 		}
-		// `unproject` is native tile space here; normalize exactly once before
-		// provider conversion — datum first, then a longitude the camera may have
-		// carried past the meridian, which no provider's URL would accept.
 		const [rawLng, lat] = toWgs84(system, lngLat.lng, lngLat.lat);
-		const lng = normalizeLng(rawLng);
+		return [normalizeLng(rawLng), lat];
+	}
+
+	/**
+	 * Offer to put this spot into a note that already exists — the half of the
+	 * menu the native **New note here** leaves out.
+	 *
+	 * The coordinate is captured now rather than in the click handler: by the
+	 * time the item is chosen, the event and its pixel are gone and the map may
+	 * have moved.
+	 */
+	private addStampNoteItem(ev: MouseEvent, map: NonNullable<BasesMapView['map']>, system: CoordSystem): void {
+		const point = this.clickedCoordinate(ev, map, system);
+		if (!point) return;
+		const [lng, lat] = point;
+		// No section: this belongs with the native items that read the same click,
+		// rather than with the external-map group below.
+		Menu.forEvent(ev).addItem((item) =>
+			item
+				.setTitle(t('menu.stampNote'))
+				.setIcon('map-pin')
+				.onClick(() => this.plugin.stampNoteAt(lat, lng))
+		);
+	}
+
+	/** Append to the event-keyed native menu, falling back to flat items without `setSubmenu`. */
+	private addExternalMapItems(ev: MouseEvent, map: NonNullable<BasesMapView['map']>, system: CoordSystem): void {
+		const point = this.clickedCoordinate(ev, map, system);
+		if (!point) return;
+		const [lng, lat] = point;
 
 		const items = this.externalMapItems(lat, lng);
 		if (items.length === 0) return;

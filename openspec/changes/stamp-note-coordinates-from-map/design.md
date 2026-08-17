@@ -10,7 +10,7 @@ See proposal.md — Why. Three facts about the current code decide the shape:
 - **Writing a coordinate into a note is solved.** `writeCoords()` goes through
   `fileManager.processFrontMatter` and is what the link paste, place search,
   photo EXIF and device-location commands all end at.
-- **There is no note picker.** Every existing command acts on the *active* note,
+- **There is no note picker.** Every existing command acts on the _active_ note,
   so "which note" has never had to be asked. This change is the first time it
   does, and that is where its risk lives.
 
@@ -77,7 +77,7 @@ note's name, its folder, and — when it has one — the value already in its
 coordinate property.
 
 _Why show the existing value:_ it turns the riskiest choice into an informed one
-before it is made, and it costs a metadata-cache lookup per *rendered* row, not
+before it is made, and it costs a metadata-cache lookup per _rendered_ row, not
 per note in the vault.
 
 _Why every note rather than only those without a coordinate:_ correcting a pin
@@ -116,7 +116,7 @@ facts:
   `handleDrop`, `onDragOver`, `showOverlay` and an `isDragOverHandled` flag. It
   is entirely undocumented and would need a declaration with provenance.
 - `dragManager.dragFile(event, file)` returns `{source, type: 'file', icon,
-  title, file}` and writes into the event's `dataTransfer`: `text/plain` and
+title, file}` and writes into the event's `dataTransfer`: `text/plain` and
   `text/uri-list` both carry `obsidian://open?vault=<name>&file=<path>` — the
   app's own public URI, with the extension dropped. So a drop handler has a
   documented payload to read and does not have to depend on the internal at all.
