@@ -177,6 +177,28 @@ describe('trackStats — distance', () => {
 		expect(s.distance).toBeCloseTo(expected, 6);
 		expect(s.distance).toBeLessThan(1000); // nowhere near the ~11,000 km cross-feature jump
 	});
+
+	it('measures a step across the 180th meridian as the short way, either way written', () => {
+		// haversine works on sin(dLon/2)², whose trigonometry wraps on its own, so
+		// this needs no antimeridian handling and gets none. The unwrapping the
+		// drawing path does must therefore leave these figures untouched: the two
+		// spellings of one 39 km step measure the same.
+		const wrapped = trackStats([
+			line([
+				[179.95, -17],
+				[-179.7, -17.1],
+			]),
+		]);
+		const unwrapped = trackStats([
+			line([
+				[179.95, -17],
+				[180.3, -17.1],
+			]),
+		]);
+		expect(wrapped.distance).toBeCloseTo(unwrapped.distance, 6);
+		expect(wrapped.distance / 1000).toBeGreaterThan(35);
+		expect(wrapped.distance / 1000).toBeLessThan(45);
+	});
 });
 
 describe('trackStats — ascent/descent (hysteresis)', () => {

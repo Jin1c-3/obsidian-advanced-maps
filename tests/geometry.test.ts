@@ -9,6 +9,7 @@ import {
 	styleUsable,
 	trackFeatures,
 	trackKnob,
+	unwrapGeometry,
 	walkCoords,
 } from '../src/geometry';
 import { TRACK_KNOBS } from '../src/constants';
@@ -127,6 +128,135 @@ describe('extendBounds', () => {
 		const { bounds } = fakeBounds();
 		expect(extendBounds(bounds, null)).toBe(0);
 		expect(extendBounds(bounds, undefined)).toBe(0);
+	});
+});
+
+describe('unwrapGeometry', () => {
+	/** The Fiji track the live check used: five positions, 166 km, crossing east. */
+	const crossing: Geometry = {
+		type: 'LineString',
+		coordinates: [
+			[179.2, -16.8],
+			[179.6, -16.9],
+			[179.95, -17.0],
+			[-179.7, -17.1],
+			[-179.3, -17.2],
+		],
+	};
+
+	const lngsOf = (geometry: Geometry): number[] =>
+		(geometry as { coordinates: number[][] }).coordinates.map((position) => position[0]);
+
+	it('continues past 180 for a track crossing eastward', () => {
+		// 179.95 → -179.7 is 39 km on the ground and 359.65° in the numbers, which
+		// is what drew the line back around the world and framed the whole globe.
+		expect(lngsOf(unwrapGeometry(crossing))).toEqual([179.2, 179.6, 179.95, 180.3, 180.7]);
+	});
+
+	it('continues below -180 for a track crossing westward', () => {
+		const west: Geometry = {
+			type: 'LineString',
+			coordinates: [
+				[-179.3, -17.2],
+				[-179.7, -17.1],
+				[179.95, -17.0],
+				[179.6, -16.9],
+			],
+		};
+		expect(lngsOf(unwrapGeometry(west))).toEqual([-179.3, -179.7, -180.05, -180.4]);
+	});
+
+	it('answers the very same object when nothing crosses', () => {
+		const ordinary: Geometry = {
+			type: 'LineString',
+			coordinates: [
+				[121.4, 31.2],
+				[121.5, 31.3],
+			],
+		};
+		// Identity, not equality: an untouched vault must allocate nothing here,
+		// and the caller's array is the cached record statistics read from.
+		expect(unwrapGeometry(ordinary)).toBe(ordinary);
+	});
+
+	it('leaves a file that already wrote unwrapped longitudes alone', () => {
+		const already: Geometry = {
+			type: 'LineString',
+			coordinates: [
+				[179.95, -17],
+				[180.3, -17.1],
+			],
+		};
+		expect(unwrapGeometry(already)).toBe(already);
+	});
+
+	it('leaves a step of exactly half a turn as the file wrote it', () => {
+		const exact: Geometry = {
+			type: 'LineString',
+			coordinates: [
+				[0, 0],
+				[180, 0],
+			],
+		};
+		// Both ways round are the same distance, so there is nothing to correct.
+		expect(unwrapGeometry(exact)).toBe(exact);
+	});
+
+	it('keeps elevation and any other trailing members', () => {
+		const withEle: Geometry = {
+			type: 'LineString',
+			coordinates: [
+				[179.95, -17, 12, 99],
+				[-179.7, -17.1, 34, 98],
+			],
+		};
+		expect((unwrapGeometry(withEle) as { coordinates: number[][] }).coordinates[1]).toEqual([180.3, -17.1, 34, 98]);
+	});
+
+	it('unwraps each ring of a polygon on its own and keeps ring order', () => {
+		const area: Geometry = {
+			type: 'Polygon',
+			coordinates: [
+				[
+					[179.5, -17],
+					[-179.5, -17],
+					[-179.5, -17.5],
+					[179.5, -17],
+				],
+				[
+					[179.8, -17.1],
+					[-179.8, -17.1],
+					[-179.8, -17.2],
+					[179.8, -17.1],
+				],
+			],
+		};
+		const rings = (unwrapGeometry(area) as { coordinates: number[][][] }).coordinates;
+		expect(rings).toHaveLength(2);
+		expect(rings[0].map((p) => p[0])).toEqual([179.5, 180.5, 180.5, 179.5]);
+		// A hole is a closed path in its own right and crosses independently.
+		expect(rings[1].map((p) => p[0])).toEqual([179.8, 180.2, 180.2, 179.8]);
+	});
+
+	it('reaches a crossing line inside a GeometryCollection', () => {
+		const collection: Geometry = { type: 'GeometryCollection', geometries: [crossing] };
+		const inner = (unwrapGeometry(collection) as { geometries: Geometry[] }).geometries[0];
+		expect(lngsOf(inner)).toEqual([179.2, 179.6, 179.95, 180.3, 180.7]);
+	});
+
+	it('never moves a point or a multi-point', () => {
+		const point: Geometry = { type: 'Point', coordinates: [-179.7, -17.1] };
+		const scattered: Geometry = {
+			type: 'MultiPoint',
+			// Two photos on opposite sides of the meridian are two places, not a
+			// path — moving either would put it at a coordinate it does not have.
+			coordinates: [
+				[179.95, -17],
+				[-179.7, -17.1],
+			],
+		};
+		expect(unwrapGeometry(point)).toBe(point);
+		expect(unwrapGeometry(scattered)).toBe(scattered);
 	});
 });
 
@@ -332,6 +462,63 @@ describe('trackFeatures', () => {
 			geometry: input[0].geometry,
 			properties: { amColor: '#f00', amIndex: 3 },
 		});
+	});
+
+	it('draws a crossing line unwrapped, with its endpoints on the drawn path', () => {
+		const input: Input = [
+			{
+				type: 'Feature',
+				properties: null,
+				geometry: {
+					type: 'LineString',
+					coordinates: [
+						[179.95, -17],
+						[-179.7, -17.1],
+					],
+				},
+			},
+		];
+		const before = JSON.stringify(input[0].geometry);
+		const out = trackFeatures(input, '#f00', 0);
+
+		expect((out[0].geometry as { coordinates: number[][] }).coordinates).toEqual([
+			[179.95, -17],
+			[180.3, -17.1],
+		]);
+		// The end marker follows the line rather than staying a world behind it.
+		expect(out[1].properties.amRole).toBe('start');
+		expect((out[1].geometry as { coordinates: number[] }).coordinates).toEqual([179.95, -17]);
+		expect(out[2].properties.amRole).toBe('end');
+		expect((out[2].geometry as { coordinates: number[] }).coordinates).toEqual([180.3, -17.1]);
+
+		// The parsed record is shared and memoized, and statistics measure from
+		// it, so drawing must not write through to it.
+		expect(JSON.stringify(input[0].geometry)).toBe(before);
+	});
+
+	it('gives the framing bounds the route rather than the globe', () => {
+		const input: Input = [
+			{
+				type: 'Feature',
+				properties: null,
+				geometry: {
+					type: 'LineString',
+					coordinates: [
+						[179.2, -16.8],
+						[179.95, -17],
+						[-179.3, -17.2],
+					],
+				},
+			},
+		];
+		const drawn = trackFeatures(input, '#f00', 0).map((feature) => feature.geometry);
+		const bounds = boundsOf(boundsMakingMap(), drawn) as unknown as { seen: number[][] };
+		const lngs = bounds.seen.map((position) => position[0]);
+
+		// 179.2 to 180.7 is the 1.5° the track actually covers; before unwrapping
+		// the same three positions asked the camera to fit 359.65°.
+		expect(Math.min(...lngs)).toBeCloseTo(179.2);
+		expect(Math.max(...lngs)).toBeCloseTo(180.7);
 	});
 
 	it('carries a named waypoint’s own name as amName', () => {

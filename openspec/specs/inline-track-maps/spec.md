@@ -143,7 +143,7 @@ Track color, weight, opacity, fit zoom, route-marker visibility, statistics, pro
 
 ### Requirement: Inline framing is one-shot and yields to the reader
 
-An inline map SHALL frame the data it draws once per distinct dataset, SHALL NOT re-frame when a refresh redraws the same data, and SHALL NOT re-frame after the reader has moved that map. Re-framing SHALL remain available when the embed's own track or photos change and the reader has not moved the map.
+An inline map SHALL frame the data it draws once per distinct dataset, SHALL NOT re-frame when a refresh redraws the same data, and SHALL NOT re-frame after the reader has moved that map. Re-framing SHALL remain available when the embed's own track or photos change and the reader has not moved the map. Where it does frame, it SHALL cover the ground the drawn data occupies, including data that crosses the 180th meridian.
 
 #### Scenario: An unrelated track file is written
 
@@ -164,6 +164,11 @@ An inline map SHALL frame the data it draws once per distinct dataset, SHALL NOT
 
 - **WHEN** an inline map the reader has not moved has its own track file edited
 - **THEN** the redrawn route is framed again
+
+#### Scenario: The embedded track crosses the meridian
+
+- **WHEN** an embedded track runs across the 180th meridian
+- **THEN** the inline map frames the route itself rather than the whole globe
 
 ### Requirement: The elevation profile is scaled to what it plots
 

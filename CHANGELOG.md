@@ -26,6 +26,24 @@ where they do not.
   photo standing inside one keeps its own click, and the map's context menu opens
   over an area exactly as it does anywhere else.
 
+### Fixed
+
+- **A route that crosses the 180th meridian is drawn where it is.** A file whose
+  positions run east past 180° and continue as negative longitudes was drawn as
+  a line straight back across every other continent, with its arrows pointing
+  the wrong way and its start and end markers pushed to opposite screen edges —
+  and the camera fitted the whole globe, because a 166 km track off Fiji was
+  measured as 359° wide. Such a route now draws as the one short path it is, and
+  automatic framing covers the route rather than the planet. The figures under an
+  inline map never had this problem and are unchanged.
+
+- **A coordinate read from a map panned across that meridian is in range.**
+  **Copy coordinates**, **New note here**, and the external-map links took the
+  longitude the camera had counted past 180°, so a place a note should record as
+  `-179.5` was handed over as `180.5`. All three now give the ordinary value.
+  This was reachable before by panning; the framing fix above makes the camera go
+  there on its own, so it is fixed alongside.
+
 ### Changed
 
 - **A KML polygon now draws as an area rather than an outline.** Its
