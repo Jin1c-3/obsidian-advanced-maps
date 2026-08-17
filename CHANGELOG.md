@@ -6,6 +6,35 @@ where they do not.
 
 ## [Unreleased]
 
+### Added
+
+- **Areas are drawn.** A GeoJSON or KML file can hold a region rather than a
+  route, and one used to reach the map already transformed, already counted for
+  framing, and then drawn by nothing at all — the camera flew to the area and
+  showed empty map, with no way to tell an unsupported shape from an empty file.
+  An area is now filled in its note's colour beneath everything else, its
+  boundary stroked at the track's own width and opacity, and its holes left
+  unfilled. It gets no direction arrows and no start or end markers, since a
+  region has no travel direction, and it adds nothing to distance, ascent or the
+  elevation profile.
+
+  Fill opacity follows the existing **Track opacity** setting at a fraction of
+  it, so a large area never hides the roads and labels underneath. There is no
+  new setting to find.
+
+  An area is the last thing a click or hover reaches. A marker, waypoint or
+  photo standing inside one keeps its own click, and the map's context menu opens
+  over an area exactly as it does anywhere else.
+
+### Changed
+
+- **A KML polygon now draws as an area rather than an outline.** Its
+  `<outerBoundaryIs>` becomes the region and each `<innerBoundaryIs>` becomes a
+  hole, where before every ring was read as a separate line and a hole was
+  indistinguishable from a boundary. A ring left open by its writer is closed; a
+  `<LinearRing>` that no polygon declares as a boundary keeps being read as a
+  line.
+
 ## [1.13.6]
 
 ### Added

@@ -190,9 +190,10 @@ function parseKmlCoordinates(raw: string): Position[] {
 }
 
 /**
- * KML: `<LineString>`, `<LinearRing>` (a `<Polygon>`'s boundary), `<Point>`,
- * and `<gx:Track>` — the only KML form that carries a timestamp. A geometry's
- * enclosing `<Placemark>` name, when it has one, rides along as `properties.name`.
+ * KML: `<Polygon>`, `<LineString>`, a `<LinearRing>` no polygon claimed,
+ * `<Point>`, and `<gx:Track>` — the only KML form that carries a timestamp. A
+ * geometry's enclosing `<Placemark>` name, when it has one, rides along as
+ * `properties.name`.
  */
 export function parseKml(text: string): ParsedTrack {
 	const doc = new DOMParser().parseFromString(text, 'application/xml');
@@ -232,7 +233,52 @@ export function parseKml(text: string): ParsedTrack {
 	};
 
 	for (const line of byLocalName(doc, 'LineString')) addLineLike(line);
-	for (const ring of byLocalName(doc, 'LinearRing')) addLineLike(ring);
+
+	// A polygon's rings are read through the polygon, not found loose: GeoJSON
+	// wants the outer ring first and each hole after it, and only
+	// <outerBoundaryIs>/<innerBoundaryIs> say which a ring is. Scanning for
+	// <LinearRing> alone cannot tell a hole from a boundary, so it draws both as
+	// lines. Rings claimed here are remembered so the loose-ring pass below
+	// does not draw them a second time.
+	const claimedRings = new Set<Element>();
+	for (const polygon of byLocalName(doc, 'Polygon')) {
+		const rings: Position[][] = [];
+		for (const boundary of ['outerBoundaryIs', 'innerBoundaryIs']) {
+			for (const holder of byLocalName(polygon, boundary)) {
+				for (const ring of byLocalName(holder, 'LinearRing')) {
+					claimedRings.add(ring);
+					const coordEl = firstByLocalName(ring, 'coordinates');
+					const positions = coordEl ? parseKmlCoordinates(coordEl.textContent ?? '') : [];
+					// A ring needs three distinct corners to enclose anything, and
+					// the closing position is a repeat rather than a corner — so
+					// `A B A` is two corners, not three, and is dropped rather than
+					// drawn as a degenerate area. A ring the file left open is
+					// closed here, because GeoJSON requires that repeat and KML
+					// writers omit it.
+					const first = positions[0];
+					const last = positions[positions.length - 1];
+					const closed = positions.length > 1 && first[0] === last[0] && first[1] === last[1];
+					if ((closed ? positions.length - 1 : positions.length) < 3) continue;
+					if (!closed) positions.push(first.slice());
+					rings.push(positions);
+				}
+			}
+		}
+		// A polygon whose outer boundary was unusable has no interior to fill,
+		// whatever its holes claimed.
+		if (rings.length === 0) continue;
+		features.push({
+			type: 'Feature',
+			properties: buildProperties(placemarkName(polygon), undefined),
+			geometry: { type: 'Polygon', coordinates: rings },
+		});
+	}
+
+	// A <LinearRing> is legal outside a <Polygon>, and one nothing declared as a
+	// boundary has no interior to claim, so it stays a line.
+	for (const ring of byLocalName(doc, 'LinearRing')) {
+		if (!claimedRings.has(ring)) addLineLike(ring);
+	}
 
 	for (const point of byLocalName(doc, 'Point')) {
 		const coordEl = firstByLocalName(point, 'coordinates');

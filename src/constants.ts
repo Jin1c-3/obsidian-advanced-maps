@@ -54,6 +54,9 @@ export const PHOTO_INDEX_TOUCH_MS = 86400000;
  * "marker-pins" on the "markers" source; tracks go in below it so a pin sitting
  * on its own track stays clickable. */
 export const SRC = 'advanced-maps-tracks';
+/** Polygon fills; their boundaries are stroked by LINE_LAYER, which admits
+ *  areas too. Bottom of the owned group, so every other feature draws over it. */
+export const AREA_LAYER = 'advanced-maps-track-areas';
 export const LINE_LAYER = 'advanced-maps-track-lines';
 export const POINT_LAYER = 'advanced-maps-track-points';
 /** Start/end pins and direction arrows sharing the track source. */
@@ -117,3 +120,14 @@ export const TRACK_KNOBS = {
 } as const;
 
 export type TrackKnob = keyof typeof TRACK_KNOBS;
+
+/**
+ * Fraction of the resolved track opacity an area's fill draws at; unitless.
+ *
+ * A fill and its own boundary are one object to a reader, so this follows
+ * `trackOpacity` rather than being configured separately. It is a fraction and
+ * not a fixed value so that "more opaque tracks means more opaque areas" stays
+ * true; at the default 85% it lands the fill near 20%, which is what leaves the
+ * roads and labels under a large area readable.
+ */
+export const FILL_OPACITY_RATIO = 0.25;

@@ -9,7 +9,7 @@ Turn Obsidian's native **Maps** view into a photo atlas, a route viewer, and a
 map of the notes connected to the one you are reading.
 
 Advanced Maps reads GPS from whole photo folders, draws GPX/GeoJSON/KML/TCX
-routes, and creates an **Around** view from ordinary Obsidian links. It extends
+routes and areas, and creates an **Around** view from ordinary Obsidian links. It extends
 the first-party Maps view instead of replacing it: MapLibre, backgrounds,
 markers, popups, and every built-in map option remain native. No Leaflet, no
 bundled renderer, no runtime dependencies.
@@ -269,6 +269,14 @@ colour. Routes get distinct start and end markers, direction arrows, and named
 waypoints. **Show track markers** turns these extras off.
 
 ![A GPX route with a green start, red ring end, and arrows showing direction](docs/track-markers.png)
+
+GeoJSON and KML can hold an area rather than a route. An area is filled in the
+same note colour and outlined at the same width, and a hole stays a hole. It gets
+no direction arrows and no start or end markers, it adds nothing to the
+statistics below an inline map, and it is the last thing a click reaches — a
+marker, waypoint or photo standing inside an area keeps its own click.
+
+![Areas read from GeoJSON and KML: filled regions in their note's colour, two with unfilled holes, and a route with a green start, red ring end and direction arrows crossing one of them](docs/area-fill.png)
 
 An inline `![[track.gpx]]` is a live map with distance, ascent and descent,
 elevation range, elapsed and moving time, pace, and an elevation profile.

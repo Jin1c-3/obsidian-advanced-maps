@@ -102,6 +102,40 @@ describe('trackStats — empty and degenerate input', () => {
 		expect(s.points).toBe(2);
 	});
 
+	it('reports nothing at all for a file whose only geometry is an area', () => {
+		const s = trackStats([
+			{
+				type: 'Feature',
+				properties: null,
+				geometry: {
+					type: 'Polygon',
+					coordinates: [
+						[
+							[0, 0],
+							[1, 0],
+							[1, 1],
+							[0, 0],
+						],
+					],
+				},
+			},
+		]);
+		// This exact shape — zero distance with no extra to show — is what makes
+		// the inline embed drop its statistics bar and profile rather than
+		// reporting a zero-length route under an area it just drew.
+		expect(s.points).toBe(0);
+		expect(s.distance).toBe(0);
+		expect([s.ascent, s.descent, s.minEle, s.maxEle, s.duration, s.movingTime, s.speed]).toEqual([
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		]);
+	});
+
 	it('counts a waypoint as a position but not as distance', () => {
 		const s = trackStats([
 			point([116.4, 39.9]),

@@ -1,8 +1,10 @@
 import { setIcon } from 'obsidian';
 import type { FeatureCollection } from 'geojson';
 import {
+	AREA_LAYER,
 	ARROW_LAYER,
 	ENDPOINT_LAYER,
+	FILL_OPACITY_RATIO,
 	LINE_LAYER,
 	MARKER_LAYER,
 	PHOTO_DOT_LAYER,
@@ -125,11 +127,36 @@ const START_ICON = 'advanced-maps-track-start';
 const END_ICON = 'advanced-maps-track-end';
 const ARROW_ICON = 'advanced-maps-track-arrow';
 
+const areaLayerSpec = {
+	id: AREA_LAYER,
+	type: 'fill',
+	source: SRC,
+	filter: ['any', ['==', ['geometry-type'], 'Polygon'], ['==', ['geometry-type'], 'MultiPolygon']],
+	paint: {
+		// An area belongs to a note like every other drawn feature.
+		'fill-color': ['get', 'amColor'],
+		// Placeholder; applyTrackPaint() derives the real value from trackOpacity.
+		'fill-opacity': (TRACK_KNOBS.trackOpacity.def / 100) * FILL_OPACITY_RATIO,
+		// The boundary is LINE_LAYER's job, so no fill-outline-color here: it
+		// takes no width and would draw a second 1px edge under the real one.
+	},
+};
+
 const lineLayerSpec = {
 	id: LINE_LAYER,
 	type: 'line',
 	source: SRC,
-	filter: ['any', ['==', ['geometry-type'], 'LineString'], ['==', ['geometry-type'], 'MultiLineString']],
+	// Areas too: a `line` layer strokes a polygon's rings as closed lines, so a
+	// boundary picks up the track's colour, width and opacity with no second
+	// paint path. `arrowLayerSpec` deliberately does not follow — an area has no
+	// travel direction for arrows to state.
+	filter: [
+		'any',
+		['==', ['geometry-type'], 'LineString'],
+		['==', ['geometry-type'], 'MultiLineString'],
+		['==', ['geometry-type'], 'Polygon'],
+		['==', ['geometry-type'], 'MultiPolygon'],
+	],
 	layout: { 'line-join': 'round', 'line-cap': 'round' },
 	paint: { 'line-color': ['get', 'amColor'], 'line-width': 4, 'line-opacity': 0.85 },
 };
@@ -322,6 +349,8 @@ function ensureTrackIcons(map: MapLibreMap): void {
 export function addTrackLayers(map: MapLibreMap): void {
 	ensureTrackIcons(map);
 	const before = map.getLayer(MARKER_LAYER) ? MARKER_LAYER : undefined;
+	// Areas first: one can cover the whole viewport, so everything else draws over it.
+	map.addLayer(areaLayerSpec, before);
 	map.addLayer(lineLayerSpec, before);
 	map.addLayer(arrowLayerSpec, before);
 	map.addLayer(pointLayerSpec, before);
@@ -333,7 +362,7 @@ export function addTrackLayers(map: MapLibreMap): void {
 
 /**
  * Put a collection on the map: update the source if it is already there,
- * otherwise create it and add all four layers.
+ * otherwise create it and add every owned layer.
  *
  * Answers false when the style was swapped out from under the caller. That is
  * not an error — `style.load` fires next and the caller draws again — which is
@@ -350,7 +379,7 @@ export function drawTracks(map: MapLibreMap, data: FeatureCollection): boolean {
 		return true;
 	} catch (e) {
 		// `addLayer` can lose a race with a style transition after addSource (or
-		// after only some of the six layers). Leaving that prefix behind makes the
+		// after only some of the seven layers). Leaving that prefix behind makes the
 		// next call take the setData-only branch forever, so the missing layers can
 		// never recover. Roll the whole owned group back to one known state; the
 		// next style event/sync then rebuilds it from scratch.
@@ -368,7 +397,15 @@ export function fitTo(map: MapLibreMap, bounds: LngLatBounds, padding: number, m
 export function removeTrackLayers(map: MapLibreMap): void {
 	if (!map.getStyle) return;
 	try {
-		for (const id of [LINE_LAYER, ARROW_LAYER, POINT_LAYER, ENDPOINT_LAYER, PHOTO_DOT_LAYER, PHOTO_LAYER]) {
+		for (const id of [
+			AREA_LAYER,
+			LINE_LAYER,
+			ARROW_LAYER,
+			POINT_LAYER,
+			ENDPOINT_LAYER,
+			PHOTO_DOT_LAYER,
+			PHOTO_LAYER,
+		]) {
 			if (map.getLayer(id)) map.removeLayer(id);
 		}
 		if (map.getSource(SRC)) map.removeSource(SRC);
@@ -393,6 +430,11 @@ export function applyTrackPaint(
 	showMarkers: boolean,
 	photoThumbnails: boolean
 ): void {
+	if (map.getLayer(AREA_LAYER)) {
+		// A fill at the line's own opacity hides the roads and labels a reader
+		// needs to place the area, so it follows that setting at a fraction of it.
+		map.setPaintProperty(AREA_LAYER, 'fill-opacity', opacity * FILL_OPACITY_RATIO);
+	}
 	if (map.getLayer(LINE_LAYER)) {
 		map.setPaintProperty(LINE_LAYER, 'line-width', weight);
 		map.setPaintProperty(LINE_LAYER, 'line-opacity', opacity);

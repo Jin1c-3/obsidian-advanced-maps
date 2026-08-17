@@ -185,6 +185,23 @@ describe('projectGeometry', () => {
 		expect(moved.coordinates.slice(2)).toEqual([43.5, 99]);
 	});
 
+	it('keeps a Polygon’s ring order, so a hole stays a hole', () => {
+		const outer = [TIANANMEN.slice(), SHANGHAI.slice(), TIANANMEN.slice()];
+		const hole = [SHANGHAI.slice(), TIANANMEN.slice(), SHANGHAI.slice()];
+		const moved = projectGeometry({ type: 'Polygon', coordinates: [outer, hole] }, 'gcj02');
+		// GeoJSON reads the first ring as the boundary and every later one as a
+		// hole in it, so a transform that reordered rings would fill the hole
+		// and punch out the area.
+		expect(moved.coordinates).toHaveLength(2);
+		expect(moved.coordinates[0][0]).toEqual(wgs2gcj(...TIANANMEN));
+		expect(moved.coordinates[1][0]).toEqual(wgs2gcj(...SHANGHAI));
+
+		const bd09 = projectGeometry({ type: 'Polygon', coordinates: [outer, hole] }, 'bd09');
+		expect(bd09.coordinates).toHaveLength(2);
+		expect(bd09.coordinates[0][0]).not.toEqual(moved.coordinates[0][0]);
+		expect(bd09.coordinates[1]).toHaveLength(hole.length);
+	});
+
 	it('recurses into MultiPolygon rings and GeometryCollections', () => {
 		const polygon = projectGeometry(
 			{ type: 'MultiPolygon', coordinates: [[[TIANANMEN.slice(), SHANGHAI.slice(), TIANANMEN.slice()]]] },

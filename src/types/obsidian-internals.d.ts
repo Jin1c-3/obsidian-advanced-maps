@@ -360,6 +360,21 @@ export interface MapLibreMap {
 	/** Coordinate to CSS pixels inside the map container. Public MapLibre API;
 	 * optional only because every undocumented runtime edge is shape-checked. */
 	project?(coordinate: [number, number] | LngLat): { x: number; y: number };
+	/**
+	 * What is drawn at a pixel, restricted to the named layers. Public MapLibre
+	 * API, optional for the same reason as the rest of this interface.
+	 *
+	 * Used to ask whether a *native* marker holds the pointer. Measured against
+	 * a live map: the native view registers its own `marker-pins` handlers after
+	 * this plugin's layers are bound, so MapLibre's registration-order delivery
+	 * hands an overlapping click to the plugin first. Registration order alone
+	 * therefore cannot make an owned layer lose to a pin; asking what is under
+	 * the pointer can.
+	 */
+	queryRenderedFeatures?(
+		point: { x: number; y: number } | [number, number],
+		options?: { layers?: string[] }
+	): unknown[];
 	/** Pixel back to a coordinate — in tile space, like everything the map holds. */
 	unproject(point: [number, number]): LngLat;
 	getCanvas(): HTMLCanvasElement;
