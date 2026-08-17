@@ -21,16 +21,16 @@ Base or Around map without creating another map in the note.
 topic. Open one to reach its rows; the entry states what it is set to, so the
 pane answers the common questions without being opened.
 
-| Entry                | Holds                                                                                                     |
-| -------------------- | --------------------------------------------------------------------------------------------------------- |
-| Coordinate system    | The default datum for inline maps and for views that set none                                             |
-| Open in map          | Base file, view name, target, coordinate and place properties, zoom, follow, Around view name, menu label |
-| Open in external map | The built-in map apps and your own                                                                        |
-| Place search         | Search source and, for Amap, where its key is kept                                                        |
-| Location             | Device location and the automatic coordinate fill                                                         |
-| Pins                 | How the notes' own markers behave                                                                         |
-| Tracks               | Colour, width, opacity, fit zoom, inline height, statistics, profile, markers, property prefix            |
-| Photos               | Photo pins, thumbnails, photo datum, and the photo index                                                  |
+| Entry                | Holds                                                                                                                                                    |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Coordinate system    | The default datum for inline maps and for views that set none                                                                                            |
+| Open in map          | Base file, view name, target, coordinate and place properties, zoom, follow, Around view name, menu label                                                |
+| Open in external map | The built-in map apps and your own                                                                                                                       |
+| Place search         | Search source and, for Amap, where its key is kept                                                                                                       |
+| Location             | Device location and the automatic coordinate fill                                                                                                        |
+| Pins                 | How the notes' own markers behave                                                                                                                        |
+| Tracks               | Colour, width, opacity, fit zoom, inline height, statistics, profile, markers — and **Track properties**, which names what the statistics command writes |
+| Photos               | Photo pins, thumbnails, photo datum, and the photo index                                                                                                 |
 
 Anything named in this guide can also be found by typing it into the settings
 search, which reaches rows inside these pages the same way it reaches any other.

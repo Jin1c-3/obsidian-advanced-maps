@@ -12,7 +12,9 @@ import {
 	localStamp,
 	nearestByDistance,
 	nearestByPosition,
+	duplicateStatsName,
 	statsProperties,
+	statsPropertyName,
 	trackStats,
 	type StatsProperty,
 	type TrackStats,
@@ -698,6 +700,84 @@ describe('statsProperties', () => {
 		expect(values['track-distance-km']).toBe(0);
 		expect(values['track-speed-kmh']).toBe(0);
 		expect(values['track-ascent-m']).toBe(0);
+	});
+
+	it('is named exactly as before when no figure has a name of its own', () => {
+		const named = statsProperties(watch, 'track', { distance: '', ascent: '  ', start: undefined });
+		expect(named.map(({ key }) => key)).toEqual(statsProperties(watch, 'track').map(({ key }) => key));
+	});
+
+	it('uses a figure’s own name as the whole property name, with no prefix in front', () => {
+		const named = byKey(statsProperties(watch, 'track', { distance: '距离' }));
+		expect(named['距离']).toBe(13.62);
+		expect(named['track-distance-km']).toBeUndefined();
+		// The other eight are untouched by one figure being renamed.
+		expect(named['track-ascent-m']).toBe(512);
+	});
+
+	it('trims a name as typed, and treats a whitespace-only one as no name at all', () => {
+		expect(byKey(statsProperties(watch, 'track', { distance: '  距离  ' }))['距离']).toBe(13.62);
+		expect(byKey(statsProperties(watch, 'track', { distance: ' \t ' }))['track-distance-km']).toBe(13.62);
+	});
+
+	it('lets a name ignore the prefix even when the prefix is set to something else', () => {
+		const named = statsProperties(watch, 'ride', { start: 'departed', speed: 'pace' });
+		expect(named.map(({ key }) => key)).toEqual([
+			'ride-distance-km',
+			'ride-ascent-m',
+			'ride-descent-m',
+			'ride-lowest-m',
+			'ride-highest-m',
+			'ride-duration-min',
+			'ride-moving-min',
+			'pace',
+			'departed',
+		]);
+	});
+
+	it('carries which figure each property came from, so a clash can be named', () => {
+		expect(statsProperties(watch, 'track')[0].figure).toBe('distance');
+		expect(statsProperties(watch, 'track').at(-1)?.figure).toBe('start');
+	});
+});
+
+describe('duplicateStatsName', () => {
+	const watch = measured({ distance: 13618.4, ascent: 512.4, descent: 498.6 });
+
+	it('is null when every figure resolves to a name of its own', () => {
+		expect(duplicateStatsName(statsProperties(watch, 'track'))).toBeNull();
+		expect(duplicateStatsName(statsProperties(watch, 'track', { distance: '距离' }))).toBeNull();
+	});
+
+	it('names the property two figures were both given', () => {
+		const clash = duplicateStatsName(statsProperties(watch, 'track', { ascent: 'climb', descent: 'climb' }));
+		expect(clash?.key).toBe('climb');
+		expect(clash?.figures).toEqual(['ascent', 'descent']);
+	});
+
+	it('catches a custom name that lands on another figure’s default', () => {
+		const clash = duplicateStatsName(statsProperties(watch, 'track', { descent: 'track-ascent-m' }));
+		expect(clash?.key).toBe('track-ascent-m');
+		expect(clash?.figures).toEqual(['ascent', 'descent']);
+	});
+
+	it('reports the first pair rather than every pair, since one is enough to refuse', () => {
+		const clash = duplicateStatsName(
+			statsProperties(watch, 'track', { ascent: 'same', descent: 'same', speed: 'also', moving: 'also' })
+		);
+		expect(clash?.figures).toEqual(['ascent', 'descent']);
+	});
+});
+
+describe('statsPropertyName', () => {
+	it('is the prefixed default for a figure with no name', () => {
+		expect(statsPropertyName('duration', 'track')).toBe('track-duration-min');
+		expect(statsPropertyName('start', 'ride')).toBe('ride-start');
+	});
+
+	it('is the name given, whatever the prefix is', () => {
+		expect(statsPropertyName('duration', 'track', { duration: '用时' })).toBe('用时');
+		expect(statsPropertyName('duration', '', { duration: '用时' })).toBe('用时');
 	});
 });
 

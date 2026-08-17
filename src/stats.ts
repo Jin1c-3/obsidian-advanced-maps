@@ -243,11 +243,66 @@ export function hasStats(stats: TrackStats): boolean {
 	);
 }
 
+/**
+ * The nine figures a note can carry, in the order they are written, each with
+ * the suffix its default name is built from.
+ *
+ * The unit is part of the default name — `distance-km`, not `distance` — because
+ * a bare number in frontmatter is otherwise unlabelled forever, and a column
+ * header is the one place the unit stays beside the value. `lowest`/`highest`
+ * rather than `min`/`max`: `min` next to `duration-min` would read as minutes in
+ * one name and minimum in the other.
+ *
+ * Not localized. These are property names in a vault, not labels on screen: a
+ * default that followed the interface language would rename every reader's
+ * columns the day they switched languages.
+ */
+export const STATS_SUFFIXES = {
+	distance: 'distance-km',
+	ascent: 'ascent-m',
+	descent: 'descent-m',
+	lowest: 'lowest-m',
+	highest: 'highest-m',
+	duration: 'duration-min',
+	moving: 'moving-min',
+	speed: 'speed-kmh',
+	start: 'start',
+} as const;
+
+export type StatsFigure = keyof typeof STATS_SUFFIXES;
+
+/** In writing order, which is the order the properties are named in. */
+export const STATS_FIGURES = Object.keys(STATS_SUFFIXES) as StatsFigure[];
+
+/** A name per figure; an empty one means "no answer", not "a nameless property". */
+export type StatsNames = Partial<Record<StatsFigure, string>>;
+
 /** One note property derived from a track's figures; `null` for a figure the file never recorded. */
 export interface StatsProperty {
-	/** The full property name, prefix included. */
+	/** Which figure this is, so a caller can say what clashed by name. */
+	figure: StatsFigure;
+	/** The full property name: the figure's own configured name, or the prefixed default. */
 	key: string;
 	value: number | string | null;
+}
+
+/**
+ * What a figure's property is called: the name configured for it, or the
+ * prefixed default when none is.
+ *
+ * A configured name replaces the whole name rather than being suffixed onto the
+ * prefix. The prefix exists to keep a generated family of names away from the
+ * reader's own properties; a name the reader typed needs no such fence, and
+ * putting one in front of it produces exactly what they were avoiding —
+ * `track-距离` when they asked for `距离`.
+ */
+export function statsPropertyName(figure: StatsFigure, prefix: string, names: StatsNames = {}): string {
+	const chosen = (names[figure] ?? '').trim();
+	if (chosen !== '') return chosen;
+	const head = normalizePrefix(prefix);
+	// A prefix cleared to nothing still has to produce usable names rather than
+	// ones that start with the separator.
+	return head === '' ? STATS_SUFFIXES[figure] : `${head}-${STATS_SUFFIXES[figure]}`;
 }
 
 /** Rounded to what the source can support, and never `NaN` — the same guard the formatters above apply. */
@@ -286,36 +341,44 @@ function normalizePrefix(prefix: string): string {
 }
 
 /**
- * A track's figures as note properties, in a fixed order.
- *
- * The unit is part of the name — `distance-km`, not `distance` — because a bare
- * number in frontmatter is otherwise unlabelled forever, and a column header is
- * the one place the unit stays beside the value. `lowest`/`highest` rather than
- * `min`/`max`: `min` next to `duration-min` would read as minutes in one name
- * and minimum in the other.
+ * A track's figures as note properties, in a fixed order, each under the name
+ * `statsPropertyName` resolves for it.
  *
  * Every entry is returned every time. A `null` value means the file recorded
  * nothing behind that figure, and what that does to an existing property is the
  * caller's business rather than this function's.
  */
-export function statsProperties(stats: TrackStats, prefix: string): StatsProperty[] {
-	const head = normalizePrefix(prefix);
-	// A prefix cleared to nothing still has to produce usable names rather than
-	// ones that start with the separator.
-	const name = (suffix: string) => (head === '' ? suffix : `${head}-${suffix}`);
+export function statsProperties(stats: TrackStats, prefix: string, names: StatsNames = {}): StatsProperty[] {
+	const name = (figure: StatsFigure) => statsPropertyName(figure, prefix, names);
 	const climb = (value: number | null) => (value === null ? null : metric(value, 0));
 	const minutes = (ms: number | null) => (ms === null ? null : metric(ms / 60000, 0));
-	return [
-		{ key: name('distance-km'), value: metric(stats.distance / 1000, 2) },
-		{ key: name('ascent-m'), value: climb(stats.ascent) },
-		{ key: name('descent-m'), value: climb(stats.descent) },
-		{ key: name('lowest-m'), value: climb(stats.minEle) },
-		{ key: name('highest-m'), value: climb(stats.maxEle) },
-		{ key: name('duration-min'), value: minutes(stats.duration) },
-		{ key: name('moving-min'), value: minutes(stats.movingTime) },
-		{ key: name('speed-kmh'), value: stats.speed === null ? null : metric((stats.speed * 3600) / 1000, 1) },
-		{ key: name('start'), value: stats.start === null ? null : localStamp(stats.start) },
-	];
+	const values: Record<StatsFigure, number | string | null> = {
+		distance: metric(stats.distance / 1000, 2),
+		ascent: climb(stats.ascent),
+		descent: climb(stats.descent),
+		lowest: climb(stats.minEle),
+		highest: climb(stats.maxEle),
+		duration: minutes(stats.duration),
+		moving: minutes(stats.movingTime),
+		speed: stats.speed === null ? null : metric((stats.speed * 3600) / 1000, 1),
+		start: stats.start === null ? null : localStamp(stats.start),
+	};
+	return STATS_FIGURES.map((figure) => ({ figure, key: name(figure), value: values[figure] }));
+}
+
+/** The first two figures configured to one property name, or null when every name is its own. */
+export function duplicateStatsName(
+	properties: StatsProperty[]
+): { key: string; figures: [StatsFigure, StatsFigure] } | null {
+	const seen = new Map<string, StatsFigure>();
+	for (const { figure, key } of properties) {
+		const first = seen.get(key);
+		// Refused rather than de-duplicated: a note whose ascent silently
+		// overwrites its distance is worse than a command that does nothing.
+		if (first !== undefined) return { key, figures: [first, figure] };
+		seen.set(key, figure);
+	}
+	return null;
 }
 
 /** One resampled point of an elevation profile — see `elevationProfile`. */

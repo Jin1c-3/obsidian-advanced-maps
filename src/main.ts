@@ -34,7 +34,7 @@ import { PhotoIndex, pluginIndexIO } from './photo-index';
 import { nativeBehind, ownedBy, stamp, type RegistrationOwner } from './registration';
 import { PlaceSearchModal } from './search-modal';
 import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMapsSettings } from './settings';
-import { formatDistance, hasStats, statsProperties, trackStats } from './stats';
+import { duplicateStatsName, formatDistance, hasStats, statsProperties, trackStats } from './stats';
 import { TrackCache, type TrackRecord } from './track-cache';
 import { TrackLayer, type FocusTarget } from './track-layer';
 import { appendTrackOptions } from './view-options';
@@ -1094,7 +1094,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 			return;
 		}
 
-		const properties = statsProperties(stats, this.settings.statsPrefix);
+		const properties = statsProperties(stats, this.settings.statsPrefix, this.settings.statsNames);
 		// Said before anything is written, for the reason `reverseGeocodeCurrent`
 		// says it: the note's coordinate replaced by a distance is silent, and the
 		// pin moving is the only symptom.
@@ -1105,6 +1105,14 @@ export default class AdvancedMapsPlugin extends Plugin {
 			new Notice(t('notice.stats.propertyClash', { property: clash.key }));
 			return;
 		}
+		// And the clash a per-figure name makes possible: two figures under one
+		// name would write twice into the same property, leaving whichever came
+		// last and no sign of the other.
+		const duplicate = duplicateStatsName(properties);
+		if (duplicate) {
+			new Notice(t('notice.stats.nameClash', { property: duplicate.key }));
+			return;
+		}
 
 		let written = 0;
 		try {
@@ -1112,8 +1120,9 @@ export default class AdvancedMapsPlugin extends Plugin {
 				for (const { key, value } of properties) {
 					// A figure this file no longer records leaves no property behind.
 					// A stale number still matches a filter, which is worse than an
-					// absent one — and every key here is under the configured prefix,
-					// so nothing the reader keeps by hand is in reach.
+					// absent one — and every key here is one of the nine names these
+					// figures resolve to, which is the whole of what this command
+					// reaches: nothing else the reader keeps is in reach.
 					if (value === null) {
 						delete frontmatter[key];
 						continue;

@@ -6,6 +6,24 @@ where they do not.
 
 ## [Unreleased]
 
+### Added
+
+- **You can name the statistics columns yourself.** **Write track statistics to
+  properties** took its names from one prefix, so a vault written in Chinese got
+  a column headed `track-distance-km` beside columns called `日期` and `地点` —
+  and renaming the property by hand only lasted until the command ran again.
+
+  Settings → **Tracks** → **Track properties** now holds the prefix and one box
+  per figure. What you type in a box is the whole property name, prefix left out:
+  `距离`, not `track-距离`. Leave a box empty — as all nine are by default — and
+  that figure keeps the prefixed name the box shows you, so nothing changes for a
+  vault that ignores this. The command still touches only the nine names it
+  resolves to, and now refuses when two figures would share one name, the same
+  way it already refuses to overwrite the coordinate or place property.
+
+  Renaming a figure does not rename what is already in your notes: the property
+  written under the old name stays until you remove it.
+
 ### Changed
 
 - **The settings are arranged into pages.** The pane was one scroll of thirty-odd

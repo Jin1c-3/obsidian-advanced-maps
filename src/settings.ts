@@ -22,6 +22,7 @@ import {
 	type CustomDatum,
 	type CustomMap,
 } from './maplinks';
+import { STATS_FIGURES, statsPropertyName, type StatsFigure } from './stats';
 import type AdvancedMapsPlugin from './main';
 
 /** A tab has writable native config; an embedded modal's option changes are transient. */
@@ -43,6 +44,10 @@ export interface AdvancedMapsSettings {
 	 *  properties — `track` gives `track-distance-km` and its siblings. Every
 	 *  property the command reads, writes or removes is under this prefix. */
 	statsPrefix: string;
+	/** A property name per figure, overriding the prefixed default. An empty
+	 *  string is "no answer", not a nameless property: the figure keeps
+	 *  `prefix-suffix`, which is what every figure is called by default. */
+	statsNames: Record<StatsFigure, string>;
 	/** Start/end pins, direction arrows, and — inline only — a waypoint's name on hover. */
 	trackMarkers: boolean;
 	/** A linked photo's own EXIF coordinate, drawn the same way a one-point track is. */
@@ -99,6 +104,9 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	trackStats: true,
 	elevationProfile: true,
 	statsPrefix: 'track',
+	// Nine empty strings: every figure keeps its prefixed default, so a vault
+	// that never opens the page is named exactly as it was before this existed.
+	statsNames: Object.fromEntries(STATS_FIGURES.map((figure) => [figure, ''])) as Record<StatsFigure, string>,
 	trackMarkers: true,
 	showPhotos: true,
 	photoThumbnails: true,
@@ -204,12 +212,31 @@ export function fallsBackToDefault(key: string): key is PlaceholderDefaultKey {
 	return (PLACEHOLDER_DEFAULT_KEYS as readonly string[]).includes(key);
 }
 
-/** The pane's topics, each a page reached from its root. */
-type PageKey = 'coord' | 'open' | 'external' | 'search' | 'locate' | 'pins' | 'tracks' | 'photos';
+/** The pane's topics, each a page reached from its root; `trackProps` nests inside `tracks`. */
+type PageKey = 'coord' | 'open' | 'external' | 'search' | 'locate' | 'pins' | 'tracks' | 'photos' | 'trackProps';
 
 /** Indexed entry keys keep list rows on the declarative settings read/write seam. */
 type EntryKey = `externalMaps.${number}.on` | `customMaps.${number}.${'name' | 'url' | 'datum'}`;
-type ControlKey = Key | EntryKey;
+/** The same seam for a fixed key set rather than an index: one name per figure. */
+type FigureKey = `statsNames.${StatsFigure}`;
+type ControlKey = Key | EntryKey | FigureKey;
+
+/** The figure a `statsNames.<figure>` control names, and null for anything else. */
+function figureKey(key: string): StatsFigure | null {
+	const figure = key.startsWith('statsNames.') ? key.slice('statsNames.'.length) : '';
+	return (STATS_FIGURES as readonly string[]).includes(figure) ? (figure as StatsFigure) : null;
+}
+
+/** Every figure's name as the reader has them, defaulting one a stored file predates. */
+function storedNames(value: unknown): Record<StatsFigure, string> {
+	const stored = (value ?? {}) as Record<string, unknown>;
+	const names = {} as Record<StatsFigure, string>;
+	for (const figure of STATS_FIGURES) {
+		const name = stored[figure];
+		names[figure] = typeof name === 'string' ? name.trim() : '';
+	}
+	return names;
+}
 
 type EntryPath =
 	| { list: 'externalMaps'; index: number; field: 'on' }
@@ -360,6 +387,37 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	/** A toggle's state as an entry can state it, since a page shows no control of its own. */
 	private state(on: boolean): string {
 		return t(on ? 'settings.state.on' : 'settings.state.off');
+	}
+
+	/**
+	 * The prefix and the nine names it is the default for, together on one page
+	 * inside Tracks — the prefix beside what overrides it.
+	 *
+	 * Each name's placeholder is the default that figure would be written under,
+	 * so an empty box states what leaving it empty means. It is read at render:
+	 * typing in the prefix box above does not restate the nine placeholders until
+	 * the page is drawn again, because the re-render that would restate them
+	 * takes the caret out of the box being typed in — the same reason
+	 * `coordsProperty` patches its mentions in place instead.
+	 */
+	private trackPropertiesPage(): SettingDefinitionItem<ControlKey> {
+		const { statsPrefix, statsNames } = this.plugin.settings;
+		return this.page(
+			'trackProps',
+			[
+				this.text('settings.tracks.statsPrefix.name', 'settings.tracks.statsPrefix.desc', 'statsPrefix', {
+					placeholder: DEFAULT_SETTINGS.statsPrefix,
+				}),
+				...STATS_FIGURES.map((figure) =>
+					this.text(`settings.trackProps.${figure}.name`, undefined, `statsNames.${figure}`, {
+						placeholder: statsPropertyName(figure, statsPrefix),
+					})
+				),
+			],
+			// The prefix, which is what the page is set to for anyone who has not
+			// renamed a figure — and the answer to "what are my columns called".
+			() => statsPropertyName('distance', statsPrefix, statsNames)
+		);
 	}
 
 	private text(
@@ -767,12 +825,10 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				this.toggle('settings.tracks.stats.name', 'settings.tracks.stats.desc', 'trackStats'),
 				this.toggle('settings.tracks.profile.name', 'settings.tracks.profile.desc', 'elevationProfile'),
 				this.toggle('settings.tracks.markers.name', 'settings.tracks.markers.desc', 'trackMarkers'),
-				// Last in the group, and the only row here that changes nothing already
-				// drawn: it names the properties a command writes, so it is deliberately
-				// absent from TRACK_REFRESH_KEYS above.
-				this.text('settings.tracks.statsPrefix.name', 'settings.tracks.statsPrefix.desc', 'statsPrefix', {
-					placeholder: DEFAULT_SETTINGS.statsPrefix,
-				}),
+				// A page of its own inside this one, and the only rows about tracks
+				// that change nothing already drawn: they name what a command
+				// writes, which is why none of them is on TRACK_REFRESH_KEYS above.
+				this.trackPropertiesPage(),
 			]),
 
 			// Photos have distinct privacy/context text from deliberate track attachments.
@@ -802,6 +858,8 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 
 	/** A list row reads its value out of the entry its key names. */
 	override getControlValue(key: string): unknown {
+		const figure = figureKey(key);
+		if (figure) return this.plugin.settings.statsNames[figure] ?? '';
 		const path = entryPath(key);
 		if (!path) return super.getControlValue(key);
 		if (path.list === 'externalMaps') return this.builtins()[path.index]?.on ?? true;
@@ -830,6 +888,16 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	override async setControlValue(key: string, value: unknown): Promise<void> {
+		const figure = figureKey(key);
+		if (figure) {
+			// One figure's box writes back a copy of the whole record, the way a
+			// list row writes back a copy of its whole list. An emptied box stores
+			// an empty string, which is what restores the prefixed default name.
+			const names = storedNames(this.plugin.settings.statsNames);
+			names[figure] = typeof value === 'string' ? value.trim() : '';
+			await super.setControlValue('statsNames', names);
+			return;
+		}
 		const path = entryPath(key);
 		if (path) {
 			await this.writeEntry(path, value);
