@@ -21,11 +21,11 @@ their own EXIF, and the line is a `.gpx` a note links to. 16,273 results._
 
 ## Three workflows
 
-| Use Advanced Maps as… | Put this in the Base                                                             | What appears                                                            |
-| --------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| **A map photo album** | A photo folder, including a link to an external album                            | Every photo with readable GPS, at its EXIF location                     |
-| **A route viewer**    | Notes linked to `.gpx`, `.geojson`, `.kml`, or `.tcx` files—or those files alone | Routes, areas, markers, photos, statistics, and elevation               |
-| **An Around map**     | Your place-note collection                                                       | The current note, its links and backlinks, plus their tracks and photos |
+| Use Advanced Maps as… | Put this in the Base                                                             | What appears                                                                 |
+| --------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **A map photo album** | A photo folder, including a link to an external album                            | Every photo with readable GPS, at its EXIF location                          |
+| **A route viewer**    | Notes linked to `.gpx`, `.geojson`, `.kml`, or `.tcx` files—or those files alone | Routes, areas, markers, photos, elevation, and statistics a Base can sort on |
+| **An Around map**     | Your place-note collection                                                       | The current note, its links and backlinks, plus their tracks and photos      |
 
 These compose. One map can show place notes, a multi-day route, and every
 geotagged photo taken along it.
@@ -67,14 +67,14 @@ keys, supported photos, and the next recipes.
 
 ## User guide
 
-| Topic                                                              | Covers                                                                     |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| [Getting started](docs/guide/getting-started.md)                   | Installation, Base boundaries, first map, view keys                        |
-| [Photo maps](docs/guide/photo-maps.md)                             | Photo folders, OneDrive, linked photos, thumbnails, index                  |
-| [Tracks and areas](docs/guide/tracks-and-areas.md)                 | Route links, inline maps, GPX/GeoJSON/KML/TCX, polygons, statistics        |
-| [Around and navigation](docs/guide/around-and-navigation.md)       | Around views, reusable Base, Open in map, follow, shared pins              |
-| [Coordinates and services](docs/guide/coordinates-and-services.md) | WGS-84/GCJ-02/BD-09, external maps, search, geocoding, location            |
-| [Reference and privacy](docs/guide/reference-and-privacy.md)       | Supported inputs, option ownership, operational limits, network disclosure |
+| Topic                                                              | Covers                                                                            |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| [Getting started](docs/guide/getting-started.md)                   | Installation, Base boundaries, first map, view keys                               |
+| [Photo maps](docs/guide/photo-maps.md)                             | Photo folders, OneDrive, linked photos, thumbnails, index                         |
+| [Tracks and areas](docs/guide/tracks-and-areas.md)                 | Route links, inline maps, GPX/GeoJSON/KML/TCX, polygons, statistics as properties |
+| [Around and navigation](docs/guide/around-and-navigation.md)       | Around views, reusable Base, Open in map, follow, shared pins                     |
+| [Coordinates and services](docs/guide/coordinates-and-services.md) | WGS-84/GCJ-02/BD-09, external maps, search, geocoding, location                   |
+| [Reference and privacy](docs/guide/reference-and-privacy.md)       | Supported inputs, option ownership, operational limits, network disclosure        |
 
 Notes, tracks, and photo contents do not leave on their own. The plugin has no
 telemetry, update ping, or server; the

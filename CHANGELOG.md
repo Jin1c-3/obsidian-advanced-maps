@@ -8,6 +8,24 @@ where they do not.
 
 ### Added
 
+- **Track statistics can be written into a note's properties.** The numbers under
+  an inline map existed only in that embed, where no Base could sort, filter or
+  total them. **Write track statistics to properties** measures the track files
+  the current note links and writes distance, ascent, descent, elevation range,
+  elapsed and moving time, pace and start time into that note's frontmatter as
+  numbers — `track-distance-km: 13.62`, not `"13.6 km"`, because a formatted
+  string sorts 10 km before 9 km. The unit is stated in each property name, since
+  a bare number in frontmatter is otherwise unlabelled forever.
+
+  Only what a file recorded is written: a GeoJSON route with no elevation and no
+  timestamps leaves one property, a GPX from a watch leaves nine, and a figure
+  with nothing behind it is removed rather than left stale. Property names come
+  from the new **Track property prefix** setting, `track` by default, and the
+  command reads, writes and removes nothing outside that prefix — if the prefix
+  would collide with the coordinate or place property it refuses rather than
+  overwrite. It runs when invoked and at no other time; a track file edited
+  afterwards does not rewrite the notes that link it.
+
 - **Areas are drawn.** A GeoJSON or KML file can hold a region rather than a
   route, and one used to reach the map already transformed, already counted for
   framing, and then drawn by nothing at all — the camera flew to the area and

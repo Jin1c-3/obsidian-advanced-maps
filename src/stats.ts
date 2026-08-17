@@ -230,6 +230,94 @@ export function formatElevation(metres: number): string {
 	return `${Math.round(clampFinite(metres))} m`;
 }
 
+/** Is there anything here to report? The one condition both surfaces are gated on. */
+export function hasStats(stats: TrackStats): boolean {
+	return (
+		stats.distance !== 0 ||
+		stats.ascent !== null ||
+		stats.descent !== null ||
+		(stats.minEle !== null && stats.maxEle !== null) ||
+		stats.duration !== null ||
+		stats.movingTime !== null ||
+		stats.speed !== null
+	);
+}
+
+/** One note property derived from a track's figures; `null` for a figure the file never recorded. */
+export interface StatsProperty {
+	/** The full property name, prefix included. */
+	key: string;
+	value: number | string | null;
+}
+
+/** Rounded to what the source can support, and never `NaN` — the same guard the formatters above apply. */
+function metric(value: number, places: number): number {
+	const factor = 10 ** places;
+	return Math.round(clampFinite(value) * factor) / factor;
+}
+
+/**
+ * `YYYY-MM-DDTHH:mm` in this device's own timezone — the shape Obsidian types as
+ * a `datetime` property.
+ *
+ * To the minute, and not to the second. Measured against Obsidian 1.13:
+ * `2024-05-01T09:30` is inferred as `datetime`, `2024-05-01` as `date`, and
+ * `2024-05-01T09:30:15` as plain **text**. A second field is not more precision
+ * here — it is the difference between a property a base can sort as a time and
+ * one it compares as a string. The seconds are dropped rather than rounded, so
+ * the stamp names the minute the earliest point falls in.
+ *
+ * Local rather than UTC: a GPX timestamp is UTC and states no timezone, so the
+ * trip's own local time is not recoverable from the file. Device-local is the
+ * only available answer and the one that matches "I set off at nine". It is
+ * stamped once, into text, so it does not move when the vault is opened
+ * somewhere else — which is what a recorded date should do.
+ */
+export function localStamp(ms: number): string {
+	const at = new Date(ms);
+	const pad = (value: number, width = 2) => String(value).padStart(width, '0');
+	const date = `${pad(at.getFullYear(), 4)}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+	return `${date}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+/** Trailing separators and surrounding space are how the box was typed, not part of a name. */
+function normalizePrefix(prefix: string): string {
+	return prefix.trim().replace(/[-_\s]+$/, '');
+}
+
+/**
+ * A track's figures as note properties, in a fixed order.
+ *
+ * The unit is part of the name — `distance-km`, not `distance` — because a bare
+ * number in frontmatter is otherwise unlabelled forever, and a column header is
+ * the one place the unit stays beside the value. `lowest`/`highest` rather than
+ * `min`/`max`: `min` next to `duration-min` would read as minutes in one name
+ * and minimum in the other.
+ *
+ * Every entry is returned every time. A `null` value means the file recorded
+ * nothing behind that figure, and what that does to an existing property is the
+ * caller's business rather than this function's.
+ */
+export function statsProperties(stats: TrackStats, prefix: string): StatsProperty[] {
+	const head = normalizePrefix(prefix);
+	// A prefix cleared to nothing still has to produce usable names rather than
+	// ones that start with the separator.
+	const name = (suffix: string) => (head === '' ? suffix : `${head}-${suffix}`);
+	const climb = (value: number | null) => (value === null ? null : metric(value, 0));
+	const minutes = (ms: number | null) => (ms === null ? null : metric(ms / 60000, 0));
+	return [
+		{ key: name('distance-km'), value: metric(stats.distance / 1000, 2) },
+		{ key: name('ascent-m'), value: climb(stats.ascent) },
+		{ key: name('descent-m'), value: climb(stats.descent) },
+		{ key: name('lowest-m'), value: climb(stats.minEle) },
+		{ key: name('highest-m'), value: climb(stats.maxEle) },
+		{ key: name('duration-min'), value: minutes(stats.duration) },
+		{ key: name('moving-min'), value: minutes(stats.movingTime) },
+		{ key: name('speed-kmh'), value: stats.speed === null ? null : metric((stats.speed * 3600) / 1000, 1) },
+		{ key: name('start'), value: stats.start === null ? null : localStamp(stats.start) },
+	];
+}
+
 /** One resampled point of an elevation profile — see `elevationProfile`. */
 export interface ProfileSample {
 	d: number; // cumulative distance from the start of the track, metres

@@ -33,7 +33,8 @@ import { PhotoIndex, pluginIndexIO } from './photo-index';
 import { nativeBehind, ownedBy, stamp, type RegistrationOwner } from './registration';
 import { PlaceSearchModal } from './search-modal';
 import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMapsSettings } from './settings';
-import { TrackCache } from './track-cache';
+import { formatDistance, hasStats, statsProperties, trackStats } from './stats';
+import { TrackCache, type TrackRecord } from './track-cache';
 import { TrackLayer, type FocusTarget } from './track-layer';
 import { appendTrackOptions } from './view-options';
 import type {
@@ -107,6 +108,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.registerLocate();
 		this.registerReverseGeocode();
 		this.registerFillFromPhoto();
+		this.registerWriteStats();
 		// Its own listener rather than a line inside the one the locator already
 		// has on `file-open`: that one is about writing to the note, this one is
 		// about moving a camera, and neither should be able to break the other.
@@ -990,6 +992,96 @@ export default class AdvancedMapsPlugin extends Plugin {
 		}
 		if (readError !== null) new Notice(t('notice.photo.failed', { reason: readError }));
 		else new Notice(t('notice.photo.none', { file: file.basename }));
+	}
+
+	/* ---- track statistics ---- */
+
+	/** Track files only. A photo contributes one point and no distance, climb or
+	 *  time, so including one could only move the elevation range — making a
+	 *  note's lowest point a photo rather than part of the route. */
+	private resolveTrackFiles(file: TFile): TFile[] {
+		return this.resolveTracks(file).filter((track) => TRACK_EXTS.has(track.extension));
+	}
+
+	private registerWriteStats(): void {
+		this.addCommand({
+			id: 'write-track-stats',
+			name: t('command.writeStats'),
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || file.extension !== 'md') return false;
+				if (this.resolveTrackFiles(file).length === 0) return false;
+				if (!checking) void this.writeTrackStats(file);
+				return true;
+			},
+		});
+	}
+
+	/**
+	 * Measure the note's own track files and write the figures into its
+	 * properties. Run by hand and never on an event: a track file that changes
+	 * does not rewrite the notes that link it.
+	 *
+	 * The note's files are measured together rather than one at a time, so a note
+	 * holding two of them is measured exactly as one file holding both segments
+	 * already is — `trackStats` never carries distance across the gap between two
+	 * lines, and elapsed time is the span from the earliest stamp to the latest.
+	 */
+	private async writeTrackStats(file: TFile): Promise<void> {
+		const features: TrackRecord['features'] = [];
+		let readError: string | null = null;
+		for (const track of this.resolveTrackFiles(file)) {
+			const rec = await this.tracks.load(track, this.settings.photoDatum);
+			if (rec.error && readError === null) readError = rec.error;
+			// The raw WGS-84 features, never `projectedFeatures()`: measuring the
+			// tile-space copy would make a note's distance depend on which basemap
+			// happened to be configured when the command was run.
+			features.push(...rec.features);
+		}
+
+		const stats = trackStats(features);
+		// The same condition the inline statistics bar shows itself on. Nothing to
+		// measure means nothing written *and* nothing removed: a file temporarily
+		// truncated or replaced should not strip a note of figures it still has.
+		if (!hasStats(stats)) {
+			if (readError !== null) new Notice(t('notice.stats.failed', { reason: readError }));
+			else new Notice(t('notice.stats.none', { file: file.basename }));
+			return;
+		}
+
+		const properties = statsProperties(stats, this.settings.statsPrefix);
+		// Said before anything is written, for the reason `reverseGeocodeCurrent`
+		// says it: the note's coordinate replaced by a distance is silent, and the
+		// pin moving is the only symptom.
+		const clash = properties.find(
+			({ key }) => key === this.settings.coordsProperty || key === this.settings.placeProperty
+		);
+		if (clash) {
+			new Notice(t('notice.stats.propertyClash', { property: clash.key }));
+			return;
+		}
+
+		let written = 0;
+		try {
+			await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+				for (const { key, value } of properties) {
+					// A figure this file no longer records leaves no property behind.
+					// A stale number still matches a filter, which is worse than an
+					// absent one — and every key here is under the configured prefix,
+					// so nothing the reader keeps by hand is in reach.
+					if (value === null) {
+						delete frontmatter[key];
+						continue;
+					}
+					frontmatter[key] = value;
+					written++;
+				}
+			});
+		} catch (e) {
+			new Notice(t('notice.write.failed', { reason: e instanceof Error ? e.message : String(e) }));
+			return;
+		}
+		new Notice(t('notice.stats.done', { count: String(written), distance: formatDistance(stats.distance) }));
 	}
 
 	/* ---- location ---- */
