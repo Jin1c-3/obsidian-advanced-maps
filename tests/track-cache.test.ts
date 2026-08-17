@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TFile, type App } from 'obsidian';
-import { pooled, readHead, TrackCache, type TrackRecord } from '../src/track-cache';
+import { pooled, projectedFeatures, readHead, recordStats, TrackCache, type TrackRecord } from '../src/track-cache';
 import { PhotoIndex, type PhotoIndexEntry } from '../src/photo-index';
 import { gcj2wgs } from '../src/coords';
 
@@ -450,5 +450,78 @@ describe('pooled', () => {
 		const read = vi.fn(async (n: number) => n);
 		await expect(pooled([1, 2, 3], 4, read, () => false)).resolves.toEqual([undefined, undefined, undefined]);
 		expect(read).not.toHaveBeenCalled();
+	});
+});
+
+describe('recordStats', () => {
+	/** Roughly 111 km along a meridian, with 100 m of climb in the middle. */
+	function walk(): TrackRecord {
+		return {
+			mtime: 1,
+			features: [
+				{
+					type: 'Feature',
+					properties: null,
+					geometry: {
+						type: 'LineString',
+						coordinates: [
+							[116, 39, 0],
+							[116, 39.5, 100],
+							[116, 40, 100],
+						],
+					},
+				},
+			],
+		};
+	}
+
+	it('measures the record once and answers with the same object afterwards', () => {
+		const rec = walk();
+		const first = recordStats(rec);
+		expect(first?.distance).toBeGreaterThan(100_000);
+		expect(recordStats(rec)).toBe(first);
+		expect(rec.stats).toBe(first);
+	});
+
+	it('measures unshifted data, so a projected copy of the same record changes nothing', () => {
+		const shifted = walk();
+		// Populate `projected` first: a measurement taken from tile space would
+		// answer differently for the same file depending on the map it is drawn on.
+		expect(projectedFeatures(shifted, 'gcj02')).not.toBe(shifted.features);
+		const plain = walk();
+
+		expect(recordStats(shifted)?.distance).toBe(recordStats(plain)?.distance);
+		expect(recordStats(shifted)?.ascent).toBe(100);
+	});
+
+	it('measures nothing for a record that failed to parse, or for no record at all', () => {
+		expect(recordStats({ mtime: 1, features: [], error: 'broken' })).toBeNull();
+		expect(recordStats(undefined)).toBeNull();
+	});
+
+	it('answers an area with a measurement of nothing rather than with its perimeter', () => {
+		const area: TrackRecord = {
+			mtime: 1,
+			features: [
+				{
+					type: 'Feature',
+					properties: null,
+					geometry: {
+						type: 'Polygon',
+						coordinates: [
+							[
+								[0, 0],
+								[0, 1],
+								[1, 1],
+								[0, 0],
+							],
+						],
+					},
+				},
+			],
+		};
+		const stats = recordStats(area);
+		expect(stats?.distance).toBe(0);
+		expect(stats?.ascent).toBeNull();
 	});
 });

@@ -49,7 +49,8 @@ import {
 import { customMapLabel, customMapUrl, customMaps, enabledBuiltins, externalMapUrl, resolveBuiltins } from './maplinks';
 import { PhotoModal } from './photo-modal';
 import { iconOffsetExpression, spreadFactor, spreadPins, type SpreadPin, type SpreadPlan } from './spread';
-import { pooled, projectedFeatures } from './track-cache';
+import { appendDetail, statsSummary, type PointedDetail } from './popup-rows';
+import { pooled, projectedFeatures, recordStats } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type {
 	BasesData,
@@ -69,6 +70,21 @@ interface DrawItem {
 	file: TFile;
 	trackFiles: TFile[];
 	color: string;
+}
+
+/** What the pointer is on, as the properties of a drawn feature state it. */
+interface PointedFeature {
+	/** '', 'start', 'end' or 'photo'. */
+	role: string;
+	/** Vault path of the file this feature was read from. */
+	path: string;
+	/** A waypoint's own name; empty for everything else. */
+	name: string;
+}
+
+/** The last path segment, for a file that no longer resolves in the vault. */
+function basename(path: string): string {
+	return path.slice(path.lastIndexOf('/') + 1);
 }
 
 /** A requested camera target in vault (WGS-84) space. */
@@ -169,6 +185,9 @@ export class TrackLayer {
 	private handledClick: MouseEvent | null = null;
 	/** The same, for the pointer samples `hover()` acts on. */
 	private handledHover: MouseEvent | null = null;
+	/** The feature a popup is being raised for, handed to the `createPopupContent`
+	 *  wrapper across one synchronous call and cleared by it. */
+	private pointed: PointedFeature | null = null;
 	/** Which drawn feature the native popup is currently describing, so pointing
 	 *  at it again costs nothing. Null whenever that is no longer known. */
 	private shownPopup: string | null = null;
@@ -278,6 +297,26 @@ export class TrackLayer {
 				orig.call(popups, entry, [lat, lng], properties, markerProps, displayName);
 			};
 		});
+
+		// What the pointer is on belongs inside the card the host builds, not in a
+		// second floating box beside it: this builder returns the card before
+		// `showPopup` inserts it, so a row can be appended while it is still the
+		// builder's. Optional at runtime — a Maps build without it leaves hover
+		// exactly as it is.
+		const buildCard =
+			typeof popups.createPopupContent === 'function' ? popups.createPopupContent.bind(popups) : null;
+		if (buildCard) {
+			this.wrap(popups, 'createPopupContent', () => (entry, properties, displayName) => {
+				// One-shot. The native `marker-pins` hover calls this too, so a
+				// value left behind would describe a pin with the track pointed at
+				// before it.
+				const pointed = this.pointed;
+				this.pointed = null;
+				const card = buildCard(entry, properties, displayName);
+				if (pointed) this.describe(card, pointed);
+				return card;
+			});
+		}
 
 		// Project the configured centre where the shared config object is created.
 		this.wrap(view, 'loadConfig', (orig) => (tileSetId?: string) => {
@@ -520,6 +559,7 @@ export class TrackLayer {
 		this.handledClick = null;
 		this.handledHover = null;
 		this.shownPopup = null;
+		this.pointed = null;
 		this.pendingFocus = null;
 		this.pendingPopup = null;
 		this.held = null;
@@ -902,7 +942,7 @@ export class TrackLayer {
 			for (const trackFile of item.trackFiles) {
 				const rec = this.plugin.tracks.get(trackFile.path);
 				if (!rec || rec.error) continue;
-				features.push(...trackFeatures(projectedFeatures(rec, system), item.color, index));
+				features.push(...trackFeatures(projectedFeatures(rec, system), item.color, index, trackFile.path));
 			}
 		});
 		return { type: 'FeatureCollection', features };
@@ -1173,7 +1213,8 @@ export class TrackLayer {
 			if (this.handledHover === ev.originalEvent) return;
 			this.handledHover = ev.originalEvent;
 		}
-		// Two photos of one note are different popups; a thumbnail and the dot
+		// Two photos of one note are different popups, and so are two of its
+		// tracks now that a line names its own file; a thumbnail and the dot
 		// beneath it are the same one. Index, role and path say exactly that, and
 		// a space separates them unambiguously because only the trailing path can
 		// contain one.
@@ -1181,6 +1222,7 @@ export class TrackLayer {
 		const index = props && typeof props.amIndex === 'number' ? props.amIndex : -1;
 		const role = props && typeof props.amRole === 'string' ? props.amRole : '';
 		const path = props && typeof props.amPath === 'string' ? props.amPath : '';
+		const name = props && typeof props.amName === 'string' ? props.amName : '';
 		const key = `${index} ${role} ${path}`;
 		if (key === this.shownPopup) return;
 		this.shownPopup = key;
@@ -1192,13 +1234,61 @@ export class TrackLayer {
 		// native method, past the wrapper that exists to move the pins' own
 		// WGS-84 anchors.
 		const show = (this.origShowPopup ?? view.popupManager.showPopup).bind(view.popupManager);
-		show(
-			item.entry,
-			[ev.lngLat.lat, ev.lngLat.lng],
-			view.data.properties,
-			view.markerManager.getMarkerDrivenProps(view.mapConfig),
-			(prop) => config.getDisplayName(prop)
-		);
+		// Read back by the `createPopupContent` wrapper, which this call reaches
+		// synchronously. Cleared again on the way out because the host builds no
+		// card at all for a note whose displayed properties are empty — the
+		// wrapper would never run, and a native pin hover would inherit this.
+		this.pointed = { role, path, name };
+		try {
+			show(
+				item.entry,
+				[ev.lngLat.lat, ev.lngLat.lng],
+				view.data.properties,
+				view.markerManager.getMarkerDrivenProps(view.mapConfig),
+				(prop) => config.getDisplayName(prop)
+			);
+		} finally {
+			this.pointed = null;
+		}
+	}
+
+	/**
+	 * Say what the pointer is on, in the card the host just built.
+	 *
+	 * One row: a photo shows itself, a named waypoint shows its name, and
+	 * anything else drawn for a track shows that track's own figures. A waypoint
+	 * name follows the same **Show track markers** setting the inline tooltip
+	 * does, and says nothing at all when that is off rather than saying something
+	 * else instead.
+	 */
+	private describe(card: HTMLElement, pointed: PointedFeature): void {
+		const app = this.view.app;
+		if (pointed.role === 'photo') {
+			const file = app.vault.getFileByPath(pointed.path);
+			const name = file?.name ?? basename(pointed.path);
+			let image: PointedDetail['image'];
+			if (file) {
+				try {
+					image = { src: app.vault.getResourcePath(file), alt: name };
+				} catch {
+					/* no resource path for this file — the row keeps its name alone */
+				}
+			}
+			appendDetail(card, { label: t('popup.photo'), text: name, image });
+			return;
+		}
+		if (pointed.name !== '') {
+			if (this.plugin.settings.trackMarkers) {
+				appendDetail(card, { label: t('popup.waypoint'), text: pointed.name });
+			}
+			return;
+		}
+		if (pointed.path === '') return;
+		const stats = recordStats(this.plugin.tracks.get(pointed.path));
+		if (!stats) return;
+		const file = app.vault.getFileByPath(pointed.path);
+		const label = file?.basename ?? basename(pointed.path).replace(/\.[^.]+$/, '');
+		appendDetail(card, { label, text: statsSummary(stats) });
 	}
 
 	/* ---- framing ---- */

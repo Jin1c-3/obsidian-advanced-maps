@@ -394,14 +394,14 @@ export class TrackEmbed extends Component {
 		const system = this.system();
 		const trackData: FeatureCollection<Geometry, TrackFeatureProps> = {
 			type: 'FeatureCollection',
-			features: trackFeatures(projectedFeatures(this.rec, system), color, 0),
+			features: trackFeatures(projectedFeatures(this.rec, system), color, 0, this.file.path),
 		};
 		// Photos share drawing/framing but stay out of the track-only hover corridor.
 		const data: FeatureCollection<Geometry, TrackFeatureProps> = {
 			type: 'FeatureCollection',
 			features: [
 				...trackData.features,
-				...this.photos.flatMap((p) => trackFeatures(projectedFeatures(p.rec, system), color, 0)),
+				...this.photos.flatMap((p) => trackFeatures(projectedFeatures(p.rec, system), color, 0, p.file.path)),
 			],
 		};
 

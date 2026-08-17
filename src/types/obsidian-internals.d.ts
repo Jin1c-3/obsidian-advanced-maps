@@ -211,7 +211,13 @@ export interface MarkerManager {
 }
 
 export interface PopupManager {
-	/** `latLng` is the note's own WGS-84 value, straight off `markerManager.markers`. */
+	/**
+	 * `latLng` is the note's own WGS-84 value, straight off `markerManager.markers`.
+	 *
+	 * Returns without building anything when `collectDisplayProperties` comes
+	 * back empty, so a note whose displayed properties are all empty raises no
+	 * popup at all — inherited rather than worked around.
+	 */
 	showPopup(
 		entry: BasesEntry,
 		latLng: [number, number],
@@ -220,6 +226,29 @@ export interface PopupManager {
 		displayName: (property: unknown) => string
 	): void;
 	hidePopup(): void;
+	/**
+	 * Builds the whole card and returns it, before `showPopup` hands the node to
+	 * `sharedPopup.setDOMContent(…).setLngLat(…).addTo(map)`. That ordering is
+	 * what makes a row appendable: the node is still the builder's when this
+	 * returns.
+	 *
+	 * `obsidian-maps/src/map/popup.ts` declares this `private`, which is a
+	 * compile-time word — at runtime it is an ordinary prototype method, and
+	 * shadowing it with an own property on one manager instance is the same wrap
+	 * `showPopup` already carries here. Measured on Maps 0.2.2 / Obsidian 1.13.7:
+	 * the wrapper is reached through both the wrapped and the original
+	 * `showPopup`, appended rows reach the live connected DOM, and `delete`ing
+	 * the own property returns the prototype's.
+	 *
+	 * The card is `div.bases-map-popup` holding `.bases-map-popup-title` and —
+	 * only when a second property exists — a `.bases-map-popup-properties` list
+	 * of `.bases-map-popup-property` rows, each a `-label` and a `-value`.
+	 */
+	createPopupContent?(
+		entry: BasesEntry,
+		properties: unknown,
+		displayName: (property: unknown) => string
+	): HTMLElement;
 }
 
 export interface BasesMapView {

@@ -51,6 +51,12 @@ const en = {
 	'stats.elevation': 'Elevation',
 	'stats.profile': 'Elevation profile',
 
+	/* ---- rows added to a base map's own note popup ----
+	 * Labels for what the pointer is on. A pointed track's row is labelled with
+	 * that track's own name instead, so it has no key here. */
+	'popup.waypoint': 'Waypoint',
+	'popup.photo': 'Photo',
+
 	/* ---- the map's right-click menu ---- */
 	'menu.openExternal': 'Open in external map',
 	/* Beside the native "New note here", whose other half it is. */
@@ -418,6 +424,9 @@ const zh: Record<TranslationKey, string> = {
 	'stats.speed': '平均速度',
 	'stats.elevation': '海拔',
 	'stats.profile': '高程剖面',
+
+	'popup.waypoint': '途经点',
+	'popup.photo': '照片',
 
 	'menu.openExternal': '用外部地图打开',
 	'menu.stampNote': '把某篇笔记的坐标设成这里',

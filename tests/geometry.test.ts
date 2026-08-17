@@ -395,6 +395,39 @@ describe('lineEndpoints', () => {
 describe('trackFeatures', () => {
 	type Input = Array<Feature<Geometry, Record<string, unknown> | null>>;
 
+	it('names the file every feature came from, so one note carrying two tracks stays separable', () => {
+		const line = (x: number): Input[number] => ({
+			type: 'Feature',
+			properties: null,
+			geometry: {
+				type: 'LineString',
+				coordinates: [
+					[x, 0],
+					[x + 1, 1],
+				],
+			},
+		});
+		// One note, so both draws share an index; only the path tells them apart.
+		const morning = trackFeatures([line(0)], '#f00', 7, 'tracks/morning.gpx');
+		const evening = trackFeatures([line(10)], '#f00', 7, 'tracks/evening.gpx');
+
+		expect(morning.map((f) => f.properties.amPath)).toEqual([
+			'tracks/morning.gpx',
+			'tracks/morning.gpx',
+			'tracks/morning.gpx',
+		]);
+		expect(evening.every((f) => f.properties.amPath === 'tracks/evening.gpx')).toBe(true);
+		expect(new Set([...morning, ...evening].map((f) => f.properties.amIndex))).toEqual(new Set([7]));
+		// The line and both endpoints, so pointing at either end says the same thing.
+		expect(morning.map((f) => f.properties.amRole)).toEqual([undefined, 'start', 'end']);
+	});
+
+	it('names no file when there is none to name', () => {
+		const input: Input = [{ type: 'Feature', properties: null, geometry: { type: 'Point', coordinates: [1, 1] } }];
+		const [out] = trackFeatures(input, '#f00', 0, '');
+		expect(out.properties.amPath).toBeUndefined();
+	});
+
 	it('carries a line, its two synthetic endpoints, and a plain point through unchanged', () => {
 		const input: Input = [
 			{
@@ -410,28 +443,28 @@ describe('trackFeatures', () => {
 			},
 			{ type: 'Feature', properties: null, geometry: { type: 'Point', coordinates: [5, 6] } },
 		];
-		const out = trackFeatures(input, '#f00', 2);
+		const out = trackFeatures(input, '#f00', 2, 'tracks/a.gpx');
 		expect(out).toHaveLength(4);
 
 		expect(out[0]).toEqual({
 			type: 'Feature',
 			geometry: input[0].geometry,
-			properties: { amColor: '#f00', amIndex: 2 },
+			properties: { amColor: '#f00', amIndex: 2, amPath: 'tracks/a.gpx' },
 		});
 		expect(out[1]).toEqual({
 			type: 'Feature',
 			geometry: { type: 'Point', coordinates: [1, 2] },
-			properties: { amColor: '#f00', amIndex: 2, amRole: 'start' },
+			properties: { amColor: '#f00', amIndex: 2, amPath: 'tracks/a.gpx', amRole: 'start' },
 		});
 		expect(out[2]).toEqual({
 			type: 'Feature',
 			geometry: { type: 'Point', coordinates: [3, 4] },
-			properties: { amColor: '#f00', amIndex: 2, amRole: 'end' },
+			properties: { amColor: '#f00', amIndex: 2, amPath: 'tracks/a.gpx', amRole: 'end' },
 		});
 		expect(out[3]).toEqual({
 			type: 'Feature',
 			geometry: input[1].geometry,
-			properties: { amColor: '#f00', amIndex: 2 },
+			properties: { amColor: '#f00', amIndex: 2, amPath: 'tracks/a.gpx' },
 		});
 	});
 
@@ -453,14 +486,14 @@ describe('trackFeatures', () => {
 				},
 			},
 		];
-		const out = trackFeatures(input, '#f00', 3);
+		const out = trackFeatures(input, '#f00', 3, 'tracks/a.gpx');
 		// A ring is a closed line, so start and end would land on the same point
 		// and claim a direction the area does not have.
 		expect(out).toHaveLength(1);
 		expect(out[0]).toEqual({
 			type: 'Feature',
 			geometry: input[0].geometry,
-			properties: { amColor: '#f00', amIndex: 3 },
+			properties: { amColor: '#f00', amIndex: 3, amPath: 'tracks/a.gpx' },
 		});
 	});
 
@@ -479,7 +512,7 @@ describe('trackFeatures', () => {
 			},
 		];
 		const before = JSON.stringify(input[0].geometry);
-		const out = trackFeatures(input, '#f00', 0);
+		const out = trackFeatures(input, '#f00', 0, 'tracks/a.gpx');
 
 		expect((out[0].geometry as { coordinates: number[][] }).coordinates).toEqual([
 			[179.95, -17],
@@ -511,7 +544,7 @@ describe('trackFeatures', () => {
 				},
 			},
 		];
-		const drawn = trackFeatures(input, '#f00', 0).map((feature) => feature.geometry);
+		const drawn = trackFeatures(input, '#f00', 0, 'tracks/a.gpx').map((feature) => feature.geometry);
 		const bounds = boundsOf(boundsMakingMap(), drawn) as unknown as { seen: number[][] };
 		const lngs = bounds.seen.map((position) => position[0]);
 
@@ -525,7 +558,7 @@ describe('trackFeatures', () => {
 		const input: Input = [
 			{ type: 'Feature', properties: { name: 'Bund' }, geometry: { type: 'Point', coordinates: [1, 1] } },
 		];
-		const [out] = trackFeatures(input, '#0f0', 0);
+		const [out] = trackFeatures(input, '#0f0', 0, 'tracks/a.gpx');
 		expect(out.properties.amName).toBe('Bund');
 	});
 
@@ -543,7 +576,7 @@ describe('trackFeatures', () => {
 				},
 			},
 		];
-		const [line] = trackFeatures(input, '#00f', 0);
+		const [line] = trackFeatures(input, '#00f', 0, 'tracks/a.gpx');
 		expect(line.properties.amName).toBeUndefined();
 	});
 
@@ -552,7 +585,7 @@ describe('trackFeatures', () => {
 			{ type: 'Feature', properties: { name: '' }, geometry: { type: 'Point', coordinates: [0, 0] } },
 			{ type: 'Feature', properties: { name: 42 }, geometry: { type: 'Point', coordinates: [1, 1] } },
 		];
-		const out = trackFeatures(input, '#000', 0);
+		const out = trackFeatures(input, '#000', 0, 'tracks/a.gpx');
 		for (const feature of out) expect('amName' in feature.properties).toBe(false);
 	});
 
@@ -564,7 +597,7 @@ describe('trackFeatures', () => {
 				geometry: { type: 'Point', coordinates: [120.1, 30.2] },
 			},
 		];
-		const [out] = trackFeatures(input, '#0f0', 0);
+		const [out] = trackFeatures(input, '#0f0', 0, 'tracks/a.gpx');
 		expect(out.properties).toEqual({
 			amColor: '#0f0',
 			amIndex: 0,
@@ -575,7 +608,7 @@ describe('trackFeatures', () => {
 		// A photo is a Point, so lineEndpoints() answers null for it — no
 		// synthetic start/end pair grows out of a photo the way one does for a
 		// line, which the length check below is what proves.
-		expect(trackFeatures(input, '#0f0', 0)).toHaveLength(1);
+		expect(trackFeatures(input, '#0f0', 0, 'tracks/a.gpx')).toHaveLength(1);
 	});
 
 	it('carries a photo point with no thumbnail (amPhoto absent) through with amRole/amPath alone', () => {
@@ -586,7 +619,7 @@ describe('trackFeatures', () => {
 				geometry: { type: 'Point', coordinates: [1, 1] },
 			},
 		];
-		const [out] = trackFeatures(input, '#000', 3);
+		const [out] = trackFeatures(input, '#000', 3, 'tracks/a.gpx');
 		expect(out.properties).toEqual({
 			amColor: '#000',
 			amIndex: 3,
@@ -602,11 +635,11 @@ describe('trackFeatures', () => {
 		const input: Input = [
 			{ type: 'Feature', properties: { name: 'Pavilion' }, geometry: { type: 'Point', coordinates: [2, 2] } },
 		];
-		const [out] = trackFeatures(input, '#fff', 0);
-		expect(out.properties).toEqual({ amColor: '#fff', amIndex: 0, amName: 'Pavilion' });
+		const [out] = trackFeatures(input, '#fff', 0, 'tracks/a.gpx');
+		expect(out.properties).toEqual({ amColor: '#fff', amIndex: 0, amName: 'Pavilion', amPath: 'tracks/a.gpx' });
 	});
 
-	it('drops a non-string amPhoto/amPath rather than passing a garbage value through', () => {
+	it('drops a non-string amPhoto and replaces a non-string amPath with the file it was read from', () => {
 		const input: Input = [
 			{
 				type: 'Feature',
@@ -614,8 +647,8 @@ describe('trackFeatures', () => {
 				geometry: { type: 'Point', coordinates: [0, 0] },
 			},
 		];
-		const [out] = trackFeatures(input, '#fff', 0);
-		expect(out.properties).toEqual({ amColor: '#fff', amIndex: 0, amRole: 'photo' });
+		const [out] = trackFeatures(input, '#fff', 0, 'tracks/a.gpx');
+		expect(out.properties).toEqual({ amColor: '#fff', amIndex: 0, amRole: 'photo', amPath: 'tracks/a.gpx' });
 	});
 
 	it('yields two synthetic endpoints for a MultiLineString too', () => {
@@ -638,7 +671,7 @@ describe('trackFeatures', () => {
 				},
 			},
 		];
-		const out = trackFeatures(input, '#fff', 5);
+		const out = trackFeatures(input, '#fff', 5, 'tracks/a.gpx');
 		const roles = out.map((f) => f.properties.amRole);
 		expect(roles).toEqual([undefined, 'start', 'end']);
 		expect(out[1].geometry).toEqual({ type: 'Point', coordinates: [0, 0] });
@@ -646,14 +679,14 @@ describe('trackFeatures', () => {
 	});
 
 	it('answers an empty array for an empty input', () => {
-		expect(trackFeatures([], '#fff', 0)).toEqual([]);
+		expect(trackFeatures([], '#fff', 0, 'tracks/a.gpx')).toEqual([]);
 	});
 
 	it('adds no synthetic points when lineEndpoints() answers null', () => {
 		const input: Input = [{ type: 'Feature', properties: null, geometry: { type: 'LineString', coordinates: [] } }];
-		const out = trackFeatures(input, '#fff', 0);
+		const out = trackFeatures(input, '#fff', 0, 'tracks/a.gpx');
 		expect(out).toHaveLength(1);
-		expect(out[0].properties).toEqual({ amColor: '#fff', amIndex: 0 });
+		expect(out[0].properties).toEqual({ amColor: '#fff', amIndex: 0, amPath: 'tracks/a.gpx' });
 	});
 });
 

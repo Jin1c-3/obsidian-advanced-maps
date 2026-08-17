@@ -101,9 +101,10 @@ disable the two layers independently.
 
 ## Open a photo or its note
 
-Hovering a photo shows the owning note when it has one. Clicking opens the photo
-at full size without replacing the map, with an **Open note** row below.
-Ctrl/Cmd-click opens the image file in a new tab.
+Hovering a photo shows the owning note when it has one, with the photo itself
+previewed inside that popup so a dot on a crowded map can be identified without
+opening it. Clicking opens the photo at full size without replacing the map, with
+an **Open note** row below. Ctrl/Cmd-click opens the image file in a new tab.
 
 ![A geotagged photo opened from its marker, with the image, filename, and an Open note action in a modal over the map](../photo-popup.jpg)
 

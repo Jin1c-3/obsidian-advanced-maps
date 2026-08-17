@@ -424,3 +424,68 @@ describe('native empty-bounds wrapper', () => {
 		expect(v.markerManager.getBounds()).not.toBeNull();
 	});
 });
+
+describe('native popup-content wrapper', () => {
+	/**
+	 * A popup manager shaped like the real one: the builder is on the prototype,
+	 * which is what `override` has to delete rather than assign over. Built fresh
+	 * per test, so a test that removes the builder cannot take it from the next.
+	 */
+	function popups() {
+		class Popups {
+			built = 0;
+			createPopupContent(): HTMLElement {
+				this.built++;
+				const el = document.createElement('div');
+				el.className = 'bases-map-popup';
+				return el;
+			}
+			showPopup(): void {}
+			hidePopup(): void {}
+		}
+		return new Popups();
+	}
+
+	function withPopups(): { v: BasesMapView; manager: ReturnType<typeof popups> } {
+		const v = view(mapAt());
+		const manager = popups();
+		v.popupManager = manager;
+		return { v, manager };
+	}
+
+	it('leaves a card untouched when no feature of this plugin raised it', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const { v, manager } = withPopups();
+		new TrackLayer(plugin(), v).attach();
+
+		// What a native `marker-pins` hover does: nothing is pending, so the card
+		// comes back exactly as the host built it.
+		const card = v.popupManager.createPopupContent?.({} as never, null, String);
+		expect(card?.className).toBe('bases-map-popup');
+		expect(card?.children).toHaveLength(0);
+		expect(manager.built).toBe(1);
+	});
+
+	it('does not install over a host that no longer builds its own cards', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const { v } = withPopups();
+		delete (Object.getPrototypeOf(v.popupManager) as Record<string, unknown>).createPopupContent;
+
+		expect(() => new TrackLayer(plugin(), v).attach()).not.toThrow();
+		expect(Object.prototype.hasOwnProperty.call(v.popupManager, 'createPopupContent')).toBe(false);
+	});
+
+	it('restores the prototype builder by deleting the wrapper, not by shadowing it', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const { v } = withPopups();
+		const native = (Object.getPrototypeOf(v.popupManager) as Record<string, unknown>).createPopupContent;
+
+		const layer = new TrackLayer(plugin(), v).attach();
+		expect(Object.prototype.hasOwnProperty.call(v.popupManager, 'createPopupContent')).toBe(true);
+		expect(v.popupManager.createPopupContent === native).toBe(false);
+
+		layer.detach();
+		expect(Object.prototype.hasOwnProperty.call(v.popupManager, 'createPopupContent')).toBe(false);
+		expect(v.popupManager.createPopupContent === native).toBe(true);
+	});
+});
