@@ -151,9 +151,14 @@ const en = {
 	'notice.stats.done': 'Advanced Maps: wrote {count} properties — {distance}',
 	'notice.stats.none': '"{file}" has no track data to measure',
 	'notice.stats.failed': 'Advanced Maps: could not read that track — {reason}',
+	/* Names the property rather than the box: the clash can come from the prefix
+	 * or from that one figure's own name, and Track properties holds both. */
 	'notice.stats.propertyClash':
-		'Advanced Maps: the track property prefix produces "{property}", which is already in use — change the ' +
-		'prefix in settings, or this would overwrite that property.',
+		'Advanced Maps: the statistics would be written to "{property}", which is already in use — change the ' +
+		"prefix or that figure's name under Track properties, or this would overwrite it.",
+	'notice.stats.nameClash':
+		'Advanced Maps: two track figures are both named "{property}" — give them different names in settings, ' +
+		'or one would overwrite the other.',
 
 	/* ---- the photo a map pin stands for ---- */
 	'photo.openNote': 'Open note',
@@ -324,7 +329,26 @@ const en = {
 	'settings.tracks.statsPrefix.name': 'Track property prefix',
 	'settings.tracks.statsPrefix.desc':
 		'What "Write track statistics to properties" names what it writes: "track" gives track-distance-km, ' +
-		'track-ascent-m, track-duration-min and so on. The command touches nothing outside this prefix.',
+		'track-ascent-m, track-duration-min and so on. The command touches nothing outside the nine names below.',
+
+	/* ---- settings: track properties ----
+	 * The nine names the write-statistics command uses. Each box is empty by
+	 * default and shows the prefixed name it would otherwise write. */
+	'settings.trackProps.heading': 'Track properties',
+	'settings.trackProps.intro':
+		'What "Write track statistics to properties" calls each figure. Leave a box empty to keep the prefixed ' +
+		'name shown in it; type a name and that is the whole property name, prefix and all left out — which is ' +
+		'how a column ends up called anything you like. Renaming one does not rename what is already in your ' +
+		'notes: the old property stays until you remove it.',
+	'settings.trackProps.distance.name': 'Distance property',
+	'settings.trackProps.ascent.name': 'Ascent property',
+	'settings.trackProps.descent.name': 'Descent property',
+	'settings.trackProps.lowest.name': 'Lowest-point property',
+	'settings.trackProps.highest.name': 'Highest-point property',
+	'settings.trackProps.duration.name': 'Elapsed-time property',
+	'settings.trackProps.moving.name': 'Moving-time property',
+	'settings.trackProps.speed.name': 'Average-speed property',
+	'settings.trackProps.start.name': 'Start-time property',
 
 	/* ---- settings: photos ----
 	 * A page of its own beside the track knobs above: a track comes from a
@@ -479,7 +503,10 @@ const zh: Record<TranslationKey, string> = {
 	'notice.stats.none': '「{file}」没有可统计的轨迹数据',
 	'notice.stats.failed': 'Advanced Maps：无法读取这条轨迹——{reason}',
 	'notice.stats.propertyClash':
-		'Advanced Maps：按当前前缀会写出「{property}」，而这个属性已经另有用途——请在设置里改前缀，否则会覆盖它。',
+		'Advanced Maps：统计会写到「{property}」，而这个属性已经另有用途——请在「轨迹属性」里改前缀或那一项的名字，' +
+		'否则会覆盖它。',
+	'notice.stats.nameClash':
+		'Advanced Maps：有两项轨迹数据都叫「{property}」——请在设置里给它们不同的名字，否则一项会覆盖另一项。',
 
 	'photo.openNote': '打开笔记',
 
@@ -592,7 +619,21 @@ const zh: Record<TranslationKey, string> = {
 	'settings.tracks.statsPrefix.name': '轨迹属性前缀',
 	'settings.tracks.statsPrefix.desc':
 		'「把轨迹数据写进属性」写出来的属性名怎么起：填 track 就是 track-distance-km、track-ascent-m、' +
-		'track-duration-min 等等。这个命令只碰这个前缀底下的属性。',
+		'track-duration-min 等等。这个命令只碰下面这九个名字。',
+
+	'settings.trackProps.heading': '轨迹属性',
+	'settings.trackProps.intro':
+		'「把轨迹数据写进属性」把每项数据叫什么。留空就用框里显示的那个带前缀的名字；填了名字，那就是完整的属性名，' +
+		'前缀不再往前面拼——想把某一列叫成什么都可以。改名不会动笔记里已经写好的：旧属性会一直留着，要自己删。',
+	'settings.trackProps.distance.name': '距离属性',
+	'settings.trackProps.ascent.name': '累计爬升属性',
+	'settings.trackProps.descent.name': '累计下降属性',
+	'settings.trackProps.lowest.name': '最低点属性',
+	'settings.trackProps.highest.name': '最高点属性',
+	'settings.trackProps.duration.name': '总时长属性',
+	'settings.trackProps.moving.name': '移动时间属性',
+	'settings.trackProps.speed.name': '平均速度属性',
+	'settings.trackProps.start.name': '出发时间属性',
 
 	'settings.photos.heading': '照片',
 	'settings.photos.intro':

@@ -130,10 +130,33 @@ Three things worth knowing:
   afternoon ride; and pace is the total distance over the total moving time, so
   pairing a timed GPX with an untimed GeoJSON reads faster than either ride was.
   All of that is exactly what one two-segment file already reports.
-- **It owns its prefix and nothing else.** **Track property prefix** in the
-  settings decides the names, `track` by default. Anything outside that prefix is
-  never read, written, or removed — and if the prefix would collide with the
-  coordinate or place property, the command refuses instead of overwriting it.
+- **It owns the nine names and nothing else.** Anything outside them is never
+  read, written, or removed — and if a name would collide with the coordinate or
+  place property, or two figures would share one name, the command refuses
+  instead of overwriting anything.
+
+### Naming the columns yourself
+
+Settings → **Tracks** → **Track properties** holds the prefix and one box per
+figure. **Track property prefix** decides all nine at once — `ride` gives
+`ride-distance-km` and its siblings. A box below it decides one, and what you
+type there is the whole property name, prefix left out entirely:
+
+```yaml
+距离: 13.62
+爬升: 512
+track-descent-m: 499
+```
+
+That is `距离` typed into the distance box and `爬升` into the ascent box, with
+descent left empty and so still named from the prefix. Each empty box shows the
+name that figure would get, so you can see what leaving it alone means; clearing
+a box goes back to that name.
+
+One caveat: renaming a figure does not rename what is already in your notes. The
+command only ever touches the names configured now, so the property written under
+the old name stays where it is until you remove it — rename first, then measure,
+or clean up the old column afterwards.
 
 Linked photos are left out: a photo is one point with no distance, climb, or
 duration.
