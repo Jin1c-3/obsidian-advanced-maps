@@ -31,6 +31,13 @@ measures 165.6 km end to end and 38.8 km across the crossing segment.
   every value shown, copied or written stay in ordinary WGS-84 range.
 - Leave standalone points alone. A single position cannot cross anything, and
   choosing a meridian for a scattered set of them is a different problem.
+- Fold a longitude back into ±180 where a map pixel becomes a vault coordinate.
+  A MapLibre camera carried across the meridian keeps counting: measured on the
+  framed crossing track, `unproject` answered `180.5` for a place a note must
+  write as `-179.5`, which is what **Copy coordinates**, **New note here**, and
+  the external-map links would have used. That is reachable today by panning, and
+  automatic framing now takes the camera there without being asked, so it is
+  fixed here rather than left for the feature to make routine.
 
 ## Capabilities
 
@@ -51,9 +58,17 @@ None.
 
 - `src/geometry.ts` — `trackFeatures()`, where the drawn feature list is built
   and where both the map source and both bounds call sites read from.
-- `tests/` — `geometry.test.ts` for the unwrapping itself and for the endpoints
-  minted from an unwrapped line.
+- `src/coords.ts` — one longitude-folding helper, beside the datum pair it is
+  used with.
+- `src/track-layer.ts` — the two seams that turn a map pixel into a vault
+  coordinate: the temporary `unproject` wrapper the native context menu reads
+  through, which now also runs on WGS-84 maps because range is not a datum
+  question, and the external-map items.
+- `tests/` — `geometry.test.ts` for the unwrapping, the endpoints minted from an
+  unwrapped line, and the framing bounds; `coords.test.ts` for the fold;
+  `stats.test.ts` to pin that the figures are the same either way the crossing
+  step is written.
 - No change to `src/parse.ts`, `src/track-cache.ts`, `src/stats.ts`,
-  `src/coords.ts`, `src/layers.ts`, or any setting, dependency or persisted file.
-  The record a file parses to is untouched, and the datum transform continues to
-  see the coordinates the file stated.
+  `src/layers.ts`, or any setting, dependency or persisted file. The record a
+  file parses to is untouched, and the datum transform continues to see the
+  coordinates the file stated.

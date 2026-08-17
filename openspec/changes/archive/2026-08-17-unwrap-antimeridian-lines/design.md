@@ -108,12 +108,42 @@ on the drawn line's real ends. Doing it the other way round would put the end
 marker a world away from the line it belongs to — which is exactly what the
 screenshot in the proposal shows today.
 
+### D6 — Fold the longitude where a pixel becomes a vault coordinate
+
+`normalizeLng` in `coords.ts` folds a longitude back into ±180, and is applied at
+the two places a map pixel turns into a coordinate a reader keeps: the temporary
+`unproject` wrapper the native context menu reads through, and the external-map
+items built beside it.
+
+_Why it is needed at all:_ measured on the framed crossing track, `map.unproject`
+answered `180.5`. That is right for the map — MapLibre draws an endless row of
+world copies and the camera counts through them — and wrong for **Copy
+coordinates**, **New note here**, and any provider URL.
+
+_Why it belongs to this change:_ the defect is reachable on `main` by panning
+east across the meridian, so it is not caused here. But automatic framing now
+puts the camera there without being asked, which turns a rare manual case into
+the ordinary one for exactly the geometry this change exists to support. Shipping
+the framing while knowingly handing out `180.5` would be shipping a known wrong
+answer.
+
+_Why the menu wrapper now installs on WGS-84 maps too:_ it used to skip them,
+because its only job was the datum correction and that is a no-op there. Range is
+not a datum question — a WGS-84 map's camera counts past the meridian the same
+way. The wrapper is still instance-scoped, still installed for the duration of
+one synchronous call, and still restored in a `finally`.
+
+_Why not inside `toWgs84`:_ that is the datum boundary, and folding there would
+also reach `realignCamera`, which re-projects the live camera centre between
+systems. Moving a camera to the neighbouring world copy is invisible but it is
+not this change's business.
+
 ## Risks / Trade-offs
 
 - **A drawn coordinate is now outside ±180** → only inside the drawn collection,
-  which nothing reads back for display. Copy coordinates, the external-map links,
-  and `Fill coordinates` all go through `unproject`/the record, not through this
-  array. Worth a test that pins that boundary.
+  which nothing reads back for display: statistics and the elevation profile read
+  the parsed record, and everything a reader copies or stores goes through the
+  folded `unproject` seam above. Both halves are pinned by tests.
 - **A file that already writes unwrapped longitudes** → the walk is idempotent:
   no step exceeds 180°, so nothing shifts and the file draws as it did.
 - **A garbage coordinate far outside range** (say 4000) → the walk shifts it by

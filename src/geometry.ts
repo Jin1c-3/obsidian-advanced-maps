@@ -101,6 +101,83 @@ export function styleReady(map: MapLibreMap, timeout = 5000): Promise<void> {
 	});
 }
 
+/* ---- antimeridian ---- Drawn paths only; the parsed record keeps the file's own values. */
+
+/**
+ * Shift each position by whole turns of 360° so no step from the one before it
+ * is wider than half the globe.
+ *
+ * A file writes `179.95` and then `-179.7` for two points 39 km apart, and both
+ * MapLibre and `LngLatBounds.extend` read that as a jump most of the way around
+ * the world: the segment is drawn back across every other continent and the
+ * bounds come out 359° wide. Continuing past 180° instead states the short step
+ * that was meant. MapLibre draws such a longitude in the right place — verified
+ * against a live map — and the bounds then follow with no further work.
+ *
+ * Answers the same array when nothing moved, so geometry that does not cross is
+ * passed through untouched rather than copied. That also keeps this off the
+ * cached record: the drawn collection is built from `rec.features`, which
+ * statistics and the elevation profile read from, and which must stay in
+ * ordinary WGS-84 range.
+ */
+function unwrapPath(positions: Position[]): Position[] {
+	let out: Position[] | null = null;
+	for (let i = 1; i < positions.length; i++) {
+		const previous = (out ?? positions)[i - 1][0];
+		const current = positions[i][0];
+		if (!isFinite(previous) || !isFinite(current)) continue;
+		const delta = current - previous;
+		// Strictly wider, so a step of exactly half a turn — the same distance
+		// either way round — is left as the file wrote it. Whole turns are taken
+		// arithmetically rather than by looping, so a nonsense longitude costs one
+		// division instead of millions of iterations.
+		if (Math.abs(delta) <= 180) continue;
+		out ??= positions.slice();
+		const shifted = positions[i].slice();
+		shifted[0] = current - Math.round(delta / 360) * 360;
+		out[i] = shifted;
+	}
+	return out ?? positions;
+}
+
+/** Apply `unwrapPath` to every path a geometry holds; unchanged geometry is returned as-is. */
+function unwrapPaths(paths: Position[][]): Position[][] | null {
+	const next = paths.map(unwrapPath);
+	return next.some((path, i) => path !== paths[i]) ? next : null;
+}
+
+/**
+ * Unwrap the longitudes of a drawn geometry's lines and rings.
+ *
+ * Points are deliberately left alone. A single position cannot cross anything —
+ * the defect is in the step between two — and a MultiPoint's members are
+ * separate places with no path between them, so moving one next to another would
+ * put a photo or waypoint at a coordinate it does not have.
+ */
+export function unwrapGeometry<T extends Geometry>(geometry: T): T {
+	if (geometry.type === 'GeometryCollection') {
+		const geometries = (geometry.geometries ?? []).map((g) => unwrapGeometry(g));
+		const moved = geometries.some((g, i) => g !== geometry.geometries[i]);
+		return moved ? { ...geometry, geometries } : geometry;
+	}
+	if (geometry.type === 'LineString') {
+		const coordinates = unwrapPath(geometry.coordinates);
+		return coordinates === geometry.coordinates ? geometry : { ...geometry, coordinates };
+	}
+	// A polygon's rings and a multi-line's members share one shape, and each is a
+	// path in its own right: a hole crosses independently of its outer boundary.
+	if (geometry.type === 'MultiLineString' || geometry.type === 'Polygon') {
+		const coordinates = unwrapPaths(geometry.coordinates);
+		return coordinates ? { ...geometry, coordinates } : geometry;
+	}
+	if (geometry.type === 'MultiPolygon') {
+		const polygons = geometry.coordinates.map((rings) => unwrapPaths(rings) ?? rings);
+		const moved = polygons.some((rings, i) => rings !== geometry.coordinates[i]);
+		return moved ? { ...geometry, coordinates: polygons } : geometry;
+	}
+	return geometry;
+}
+
 /** True line endpoints, skipping empty MultiLineString members; null when absent. */
 export function lineEndpoints(geometry: Geometry): [Position, Position] | null {
 	if (geometry.type === 'LineString') {
@@ -147,6 +224,9 @@ export function trackFeatures(
 ): Array<Feature<Geometry, TrackFeatureProps>> {
 	const out: Array<Feature<Geometry, TrackFeatureProps>> = [];
 	for (const feature of features) {
+		// Before the endpoints are minted below, so start and end land on the
+		// drawn path rather than a world away from the line they belong to.
+		const geometry = unwrapGeometry(feature.geometry);
 		const props: TrackFeatureProps = { amColor: color, amIndex: index };
 		if (feature.geometry.type === 'Point') {
 			const name = feature.properties?.name;
@@ -158,9 +238,9 @@ export function trackFeatures(
 			const path = feature.properties?.amPath;
 			if (typeof path === 'string' && path !== '') props.amPath = path;
 		}
-		out.push({ type: 'Feature', geometry: feature.geometry, properties: props });
+		out.push({ type: 'Feature', geometry, properties: props });
 
-		const endpoints = lineEndpoints(feature.geometry);
+		const endpoints = lineEndpoints(geometry);
 		if (!endpoints) continue;
 		const [start, end] = endpoints;
 		out.push({

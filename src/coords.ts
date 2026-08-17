@@ -120,6 +120,23 @@ export function toWgs84(system: CoordSystem, lng: number, lat: number): [number,
 	return [lng, lat];
 }
 
+/**
+ * Fold a longitude back into ±180 — the same meridian, stated the ordinary way.
+ *
+ * A MapLibre camera carried across the 180th meridian keeps counting: `unproject`
+ * answers 180.5 for a place a note would write as −179.5. That is the right
+ * answer for the map, which draws an endless row of world copies, and the wrong
+ * one for anything a reader copies or a note stores. Whole turns are taken at
+ * once, so a camera several laps out still lands in range.
+ *
+ * Values already in range are returned untouched, ±180 included: both name the
+ * same meridian and neither is more correct than the other.
+ */
+export function normalizeLng(lng: number): number {
+	if (!isFinite(lng) || Math.abs(lng) <= 180) return lng;
+	return ((((lng + 180) % 360) + 360) % 360) - 180;
+}
+
 export function knownMode(value: unknown): CoordMode | null {
 	const key = typeof value === 'string' ? value.trim() : '';
 	return (COORD_MODES as readonly string[]).includes(key) ? (key as CoordMode) : null;

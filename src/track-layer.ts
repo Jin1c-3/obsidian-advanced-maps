@@ -20,6 +20,7 @@ import {
 } from './constants';
 import {
 	knownMode,
+	normalizeLng,
 	projectCenter,
 	projectGeometry,
 	resolveSystem,
@@ -293,22 +294,25 @@ export class TrackLayer {
 			this.locate?.replaceDot();
 		});
 
-		// Native menu actions read `unproject()` synchronously; expose WGS-84 only for that call.
+		// Native menu actions read `unproject()` synchronously; expose a vault
+		// coordinate only for that call. This runs on WGS-84 maps too: the datum
+		// correction is a no-op there, but a camera carried across the 180th
+		// meridian answers 180.5 for a place a note must write as -179.5.
 		if (typeof view.showMapContextMenu === 'function') {
 			this.wrap(view, 'showMapContextMenu', (orig) => (ev: MouseEvent) => {
 				const map = view.map;
 				const system = this.system();
-				if (!map || system === 'wgs84' || typeof map.unproject !== 'function') {
+				if (!map || typeof map.unproject !== 'function') {
 					orig.call(view, ev);
-					// External items always normalize independently; WGS-84 is a no-op.
-					if (map) this.addExternalMapItems(ev, map, system);
 					return;
 				}
 				const restore = override(map, 'unproject', (native) => (point) => {
 					const lngLat = native.call(map, point);
+					// Both corrections exactly once: tile datum back to WGS-84, and
+					// the meridian the camera counted past back into range.
 					const [lng, lat] = toWgs84(system, lngLat.lng, lngLat.lat);
 					const LngLatCtor = lngLat.constructor as new (lng: number, lat: number) => LngLat;
-					return new LngLatCtor(lng, lat);
+					return new LngLatCtor(normalizeLng(lng), lat);
 				});
 				try {
 					orig.call(view, ev);
@@ -384,8 +388,11 @@ export class TrackLayer {
 		} catch {
 			return;
 		}
-		// `unproject` is native tile space here; normalize exactly once before provider conversion.
-		const [lng, lat] = toWgs84(system, lngLat.lng, lngLat.lat);
+		// `unproject` is native tile space here; normalize exactly once before
+		// provider conversion — datum first, then a longitude the camera may have
+		// carried past the meridian, which no provider's URL would accept.
+		const [rawLng, lat] = toWgs84(system, lngLat.lng, lngLat.lat);
+		const lng = normalizeLng(rawLng);
 
 		const items = this.externalMapItems(lat, lng);
 		if (items.length === 0) return;

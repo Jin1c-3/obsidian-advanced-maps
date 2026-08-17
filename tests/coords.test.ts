@@ -6,6 +6,7 @@ import {
 	gcj2bd,
 	gcj2wgs,
 	knownMode,
+	normalizeLng,
 	outOfChina,
 	parseLatLng,
 	projectCenter,
@@ -106,6 +107,34 @@ describe('toTileSpace / toWgs84', () => {
 				expect(metres(point, back), `${system} at ${point.join(',')}`).toBeLessThan(0.2);
 			}
 		}
+	});
+});
+
+describe('normalizeLng', () => {
+	it('leaves an ordinary longitude exactly as it was', () => {
+		// Identity, not near-equality: this runs on every coordinate read off a
+		// map, and a value already in range must not be nudged by arithmetic.
+		for (const lng of [0, 121.4737, -74.006, 180, -180, -0]) {
+			expect(normalizeLng(lng)).toBe(lng);
+		}
+	});
+
+	it('folds a camera that counted past the meridian back into range', () => {
+		// What map.unproject answers just east of the 180th meridian, measured on
+		// a live map framed to a crossing track.
+		expect(normalizeLng(180.5)).toBeCloseTo(-179.5, 10);
+		expect(normalizeLng(-180.5)).toBeCloseTo(179.5, 10);
+		expect(normalizeLng(180.7)).toBeCloseTo(-179.3, 10);
+	});
+
+	it('takes several laps in one step', () => {
+		expect(normalizeLng(360 + 121.4737)).toBeCloseTo(121.4737, 10);
+		expect(normalizeLng(-720 - 30)).toBeCloseTo(-30, 10);
+	});
+
+	it('passes a value that is not a number through untouched', () => {
+		expect(normalizeLng(NaN)).toBeNaN();
+		expect(normalizeLng(Infinity)).toBe(Infinity);
 	});
 });
 
