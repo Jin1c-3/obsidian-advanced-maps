@@ -124,6 +124,10 @@ const en = {
 	'search.empty': 'No matches.',
 	'search.provider.nominatim': 'OpenStreetMap (Nominatim) — no key, thin on Chinese POIs',
 	'search.provider.amap': 'Amap 高德 — needs a free web-service key',
+	/* The same two without the hint the dropdown carries, for the settings entry
+	 * that states which one is in effect. */
+	'search.providerShort.nominatim': 'OpenStreetMap',
+	'search.providerShort.amap': 'Amap 高德',
 	'search.keyStore.secret': 'Secret storage — this device only',
 	'search.keyStore.plugin': 'Plugin settings — synced, in plain text',
 	'notice.search.failed': 'Advanced Maps: the search failed — {reason}',
@@ -218,6 +222,13 @@ const en = {
 	'settings.locate.exclude.name': 'Skip paths containing',
 	'settings.locate.exclude.desc':
 		'Comma-separated path fragments. Templates belong here: their blank is the one to leave alone.',
+
+	/* ---- settings: what a page entry states ----
+	 * A page shows no control of its own, so the entry says what is behind it. */
+	'settings.state.on': 'On',
+	'settings.state.off': 'Off',
+	'settings.state.unset': 'Not set',
+	'settings.external.enabled': '{count} switched on',
 
 	/* ---- settings: coordinate system ---- */
 	'settings.coord.heading': 'Coordinate system',
@@ -316,12 +327,12 @@ const en = {
 		'track-ascent-m, track-duration-min and so on. The command touches nothing outside this prefix.',
 
 	/* ---- settings: photos ----
-	 * A group of its own beside the track knobs above: a track comes from a
+	 * A page of its own beside the track knobs above: a track comes from a
 	 * file the note points at on purpose, a photo's location comes along for
-	 * free with a file kept for an unrelated reason, and `setting.photos.desc`
+	 * free with a file kept for an unrelated reason, and the intro below
 	 * exists to say plainly what that free ride does and does not do. */
-	'setting.photos': 'Photos',
-	'setting.photos.desc':
+	'settings.photos.heading': 'Photos',
+	'settings.photos.intro':
 		"Draws a linked photo's own location on the map, read from its EXIF GPS tags — the same way a linked " +
 		'.gpx file draws a track. A photo is only ever read, never written to, and nothing about it leaves the ' +
 		'vault.',
@@ -446,6 +457,8 @@ const zh: Record<TranslationKey, string> = {
 	'search.empty': '没有匹配结果。',
 	'search.provider.nominatim': 'OpenStreetMap（Nominatim）—— 不用申请，但国内 POI 很少',
 	'search.provider.amap': '高德 —— 需要免费的 Web 服务 key',
+	'search.providerShort.nominatim': 'OpenStreetMap',
+	'search.providerShort.amap': '高德',
 	'search.keyStore.secret': '密钥存储 —— 只留在这台设备',
 	'search.keyStore.plugin': '插件设置 —— 跟着同步，明文保存',
 	'notice.search.failed': 'Advanced Maps：搜索失败 —— {reason}',
@@ -508,6 +521,11 @@ const zh: Record<TranslationKey, string> = {
 		'当前笔记的「{property}」存在但为空时填入——模板里留一行空的就是在等它。已经有值的属性不会被覆盖。',
 	'settings.locate.exclude.name': '跳过路径包含',
 	'settings.locate.exclude.desc': '逗号分隔的路径片段。模板目录应当写在这里：它留出的空位正是不该被填掉的。',
+
+	'settings.state.on': '已开启',
+	'settings.state.off': '已关闭',
+	'settings.state.unset': '未设置',
+	'settings.external.enabled': '已启用 {count} 个',
 
 	'settings.coord.heading': '坐标系',
 	'settings.coord.intro':
@@ -576,8 +594,8 @@ const zh: Record<TranslationKey, string> = {
 		'「把轨迹数据写进属性」写出来的属性名怎么起：填 track 就是 track-distance-km、track-ascent-m、' +
 		'track-duration-min 等等。这个命令只碰这个前缀底下的属性。',
 
-	'setting.photos': '照片',
-	'setting.photos.desc':
+	'settings.photos.heading': '照片',
+	'settings.photos.intro':
 		'把笔记里链接的照片自身的位置画到地图上，读取的是照片的 EXIF GPS 标签——和链接的 .gpx 文件画出轨迹是同一条路径。' +
 		'照片只会被读取，不会被写入，也没有任何内容离开仓库。',
 	'setting.showPhotos': '在地图上显示照片',

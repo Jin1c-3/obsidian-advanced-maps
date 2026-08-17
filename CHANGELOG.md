@@ -4,6 +4,23 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [Unreleased]
+
+### Changed
+
+- **The settings are arranged into pages.** The pane was one scroll of thirty-odd
+  rows under eight headings; looking at the track knobs meant scrolling past
+  geocoding. It now opens on eight entries — Coordinate system, Open in map, Open
+  in external map, Place search, Location, Pins, Tracks, Photos — and each opens a
+  page holding that topic's rows and its explanation.
+
+  An entry states what it is set to, so the coordinate system, the configured
+  base, the search source, the number of external map apps switched on, and
+  whether location, pins and photos are on are all readable without opening
+  anything. Every row is still found by the settings search, which reaches inside
+  the pages. No setting changed its name, default, stored value, or effect: an
+  upgrading vault keeps everything it had configured.
+
 ## [1.14.0]
 
 ### Added
