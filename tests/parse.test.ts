@@ -292,10 +292,77 @@ describe('parseKml', () => {
 		expect(() => parseKml(kml)).toThrow('no drawable geometry found');
 	});
 
-	it('reads a <LinearRing> — a Polygon boundary — as a line', () => {
-		const kml = `<kml ${KML_NS}><Placemark><Polygon><outerBoundaryIs><LinearRing>
+	it('reads a <Polygon> as an area, carrying the placemark name', () => {
+		const kml = `<kml ${KML_NS}><Placemark><name>Park</name><Polygon><outerBoundaryIs><LinearRing>
 			<coordinates>121.0,31.0 121.1,31.0 121.1,31.1 121.0,31.0</coordinates>
 		</LinearRing></outerBoundaryIs></Polygon></Placemark></kml>`;
+		const { features } = parseKml(kml);
+		// One area, not one line per ring: the ring is claimed by its polygon and
+		// is not also emitted by the loose-ring pass.
+		expect(features).toHaveLength(1);
+		expect(features[0].geometry.type).toBe('Polygon');
+		expect(features[0].properties).toEqual({ name: 'Park' });
+	});
+
+	it('reads inner boundaries as holes, after the outer ring', () => {
+		const kml = `<kml ${KML_NS}><Placemark><Polygon>
+			<outerBoundaryIs><LinearRing><coordinates>
+				121.0,31.0 121.4,31.0 121.4,31.4 121.0,31.4 121.0,31.0
+			</coordinates></LinearRing></outerBoundaryIs>
+			<innerBoundaryIs><LinearRing><coordinates>
+				121.1,31.1 121.2,31.1 121.2,31.2 121.1,31.2 121.1,31.1
+			</coordinates></LinearRing></innerBoundaryIs>
+		</Polygon></Placemark></kml>`;
+		const { features } = parseKml(kml);
+		expect(features).toHaveLength(1);
+		const rings = (features[0].geometry as { coordinates: number[][][] }).coordinates;
+		// GeoJSON reads ring order as meaning: the first bounds the area and every
+		// later one is a hole in it, so document order alone cannot be trusted.
+		expect(rings).toHaveLength(2);
+		expect(rings[0][0]).toEqual([121, 31]);
+		expect(rings[1][0]).toEqual([121.1, 31.1]);
+	});
+
+	it('closes a ring the file left open, and drops ones too short to enclose anything', () => {
+		const kml = `<kml ${KML_NS}>
+			<Placemark><Polygon><outerBoundaryIs><LinearRing><coordinates>
+				121.0,31.0 121.1,31.0 121.1,31.1
+			</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+			<Placemark><Polygon><outerBoundaryIs><LinearRing><coordinates>
+				100.0,20.0 100.1,20.0
+			</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+			<Placemark><Polygon><outerBoundaryIs><LinearRing><coordinates>
+				90.0,10.0 90.1,10.0 90.0,10.0
+			</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>
+		</kml>`;
+		const { features } = parseKml(kml);
+		expect(features).toHaveLength(1);
+		const rings = (features[0].geometry as { coordinates: number[][][] }).coordinates;
+		// GeoJSON requires the repeated first position; KML writers omit it.
+		expect(rings[0]).toHaveLength(4);
+		expect(rings[0][3]).toEqual(rings[0][0]);
+	});
+
+	it('reads every <Polygon> inside a <MultiGeometry>', () => {
+		const ring = (lon: number) =>
+			`<Polygon><outerBoundaryIs><LinearRing><coordinates>
+				${lon},31.0 ${lon + 0.1},31.0 ${lon + 0.1},31.1 ${lon},31.0
+			</coordinates></LinearRing></outerBoundaryIs></Polygon>`;
+		const kml = `<kml ${KML_NS}><Placemark><name>Two</name><MultiGeometry>
+			${ring(121)}${ring(122)}
+		</MultiGeometry></Placemark></kml>`;
+		const { features } = parseKml(kml);
+		expect(features).toHaveLength(2);
+		expect(features.map((f) => f.geometry.type)).toEqual(['Polygon', 'Polygon']);
+		expect(features.map((f) => f.properties?.name)).toEqual(['Two', 'Two']);
+	});
+
+	it('reads a <LinearRing> no polygon claimed as a line', () => {
+		// Legal KML, and a ring nothing declared as a boundary has no interior to
+		// claim — so this stays the line it has always been read as.
+		const kml = `<kml ${KML_NS}><Placemark><LinearRing>
+			<coordinates>121.0,31.0 121.1,31.0 121.1,31.1 121.0,31.0</coordinates>
+		</LinearRing></Placemark></kml>`;
 		const { features } = parseKml(kml);
 		expect(features).toHaveLength(1);
 		expect(features[0].geometry.type).toBe('LineString');

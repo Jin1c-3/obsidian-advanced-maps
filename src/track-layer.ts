@@ -6,6 +6,7 @@ import { Keymap, Menu } from 'obsidian';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { PaneType, TFile } from 'obsidian';
 import {
+	AREA_LAYER,
 	ARROW_LAYER,
 	ENDPOINT_LAYER,
 	LINE_LAYER,
@@ -998,7 +999,10 @@ export class TrackLayer {
 		// order decides which of two stacked features wins, and clicking and
 		// pointing must not disagree about that. Photo features first, then let
 		// the original-event guards collapse thumbnail + fallback-dot delivery.
-		const layers = [PHOTO_LAYER, PHOTO_DOT_LAYER, LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER];
+		// Areas last, and for a stronger reason than the rest of the order: one
+		// can cover the whole viewport, so a click inside a region has to reach
+		// the photo or track drawn over it rather than the region.
+		const layers = [PHOTO_LAYER, PHOTO_DOT_LAYER, LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER, AREA_LAYER];
 		for (const layer of layers) {
 			this.mapEvents.onLayer(map, 'click', layer, (ev: MapMouseEvent) => this.open(ev));
 		}

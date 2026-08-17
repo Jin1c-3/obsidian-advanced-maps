@@ -1,6 +1,6 @@
 import { Keymap, TFile } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LINE_LAYER, PHOTO_DOT_LAYER, PHOTO_ICON_PREFIX, PHOTO_LAYER } from '../src/constants';
+import { AREA_LAYER, LINE_LAYER, PHOTO_DOT_LAYER, PHOTO_ICON_PREFIX, PHOTO_LAYER } from '../src/constants';
 import { PhotoModal } from '../src/photo-modal';
 import { TrackLayer } from '../src/track-layer';
 import type AdvancedMapsPlugin from '../src/main';
@@ -125,6 +125,38 @@ describe('base-map photo click precedence', () => {
 
 		expect(openLinkText).toHaveBeenCalledWith(photo.path, note.path, true);
 		expect(openModal).not.toHaveBeenCalled();
+	});
+
+	it('never lets an area take a click from what is drawn over it', () => {
+		const { map, photo, note, openLinkText } = harness();
+		const openModal = vi.spyOn(PhotoModal.prototype, 'open').mockImplementation(() => undefined);
+		const clicks = map.registrations.filter((registration) => registration.type === 'click');
+		const originalEvent = new MouseEvent('click');
+
+		// An area can cover the whole viewport, so it must be delivered last of
+		// all — this is the registration order, not the paint order, and it is
+		// what decides which of two stacked features the click acts on.
+		expect(clicks.at(-1)?.layer).toBe(AREA_LAYER);
+
+		for (const registration of clicks) {
+			if (registration.layer === PHOTO_LAYER) registration.listener(event(originalEvent, photo.path));
+			else if (registration.layer === AREA_LAYER) registration.listener(event(originalEvent));
+		}
+
+		expect(openModal).toHaveBeenCalledTimes(1);
+		expect(openLinkText).not.toHaveBeenCalled();
+		expect(note.path).toBe('note.md');
+	});
+
+	it('opens the owning note for an area with nothing over it', () => {
+		const { map, note, openLinkText } = harness();
+		const areaClick = map.registrations.find(
+			(registration) => registration.type === 'click' && registration.layer === AREA_LAYER
+		)!;
+
+		areaClick.listener(event(new MouseEvent('click')));
+
+		expect(openLinkText).toHaveBeenCalledWith(note.path, '', false);
 	});
 
 	it('removes terminal photo images only after their referencing layers on detach', () => {

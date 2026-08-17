@@ -305,6 +305,35 @@ describe('trackFeatures', () => {
 		});
 	});
 
+	it('carries an area through with its note colour and mints no endpoints for it', () => {
+		const input: Input = [
+			{
+				type: 'Feature',
+				properties: null,
+				geometry: {
+					type: 'Polygon',
+					coordinates: [
+						[
+							[0, 0],
+							[1, 0],
+							[1, 1],
+							[0, 0],
+						],
+					],
+				},
+			},
+		];
+		const out = trackFeatures(input, '#f00', 3);
+		// A ring is a closed line, so start and end would land on the same point
+		// and claim a direction the area does not have.
+		expect(out).toHaveLength(1);
+		expect(out[0]).toEqual({
+			type: 'Feature',
+			geometry: input[0].geometry,
+			properties: { amColor: '#f00', amIndex: 3 },
+		});
+	});
+
 	it('carries a named waypoint’s own name as amName', () => {
 		const input: Input = [
 			{ type: 'Feature', properties: { name: 'Bund' }, geometry: { type: 'Point', coordinates: [1, 1] } },

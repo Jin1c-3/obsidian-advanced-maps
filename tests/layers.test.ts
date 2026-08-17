@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FeatureCollection } from 'geojson';
 import {
+	AREA_LAYER,
 	ARROW_LAYER,
 	ENDPOINT_LAYER,
+	FILL_OPACITY_RATIO,
 	LINE_LAYER,
 	PHOTO_DOT_LAYER,
 	PHOTO_ICON_PREFIX,
@@ -12,6 +14,7 @@ import {
 	SRC,
 } from '../src/constants';
 import {
+	applyTrackPaint,
 	cancelPhotoImages,
 	disposePhotoImages,
 	drawTracks,
@@ -27,6 +30,9 @@ import type { GeoJSONSource, MapLibreMap } from '../src/types/obsidian-internals
 
 class LayerMap {
 	readonly layers: string[] = [];
+	/** Kept alongside `layers` so filter and paint order can be asserted. */
+	readonly specs: Array<{ id: string; type?: string; filter?: unknown }> = [];
+	readonly paint = new Map<string, Record<string, unknown>>();
 	private source: GeoJSONSource | undefined;
 	throwAt: number | null = null;
 	private addCount = 0;
@@ -54,12 +60,28 @@ class LayerMap {
 	addLayer(spec: unknown): void {
 		this.addCount++;
 		if (this.throwAt === this.addCount) throw new Error('style changed');
-		this.layers.push((spec as { id: string }).id);
+		const layer = spec as { id: string; type?: string; filter?: unknown };
+		this.layers.push(layer.id);
+		this.specs.push(layer);
 	}
 
 	removeLayer(id: string): void {
 		const index = this.layers.indexOf(id);
 		if (index >= 0) this.layers.splice(index, 1);
+		const spec = this.specs.findIndex((entry) => entry.id === id);
+		if (spec >= 0) this.specs.splice(spec, 1);
+	}
+
+	setPaintProperty(id: string, key: string, value: unknown): void {
+		const props = this.paint.get(id) ?? {};
+		props[key] = value;
+		this.paint.set(id, props);
+	}
+
+	setLayoutProperty(): void {}
+
+	specFor(id: string): { id: string; type?: string; filter?: unknown } | undefined {
+		return this.specs.find((spec) => spec.id === id);
 	}
 
 	hasImage(): boolean {
@@ -104,6 +126,7 @@ describe('drawTracks', () => {
 		expect(drawTracks(map.asMap(), EMPTY)).toBe(true);
 		expect(map.getSource(SRC)).toBeDefined();
 		expect(map.layers).toEqual([
+			AREA_LAYER,
 			LINE_LAYER,
 			ARROW_LAYER,
 			POINT_LAYER,
@@ -111,6 +134,60 @@ describe('drawTracks', () => {
 			PHOTO_DOT_LAYER,
 			PHOTO_LAYER,
 		]);
+	});
+});
+
+/** Geometry types a layer's `['==', ['geometry-type'], X]` clauses admit. */
+function admittedTypes(filter: unknown): string[] {
+	const out: string[] = [];
+	const walk = (node: unknown): void => {
+		if (!Array.isArray(node)) return;
+		if (
+			node[0] === '==' &&
+			Array.isArray(node[1]) &&
+			node[1][0] === 'geometry-type' &&
+			typeof node[2] === 'string'
+		) {
+			out.push(node[2]);
+			return;
+		}
+		for (const child of node) walk(child);
+	};
+	walk(filter);
+	return out;
+}
+
+describe('area layers', () => {
+	it('fills areas underneath every other owned layer', () => {
+		const map = new LayerMap();
+		expect(drawTracks(map.asMap(), EMPTY)).toBe(true);
+
+		// An area can cover the whole viewport, so it is the one layer whose
+		// position in the group is load-bearing rather than a matter of taste.
+		expect(map.layers[0]).toBe(AREA_LAYER);
+		expect(map.specFor(AREA_LAYER)?.type).toBe('fill');
+		expect(admittedTypes(map.specFor(AREA_LAYER)?.filter)).toEqual(['Polygon', 'MultiPolygon']);
+	});
+
+	it('strokes area boundaries with the track line but gives them no arrows', () => {
+		const map = new LayerMap();
+		drawTracks(map.asMap(), EMPTY);
+
+		expect(admittedTypes(map.specFor(LINE_LAYER)?.filter)).toContain('Polygon');
+		expect(admittedTypes(map.specFor(LINE_LAYER)?.filter)).toContain('MultiPolygon');
+		// A ring is a closed line, so nothing but this filter stops direction
+		// arrows from marching around a boundary that has no travel direction.
+		expect(admittedTypes(map.specFor(ARROW_LAYER)?.filter)).toEqual(['LineString', 'MultiLineString']);
+	});
+
+	it('derives fill opacity from the track opacity setting', () => {
+		const map = new LayerMap();
+		drawTracks(map.asMap(), EMPTY);
+		applyTrackPaint(map.asMap(), 4, 0.8, '#ffffff', true, true);
+
+		expect(map.paint.get(AREA_LAYER)?.['fill-opacity']).toBeCloseTo(0.8 * FILL_OPACITY_RATIO);
+		// The boundary keeps the setting itself; only the fill is stepped back.
+		expect(map.paint.get(LINE_LAYER)?.['line-opacity']).toBe(0.8);
 	});
 });
 
