@@ -62,7 +62,7 @@ None.
   three notices, in both locales.
 - `tests/note-picker.test.ts` — new; `tests/obsidian-stub.ts` gains
   `FuzzySuggestModal` and a button on `Setting`.
-- `docs/guide/around-and-navigation.md` (+ zh), `CHANGELOG.md`, `ROADMAP.md`.
+- `docs/guide/coordinates-and-services.md` (+ zh), `CHANGELOG.md`, `ROADMAP.md`.
 - No setting, persisted-data, dependency or manifest change. Dragging a note from
   the file explorer onto the map — the roadmap entry's second trigger — is
   deliberately not in this change; design.md records what was measured about it.

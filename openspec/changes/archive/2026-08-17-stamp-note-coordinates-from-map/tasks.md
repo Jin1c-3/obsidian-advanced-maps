@@ -29,14 +29,14 @@
 
 ## 6. Documentation
 
-- [x] 6.1 Document the item in `docs/guide/around-and-navigation.md` and its Chinese twin, beside the map's other right-click actions
+- [x] 6.1 Document the item in `docs/guide/coordinates-and-services.md` and its Chinese twin, beside the map's other right-click actions
 - [x] 6.2 Add a CHANGELOG entry under `[Unreleased]`
 - [x] 6.3 Narrow the ROADMAP entry to the drop trigger that remains, carrying over what design.md D5 measured
 
 ## 7. Verification
 
 - [x] 7.1 Run `npm run check`
-- [ ] 7.2 Live-verify in the test vault: the item appears on the map's right-click menu; picking a note with no coordinate writes it and reports it; the written value equals what **Copy coordinates** puts on the clipboard for the same click, on both WGS-84 and Chinese-datum tiles
-- [ ] 7.3 Live-verify the guard: a note that already has a coordinate shows the confirmation with both values, confirming replaces it, dismissing leaves the file byte-identical
-- [ ] 7.4 Live-verify the surroundings: a stamped note inside the base's query gains its pin without a reload, one outside it still reports; the menu's other items and `dev:errors` are unaffected
-- [ ] 7.5 Capture a screenshot of the menu item and the picker for the pull request
+- [x] 7.2 Live-verify in the test vault: the item appears on the map's right-click menu; picking a note with no coordinate writes it and reports it; the written value equals what **Copy coordinates** puts on the clipboard for the same click, on both WGS-84 and Chinese-datum tiles
+- [x] 7.3 Live-verify the guard: a note that already has a coordinate shows the confirmation with both values, confirming replaces it, dismissing leaves the file byte-identical
+- [x] 7.4 Live-verify the surroundings: a stamped note inside the base's query gains its pin without a reload, one outside it still reports; the menu's other items and `dev:errors` are unaffected
+- [x] 7.5 Capture a screenshot of the menu item and the picker for the pull request

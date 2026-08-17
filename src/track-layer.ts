@@ -420,12 +420,15 @@ export class TrackLayer {
 		const point = this.clickedCoordinate(ev, map, system);
 		if (!point) return;
 		const [lng, lat] = point;
-		// No section: this belongs with the native items that read the same click,
-		// rather than with the external-map group below.
+		// 'action' is the section the native items use — measured on a live menu,
+		// where New note, Copy coordinates and the two defaults all carry it. This
+		// belongs with them rather than in a group of its own, and if that name
+		// ever changes the item simply falls to the end of the menu.
 		Menu.forEvent(ev).addItem((item) =>
 			item
 				.setTitle(t('menu.stampNote'))
 				.setIcon('map-pin')
+				.setSection('action')
 				.onClick(() => this.plugin.stampNoteAt(lat, lng))
 		);
 	}
