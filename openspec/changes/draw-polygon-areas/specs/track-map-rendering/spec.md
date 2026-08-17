@@ -7,9 +7,10 @@ framing, so no supported file can move the camera to a place it draws nothing.
 An area SHALL be filled in its owning note's colour, SHALL have its boundaries
 stroked using the same width, opacity, and colour a route line uses, and SHALL
 take its fill opacity from the configured track opacity rather than from a
-separate control. An area SHALL be the lowest-priority pointer target among the
-features this plugin draws: where an area overlaps any other drawn feature, the
-pointer SHALL act on the other feature.
+separate control. An area SHALL be the lowest-priority pointer target on the
+map: where an area overlaps any other drawn feature — one this plugin owns or a
+native marker — the pointer SHALL act on that other feature, and one click there
+SHALL open one note.
 
 #### Scenario: A file's only geometry is an area
 
@@ -23,8 +24,13 @@ pointer SHALL act on the other feature.
 
 #### Scenario: A drawn feature sits over an area
 
-- **WHEN** the pointer is over a track, waypoint, photo, or native marker that lies inside an area
+- **WHEN** the pointer is over a track, waypoint, or photo that lies inside an area
 - **THEN** pointing and clicking act on that feature, and the area is acted on only where nothing else is drawn
+
+#### Scenario: A native marker stands inside an area
+
+- **WHEN** the user clicks a native marker whose position falls inside an area
+- **THEN** the marker's own note opens, once, and the area's note does not
 
 #### Scenario: The map context menu is opened over an area
 

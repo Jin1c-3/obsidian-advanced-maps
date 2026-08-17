@@ -96,18 +96,38 @@ _Alternative considered:_ a `trackFillOpacity` knob. Rejected for now, not
 forever; the ratio is one constant to promote to a knob later if real areas ask
 for it, and the spec fixes only that the fill follows the opacity setting.
 
-### D4 — The area is registered last, so it loses every overlap
+### D4 — The area is registered last, and asks whether a native pin holds the pointer
 
 Append the fill layer to the end of the interaction array in
-`TrackLayer.bindInteractions()`, after `ARROW_LAYER`.
+`TrackLayer.bindInteractions()`, after `ARROW_LAYER` — and, for that layer only,
+wrap its click and mousemove callbacks in a check for a native marker under
+`ev.point`.
 
-_Why:_ an area is the one owned feature that can cover the whole viewport. Every
-other stacking question in this codebase is between features of comparable size,
-where either answer is defensible; here it is not. A click on a photo sitting
-inside a region must open the photo, and a hover over a track crossing a region
-must describe the track. Registering last is the existing mechanism for saying
-so, and the existing `handledClick` / first-delivery guards then discard the
-area's duplicate delivery of the same DOM event.
+_Why registered last:_ an area is the one owned feature that can cover the whole
+viewport. Every other stacking question in this codebase is between features of
+comparable size, where either answer is defensible; here it is not. A click on a
+photo sitting inside a region must open the photo, and a hover over a track
+crossing a region must describe the track. Registering last is the existing
+mechanism for saying so, and the existing `handledClick` / first-delivery guards
+then discard the area's duplicate delivery of the same DOM event.
+
+_Why that is not enough:_ measured on a live map, the native view binds its own
+`marker-pins` handlers **after** this plugin's — the delegated-listener table
+reads `…, advanced-maps-track-areas, marker-pins`. Registration order therefore
+hands an overlapping click to the area first, and a click on a pin standing
+inside a region opened two notes: the area's, then the pin's. Order can rank the
+plugin's own layers against each other; it cannot rank one of them against a
+native layer bound later. Asking what is rendered under the pointer can, so the
+area asks.
+
+_Why only the area asks:_ every other owned feature is small enough that landing
+on one is a deliberate choice, and a photo or waypoint over a pin is a case where
+the owned feature is the more specific answer. Broadening the check would change
+behaviour that is already correct.
+
+_Cost:_ one `queryRenderedFeatures` restricted to a single layer, on area clicks
+and on pointer samples that reach the area — not on samples over any other owned
+feature, since those never reach the area's handler at all.
 
 _What this does not affect:_ the map context menu. This plugin reaches it by
 wrapping `view.showMapContextMenu` (`src/track-layer.ts:296`), a view method
@@ -120,6 +140,11 @@ answer is structural rather than something to be careful about.
 _Consequence to accept:_ an area with nothing over it does answer hover and
 click, opening its owning note — which is the point. The cursor changes over it
 the same way it does over a track.
+
+_Provenance:_ `queryRenderedFeatures` is public MapLibre API, but this plugin
+carries no `maplibre-gl` dependency, so it is declared in
+`obsidian-internals.d.ts` like every other map member — optional, shape-checked
+before use, and standing down to "no pin here" when absent.
 
 ### D5 — KML `<Polygon>` becomes a polygon; a bare `<LinearRing>` stays a line
 

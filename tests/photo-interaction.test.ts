@@ -1,6 +1,13 @@
 import { Keymap, TFile } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AREA_LAYER, LINE_LAYER, PHOTO_DOT_LAYER, PHOTO_ICON_PREFIX, PHOTO_LAYER } from '../src/constants';
+import {
+	AREA_LAYER,
+	LINE_LAYER,
+	MARKER_LAYER,
+	PHOTO_DOT_LAYER,
+	PHOTO_ICON_PREFIX,
+	PHOTO_LAYER,
+} from '../src/constants';
 import { PhotoModal } from '../src/photo-modal';
 import { TrackLayer } from '../src/track-layer';
 import type AdvancedMapsPlugin from '../src/main';
@@ -14,7 +21,18 @@ interface LayerRegistration {
 
 class InteractionMap {
 	readonly registrations: LayerRegistration[] = [];
+	/** What `queryRenderedFeatures` answers for the native marker layer. */
+	pinUnderPointer = false;
 	private readonly canvas = document.createElement('canvas');
+
+	getLayer(id: string): unknown {
+		return id === MARKER_LAYER ? { id } : undefined;
+	}
+
+	queryRenderedFeatures(_point: unknown, options?: { layers?: string[] }): unknown[] {
+		if (!options?.layers?.includes(MARKER_LAYER)) return [];
+		return this.pinUnderPointer ? [{ id: 'pin' }] : [];
+	}
 
 	on(type: string, listener: (event: MapMouseEvent) => void): void;
 	on(type: string, layer: string, listener: (event: MapMouseEvent) => void): void;
@@ -80,6 +98,7 @@ function event(originalEvent: MouseEvent, photoPath?: string): MapMouseEvent {
 	return {
 		originalEvent,
 		lngLat: { lng: 0, lat: 0 },
+		point: { x: 10, y: 10 },
 		features: [
 			{
 				type: 'Feature',
@@ -157,6 +176,40 @@ describe('base-map photo click precedence', () => {
 		areaClick.listener(event(new MouseEvent('click')));
 
 		expect(openLinkText).toHaveBeenCalledWith(note.path, '', false);
+	});
+
+	it('yields an area click to a native pin standing inside it', () => {
+		const { map, openLinkText } = harness();
+		const areaClick = map.registrations.find(
+			(registration) => registration.type === 'click' && registration.layer === AREA_LAYER
+		)!;
+
+		// Measured on a live map: the native view binds its `marker-pins` handlers
+		// after this plugin's, so registration order alone hands the click to the
+		// area first — and both would open a note, from one click.
+		map.pinUnderPointer = true;
+		areaClick.listener(event(new MouseEvent('click')));
+		expect(openLinkText).not.toHaveBeenCalled();
+
+		map.pinUnderPointer = false;
+		areaClick.listener(event(new MouseEvent('click')));
+		expect(openLinkText).toHaveBeenCalledTimes(1);
+	});
+
+	it('leaves the other owned layers free to win a pin they overlap', () => {
+		const { map, photo, openLinkText } = harness();
+		const openModal = vi.spyOn(PhotoModal.prototype, 'open').mockImplementation(() => undefined);
+		const photoClick = map.registrations.find(
+			(registration) => registration.type === 'click' && registration.layer === PHOTO_LAYER
+		)!;
+
+		// The guard is the area's alone: a photo or waypoint is small enough that
+		// landing on one is a deliberate choice, and it already draws above pins.
+		map.pinUnderPointer = true;
+		photoClick.listener(event(new MouseEvent('click'), photo.path));
+
+		expect(openModal).toHaveBeenCalledTimes(1);
+		expect(openLinkText).not.toHaveBeenCalled();
 	});
 
 	it('removes terminal photo images only after their referencing layers on detach', () => {

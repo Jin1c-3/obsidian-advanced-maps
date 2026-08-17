@@ -23,6 +23,8 @@
 - [x] 4.1 Append the fill layer to the interaction layer list in `TrackLayer.bindInteractions()`, after `ARROW_LAYER`, so an overlapping DOM event reaches every other owned layer first
 - [x] 4.2 Test that a click and a hover on a point where an area overlaps a line, a waypoint, and a photo act on the feature above the area, and that an area alone still opens and describes its owning note
 - [x] 4.3 Confirm the context menu is unaffected — it comes from the wrapped `view.showMapContextMenu`, not from a layer-scoped handler — and that its coordinates still read as WGS-84 over an area
+- [x] 4.4 Yield the area's click and hover to a native marker under the pointer, since native binds its `marker-pins` handlers after this plugin's and registration order alone cannot rank an owned layer against one bound later; declare `queryRenderedFeatures` in `src/types/obsidian-internals.d.ts` with that provenance and stand down when it is absent
+- [x] 4.5 Test both halves: an area click with a pin under the pointer opens nothing, the same click without one opens the area's note, and a photo over a pin still wins as it does today
 
 ## 5. Rendering and framing coverage
 
@@ -33,5 +35,5 @@
 ## 6. Verification
 
 - [x] 6.1 Run `npm run check`
-- [ ] 6.2 Live-verify in the test vault: a GeoJSON polygon, a polygon with a hole, and a KML polygon each draw on a base map and in an inline embed; an area-only embed shows no statistics bar and no profile; the opacity slider moves fill and boundary together; a photo inside an area still opens on click and the map context menu still opens over one; `dev:errors` stays clean across a background switch to Chinese tiles and back
+- [x] 6.2 Live-verify in the test vault: a GeoJSON polygon, a polygon with a hole, and a KML polygon each draw on a base map and in an inline embed; an area-only embed shows no statistics bar and no profile; the opacity slider moves fill and boundary together; a photo inside an area still opens on click and the map context menu still opens over one; `dev:errors` stays clean across a background switch to Chinese tiles and back
 - [ ] 6.3 Note the KML rendering change (outline becomes filled) for the release notes

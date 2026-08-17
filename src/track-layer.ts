@@ -1003,11 +1003,23 @@ export class TrackLayer {
 		// can cover the whole viewport, so a click inside a region has to reach
 		// the photo or track drawn over it rather than the region.
 		const layers = [PHOTO_LAYER, PHOTO_DOT_LAYER, LINE_LAYER, POINT_LAYER, ENDPOINT_LAYER, ARROW_LAYER, AREA_LAYER];
+		// …and being last is not enough against a *native* pin. Measured on a
+		// live map: the native view binds its own `marker-pins` handlers after
+		// these, so an overlapping click reaches this plugin first, and an area
+		// would answer for every pin standing inside it — opening its note and
+		// leaving native to open the pin's as well. Only asking what is under the
+		// pointer settles that, and only the area layer needs to ask: every other
+		// owned feature is small enough that landing on one is a real choice.
+		const yieldToPin = (act: (ev: MapMouseEvent) => void) => (ev: MapMouseEvent) => {
+			if (!this.pinHoldsPointer(ev)) act(ev);
+		};
 		for (const layer of layers) {
-			this.mapEvents.onLayer(map, 'click', layer, (ev: MapMouseEvent) => this.open(ev));
+			const open = (ev: MapMouseEvent) => this.open(ev);
+			this.mapEvents.onLayer(map, 'click', layer, layer === AREA_LAYER ? yieldToPin(open) : open);
 		}
 		for (const layer of layers) {
-			this.mapEvents.onLayer(map, 'mousemove', layer, (ev: MapMouseEvent) => this.hover(ev));
+			const hover = (ev: MapMouseEvent) => this.hover(ev);
+			this.mapEvents.onLayer(map, 'mousemove', layer, layer === AREA_LAYER ? yieldToPin(hover) : hover);
 			this.mapEvents.onLayer(map, 'mouseenter', layer, () => map.getCanvas().addClass('is-over-marker'));
 			this.mapEvents.onLayer(map, 'mouseleave', layer, () => {
 				map.getCanvas().removeClass('is-over-marker');
@@ -1017,6 +1029,30 @@ export class TrackLayer {
 				this.shownPopup = null;
 			});
 		}
+	}
+
+	/**
+	 * Whether a native pin — not one of this plugin's features — is under the
+	 * pointer, and so owns this event.
+	 *
+	 * Answers false rather than throwing on a map whose style is mid-swap: a
+	 * pointer sample is not worth a raised exception, and the area answering one
+	 * extra event is a smaller wrong than an uncaught one.
+	 */
+	private pinHoldsPointer(ev: MapMouseEvent): boolean {
+		const map = this.view.map;
+		if (!map || !ev.point || typeof map.queryRenderedFeatures !== 'function') return false;
+		if (!map.getLayer(MARKER_LAYER)) return false;
+		let held = false;
+		try {
+			held = map.queryRenderedFeatures(ev.point, { layers: [MARKER_LAYER] }).length > 0;
+		} catch {
+			/* style torn down between delivery and query */
+		}
+		// The popup showing is native's now, so returning to the area has to
+		// raise its own again rather than be suppressed as unchanged.
+		if (held) this.shownPopup = null;
+		return held;
 	}
 
 	private itemFrom(ev: MapMouseEvent | undefined): DrawItem | null {
