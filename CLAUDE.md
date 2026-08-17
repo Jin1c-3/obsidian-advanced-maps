@@ -1,7 +1,8 @@
 # CLAUDE.md
 
-Technical entry point for Advanced Maps. User-facing behavior belongs in the
-[README](README.md); setup and contribution workflow belong in
+Technical entry point for Advanced Maps. The [README](README.md) is the concise
+project landing page; user-facing behavior belongs in the
+[user guide](docs/guide/README.md); setup and contribution workflow belong in
 [CONTRIBUTING.md](CONTRIBUTING.md); stable technical contracts belong in the
 [OpenSpec capabilities](#capability-specs).
 

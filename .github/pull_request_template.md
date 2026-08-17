@@ -1,12 +1,19 @@
 <!-- Keep it short; the diff says most of it. -->
 
-## What this changes
+## Outcome
 
-## Why
+<!-- What changes, and why is that outcome needed? -->
 
-## Checked
+## Impact
 
-- [ ] Linked the affected OpenSpec change/spec, or explained why there is no spec impact
+- User-visible behavior:
+- OpenSpec change/spec, or why there is no specification impact:
+
+## Verification
+
 - [ ] `npm run check` passes
-- [ ] Recorded behavior-preservation or live-vault evidence when relevant
+- [ ] Recorded the decisive behavior-preservation, live-vault, or visual evidence when relevant
+
+## Scope
+
 - [ ] Kept the branch focused and the PR squashable

@@ -17,9 +17,11 @@ builds without restarting Obsidian. Keep personal vault paths in the ignored
 ## Architecture and changes
 
 [CLAUDE.md](CLAUDE.md) is the concise technical entry point and links all
-capability specs. Read the specs for observable contracts, the relevant active
-or archived OpenSpec design for cross-cutting rationale, and adjacent source
-comments for narrow implementation constraints.
+capability specs. The [user guide](docs/guide/README.md) is the canonical home
+for user-facing instructions; keep the root README as a concise landing page.
+Read the specs for observable contracts, the relevant active or archived
+OpenSpec design for cross-cutting rationale, and adjacent source comments for
+narrow implementation constraints.
 
 Use an OpenSpec change when work adds or changes a stable behavior, invariant,
 compatibility boundary, or maintainer contract. Keep executable proof in tests

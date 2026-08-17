@@ -1,0 +1,29 @@
+# Advanced Maps 用户指南
+
+[English](README.md) · **简体中文** · [项目首页](../../README.zh-CN.md)
+
+Advanced Maps 在 Obsidian 原生 Maps 视图上增加照片相册、链接的轨迹与区域、周围视
+图、地图导航和坐标工具。第一次使用请从[快速开始](getting-started.zh-CN.md)复制一份完
+整 Base；之后可以把下面各页当作配方和参考。
+
+![一张 Bases 地图同时显示 GPX 轨迹、方向箭头、照片缩略图和不同颜色的笔记图钉](../map-view.png)
+
+## 选择一种用法
+
+| 我想……                                                   | 阅读                                                |
+| -------------------------------------------------------- | --------------------------------------------------- |
+| 安装插件并做出第一张地图                                 | [快速开始](getting-started.zh-CN.md)                |
+| 显示整个照片目录，或显示笔记链接的照片                   | [照片地图](photo-maps.zh-CN.md)                     |
+| 绘制 GPX、GeoJSON、KML、TCX、区域，或查看内联轨迹统计    | [轨迹与区域](tracks-and-areas.zh-CN.md)             |
+| 显示本篇相关笔记、在 Base 中打开笔记，或跟随当前笔记     | [周围视图与导航](around-and-navigation.zh-CN.md)    |
+| 对齐国内底图、解析地图链接、搜索地点，或调用其他地图 App | [坐标与地图服务](coordinates-and-services.zh-CN.md) |
+| 查看支持格式、选项职责、隐私、使用边界和致谢             | [参考与隐私](reference-and-privacy.zh-CN.md)        |
+
+这些用法可以叠加：同一个 Base 能同时显示地点笔记、多日轨迹和沿途所有定位照片。
+
+## 维护者文档
+
+面向用户的行为放在本指南。开发环境和 PR 流程见
+[CONTRIBUTING.md](../../CONTRIBUTING.md)，稳定技术契约见
+[OpenSpec capabilities](../../openspec/specs)，已发布变化见
+[CHANGELOG.md](../../CHANGELOG.md)，未来方向见 [ROADMAP.md](../../ROADMAP.md)。
