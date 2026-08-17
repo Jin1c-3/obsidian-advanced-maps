@@ -36,4 +36,4 @@
 
 - [x] 6.1 Run `npm run check`
 - [x] 6.2 Live-verify in the test vault: a GeoJSON polygon, a polygon with a hole, and a KML polygon each draw on a base map and in an inline embed; an area-only embed shows no statistics bar and no profile; the opacity slider moves fill and boundary together; a photo inside an area still opens on click and the map context menu still opens over one; `dev:errors` stays clean across a background switch to Chinese tiles and back
-- [ ] 6.3 Note the KML rendering change (outline becomes filled) for the release notes
+- [x] 6.3 Note the KML rendering change (outline becomes filled) for the release notes
