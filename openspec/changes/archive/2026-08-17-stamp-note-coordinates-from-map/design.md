@@ -86,7 +86,8 @@ would remove it. The confirmation in D4 is what makes including them safe.
 
 _Why not a folder or tag filter setting:_ fuzzy search over names is what
 Obsidian's own switcher does, and a vault-specific narrowing belongs in the
-query the reader types, not in a setting that has to be maintained.
+query the reader types, not in a setting that has to be maintained. Templates
+are the one exception, and D6 says why they are not one of these cases.
 
 ### D4 — Replacing an existing coordinate asks first
 
@@ -130,6 +131,36 @@ Shipping an interaction whose central question is unanswered would contradict th
 rule the last two changes in this repository were written under. The write path
 this change builds is the same one that trigger will use, so it costs nothing to
 add later.
+
+### D6 — Templates are the one thing left out of the list
+
+Notes inside the folder the core Templates plugin names are not offered.
+
+_Why they are the exception,_ when D3 argues for offering everything: a template
+is not a place, it is the shape a note is stamped from, and a coordinate written
+into one goes into every note made from it afterwards. Nothing else in the vault
+has that property — an ordinary note that is the wrong choice costs one undo of
+attention, a template costs every note that follows.
+
+_Why it is asked of Obsidian rather than configured here:_ the reader already
+told the app where their templates live. A second setting saying the same thing
+is a second thing to keep in sync, and guessing from a folder called `templates`
+is wrong in every vault that calls it something else. Measured on Obsidian 1.13:
+`internalPlugins.getPluginById('templates').instance.options` is `{folder:
+"templates"}` — the value from the plugin's own settings tab. Every level is
+optional and shape-checked, and the cost of it answering nothing is a slightly
+longer list.
+
+_Why a folder test rather than a substring one:_ `templates-old/place.md` is not
+a template. The plugin's existing `isExcluded()` matches path substrings, which
+is right for the automatic device-location fill it was written for — over-
+excluding there costs a note that does not get stamped by itself — and wrong
+here, where over-excluding means the reader cannot find the note they are
+looking straight at.
+
+_Not Templater:_ its folder setting is the obvious second source, and it is left
+out because this could not be measured — that plugin is not installed in the
+test vault, and guessing a settings key is worse than reading one.
 
 ## Risks / Trade-offs
 

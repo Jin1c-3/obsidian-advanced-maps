@@ -43,6 +43,20 @@ declare module 'obsidian' {
 
 export interface InternalPluginInstance {
 	registrations?: Record<string, BasesViewRegistration | undefined>;
+	/**
+	 * The core Templates plugin's own settings, whose `folder` names where a
+	 * vault keeps its templates.
+	 *
+	 * Undeclared in `obsidian.d.ts`. Measured on Obsidian 1.13 with the plugin
+	 * enabled: `getPluginById('templates').instance` carries
+	 * `{id, name, description, defaultOn, app, plugin, options, templateFiles}`,
+	 * and `options` is `{folder: "templates"}` — the value typed into the
+	 * plugin's own settings tab, vault-root-relative and empty when unset.
+	 *
+	 * Optional at every level, and only ever used to leave notes out of a list,
+	 * so a shape that changes costs a slightly longer list and nothing else.
+	 */
+	options?: { folder?: unknown };
 }
 
 export interface InternalPluginWrapper {

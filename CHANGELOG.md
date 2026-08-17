@@ -17,12 +17,14 @@ where they do not.
 
   Each row in the picker shows the note's folder and, when it already has a
   coordinate, the value it holds, so a near-miss on a name is visible before it
-  is chosen rather than after. Picking a note with no coordinate writes straight
-  away; picking one that already has a coordinate shows the old value and the new
-  one and asks, because a property has no undo. Only the coordinate property is
-  written, and the coordinate is the same one the menu's other entries use —
-  converted out of the basemap's datum and back into longitude range exactly
-  once.
+  is chosen rather than after. Templates are left out of the list — read from the
+  folder the core **Templates** plugin names, since a coordinate written into a
+  template would go into every note stamped from it afterwards. Picking a note
+  with no coordinate writes straight away; picking one that already has a
+  coordinate shows the old value and the new one and asks, because a property has
+  no undo. Only the coordinate property is written, and the coordinate is the
+  same one the menu's other entries use — converted out of the basemap's datum
+  and back into longitude range exactly once.
 
 - **Track statistics can be written into a note's properties.** The numbers under
   an inline map existed only in that embed, where no Base could sort, filter or

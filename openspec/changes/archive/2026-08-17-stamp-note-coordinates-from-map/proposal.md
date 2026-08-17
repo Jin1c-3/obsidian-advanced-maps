@@ -29,6 +29,10 @@ normalized back into range exactly once (`src/track-layer.ts:394`).
   The datum shift and the meridian normalization each happen exactly once for a
   click, and both menu items read the same pair — zero conversions and two look
   identical on screen and land the pin about 500 m out.
+- Leave the vault's templates out of the list, reading where they live from the
+  core Templates plugin rather than from a setting of this plugin's own. A
+  template is not a place, and a coordinate written into one goes into every note
+  stamped from it afterwards.
 - Show each candidate note's current coordinate in the picker, and confirm before
   replacing one. A note _without_ a coordinate — the case this exists for — is
   stamped with no extra step; a note that already has one names the old value and

@@ -39,6 +39,39 @@ export function currentCoords(app: App, file: TFile, property: string): string |
 }
 
 /**
+ * Is this note inside `folder`? Both are vault-root-relative, '/'-separated.
+ *
+ * A separator is required after the folder name, so `templates-old/x.md` is not
+ * inside `templates`. That is the whole difference between this and a substring
+ * test, and it is the difference between excluding a folder and excluding every
+ * note whose path happens to contain a word.
+ */
+export function inFolder(path: string, folder: string): boolean {
+	const root = folder.replace(/^\/+|\/+$/g, '');
+	if (root === '') return false;
+	return path.startsWith(`${root}/`);
+}
+
+/**
+ * Where this vault keeps its templates, according to the core Templates plugin,
+ * or null when it names none.
+ *
+ * Asked of Obsidian rather than configured here or guessed from a folder name:
+ * the reader already told the app where their templates are, and a second
+ * setting saying it again is a second thing to keep in sync. Every level is
+ * optional and shape-checked — see `InternalPluginInstance.options` — and the
+ * cost of it answering null is a slightly longer list.
+ */
+export function templateFolder(app: App): string | null {
+	const folder = app.internalPlugins?.getPluginById('templates')?.instance?.options?.folder;
+	if (typeof folder !== 'string') return null;
+	const root = folder.replace(/^\/+|\/+$/g, '');
+	// A template folder of "/" would mean the whole vault. Excluding everything
+	// is worse than excluding nothing, so an unset or root folder excludes nothing.
+	return root === '' ? null : root;
+}
+
+/**
  * Pick the note a clicked point belongs to.
  *
  * Every markdown note is offered, not only the unplaced ones: correcting a pin
@@ -46,6 +79,10 @@ export function currentCoords(app: App, file: TFile, property: string): string |
  * `ReplaceCoordsModal` is what makes including the placed ones safe. Matching is
  * on the full path, so typing a folder narrows the list the way the quick
  * switcher does.
+ *
+ * Templates are the one exclusion. A template is not a place, it is the shape a
+ * note is stamped from, and stamping a coordinate into one puts that coordinate
+ * into every note made from it afterwards.
  */
 export class NotePickerModal extends FuzzySuggestModal<TFile> {
 	constructor(
@@ -63,7 +100,11 @@ export class NotePickerModal extends FuzzySuggestModal<TFile> {
 	}
 
 	getItems(): TFile[] {
-		return this.app.vault.getMarkdownFiles();
+		const notes = this.app.vault.getMarkdownFiles();
+		// Read per open rather than held: the reader can move their template
+		// folder between one right-click and the next.
+		const templates = templateFolder(this.app);
+		return templates === null ? notes : notes.filter((file) => !inFolder(file.path, templates));
 	}
 
 	getItemText(file: TFile): string {

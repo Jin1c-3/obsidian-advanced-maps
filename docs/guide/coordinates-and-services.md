@@ -43,6 +43,10 @@ match is checked before it is taken, not after. Choosing a note with no
 coordinate writes immediately; choosing one that already has a coordinate names
 the old value and the new one first, because frontmatter has no undo.
 
+Your templates are left out of the list, read from the folder the core
+**Templates** plugin names. A template is not a place, and a coordinate written
+into one would go into every note stamped from it afterwards.
+
 Only the coordinate property is written. If the note is not in that map's own
 query the pin will not appear, which is Bases filtering rather than a failure —
 the notice names the note and the value either way.

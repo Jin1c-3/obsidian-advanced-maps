@@ -5,7 +5,7 @@ import type { App, FuzzyMatch } from 'obsidian';
 // shapes are the stub's own, and the published types know nothing about them.
 // It is the same module either way — vitest resolves `obsidian` to this file.
 import { ButtonStub, Setting } from './obsidian-stub';
-import { currentCoords, NotePickerModal, ReplaceCoordsModal } from '../src/note-picker';
+import { currentCoords, inFolder, NotePickerModal, ReplaceCoordsModal, templateFolder } from '../src/note-picker';
 
 /**
  * Obsidian extends HTMLElement with these at runtime; happy-dom does not have
@@ -47,7 +47,11 @@ function note(path: string, folder = ''): TFile {
 }
 
 /** An app whose metadata cache answers from a path → frontmatter table. */
-function appWith(frontmatter: Record<string, Record<string, unknown> | undefined>, files: TFile[] = []): App {
+function appWith(
+	frontmatter: Record<string, Record<string, unknown> | undefined>,
+	files: TFile[] = [],
+	templates?: unknown
+): App {
 	return {
 		vault: { getMarkdownFiles: () => files },
 		metadataCache: {
@@ -55,6 +59,10 @@ function appWith(frontmatter: Record<string, Record<string, unknown> | undefined
 				const fm = frontmatter[file.path];
 				return fm === undefined ? null : { frontmatter: fm };
 			},
+		},
+		internalPlugins: {
+			getPluginById: (id: string) =>
+				id === 'templates' && templates !== undefined ? { instance: { options: { folder: templates } } } : null,
 		},
 	} as unknown as App;
 }
@@ -103,10 +111,69 @@ describe('currentCoords', () => {
 	});
 });
 
+describe('inFolder', () => {
+	it('is true for a note inside the folder, at any depth', () => {
+		expect(inFolder('templates/place.md', 'templates')).toBe(true);
+		expect(inFolder('templates/nested/place.md', 'templates')).toBe(true);
+	});
+
+	it('is false for a folder whose name merely starts the same way', () => {
+		// The difference between excluding a folder and excluding every note whose
+		// path happens to contain a word.
+		expect(inFolder('templates-old/place.md', 'templates')).toBe(false);
+		expect(inFolder('my-templates/place.md', 'templates')).toBe(false);
+	});
+
+	it('ignores the slashes a folder may be typed with', () => {
+		expect(inFolder('templates/place.md', '/templates/')).toBe(true);
+	});
+
+	it('is false for an empty or root folder, which would otherwise match everything', () => {
+		expect(inFolder('places/楼外楼.md', '')).toBe(false);
+		expect(inFolder('places/楼外楼.md', '/')).toBe(false);
+	});
+
+	it('matches a nested template folder without matching its parent', () => {
+		expect(inFolder('meta/templates/place.md', 'meta/templates')).toBe(true);
+		expect(inFolder('meta/other/place.md', 'meta/templates')).toBe(false);
+	});
+});
+
+describe('templateFolder', () => {
+	it('reads the folder the core Templates plugin names', () => {
+		expect(templateFolder(appWith({}, [], 'templates'))).toBe('templates');
+		expect(templateFolder(appWith({}, [], '/meta/templates/'))).toBe('meta/templates');
+	});
+
+	it('answers null when nothing usable is there, rather than excluding the vault', () => {
+		expect(templateFolder(appWith({}, [], ''))).toBeNull();
+		expect(templateFolder(appWith({}, [], '/'))).toBeNull();
+		// The plugin disabled, the shape changed, the value not a string.
+		expect(templateFolder(appWith({}, []))).toBeNull();
+		expect(templateFolder(appWith({}, [], 42))).toBeNull();
+		expect(templateFolder({} as unknown as App)).toBeNull();
+	});
+});
+
 describe('NotePickerModal', () => {
 	const placed = note('places/楼外楼.md', 'places');
 	const unplaced = note('places/新店.md', 'places');
 	const app = appWith({ 'places/楼外楼.md': { coords: '30.24,120.14' } }, [placed, unplaced]);
+
+	it('leaves out the vault’s templates, which are shapes rather than places', () => {
+		const template = note('templates/地点.md', 'templates');
+		const lookalike = note('templates-old/旧地点.md', 'templates-old');
+		const withTemplates = appWith({}, [placed, template, lookalike, unplaced], 'templates');
+		const modal = new NotePickerModal(withTemplates, '30.25,120.15', 'coords', () => undefined);
+		expect(modal.getItems()).toEqual([placed, lookalike, unplaced]);
+	});
+
+	it('offers everything when no template folder is configured', () => {
+		const template = note('templates/地点.md', 'templates');
+		const noTemplates = appWith({}, [placed, template]);
+		const modal = new NotePickerModal(noTemplates, '30.25,120.15', 'coords', () => undefined);
+		expect(modal.getItems()).toEqual([placed, template]);
+	});
 
 	it('offers the vault’s markdown notes, matched on their path', () => {
 		const modal = new NotePickerModal(app, '30.25,120.15', 'coords', () => undefined);
