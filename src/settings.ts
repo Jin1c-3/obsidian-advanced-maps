@@ -204,6 +204,9 @@ export function fallsBackToDefault(key: string): key is PlaceholderDefaultKey {
 	return (PLACEHOLDER_DEFAULT_KEYS as readonly string[]).includes(key);
 }
 
+/** The pane's topics, each a page reached from its root. */
+type PageKey = 'coord' | 'open' | 'external' | 'search' | 'locate' | 'pins' | 'tracks' | 'photos';
+
 /** Indexed entry keys keep list rows on the declarative settings read/write seam. */
 type EntryKey = `externalMaps.${number}.on` | `customMaps.${number}.${'name' | 'url' | 'datum'}`;
 type ControlKey = Key | EntryKey;
@@ -331,15 +334,32 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		};
 	}
 
-	private group(
-		key: 'coord' | 'open' | 'external' | 'search' | 'locate' | 'pins' | 'tracks',
-		items: SettingDefinition<ControlKey>[]
-	) {
+	/**
+	 * One topic as a page reached from the pane's root, its intro leading the
+	 * rows it introduces.
+	 *
+	 * `displayValue` states on the entry what the page is set to, so the root
+	 * answers "which coordinate system", "which base" without being opened. It
+	 * is only ever given for a value behind a dropdown, a toggle, a file picker
+	 * or a list — `update()` re-renders the pane, and a text row would lose its
+	 * caret mid-word to the refresh that keeps this current.
+	 */
+	private page(
+		key: PageKey,
+		items: SettingDefinitionItem<ControlKey>[],
+		displayValue?: () => string
+	): SettingDefinitionItem<ControlKey> {
 		return {
-			type: 'group' as const,
-			heading: t(`settings.${key}.heading`),
+			type: 'page' as const,
+			name: t(`settings.${key}.heading`),
+			displayValue,
 			items: [this.introItem(t(`settings.${key}.intro`)), ...items],
 		};
+	}
+
+	/** A toggle's state as an entry can state it, since a page shows no control of its own. */
+	private state(on: boolean): string {
+		return t(on ? 'settings.state.on' : 'settings.state.off');
 	}
 
 	private text(
@@ -523,170 +543,213 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		for (const datum of PHOTO_DATUMS) photoDatums[datum] = t(`setting.photoDatum.${datum}`);
 
 		return [
-			this.group('coord', [
-				{
-					name: t('settings.coord.default.name'),
-					desc: t('settings.coord.default.desc'),
-					control: { type: 'dropdown', key: 'coordSystem', options: coordModes },
-				},
-			]),
-
-			this.group('open', [
-				{
-					name: t('settings.open.basePath.name'),
-					desc: t('settings.open.basePath.desc'),
-					// Picked out of the vault rather than typed. The only file this can
-					// name is a `.base`, and `filter` is what says so — a path typed by
-					// hand is one misremembered folder away from `notice.baseNotFound`,
-					// and nothing on screen would say which half was wrong. What is
-					// stored is unchanged: the full path, extension and all, which is
-					// what `getFileByPath` is handed.
-					control: {
-						type: 'file',
-						key: 'basePath',
-						placeholder: BASE_PATH_PLACEHOLDER,
-						filter: (file) => file.extension === 'base',
+			this.page(
+				'coord',
+				[
+					{
+						name: t('settings.coord.default.name'),
+						desc: t('settings.coord.default.desc'),
+						control: { type: 'dropdown', key: 'coordSystem', options: coordModes },
 					},
-				},
-				{
-					name: t('settings.open.viewName.name'),
-					desc: t('settings.open.viewName.desc'),
-					control: {
-						type: 'dropdown',
-						key: 'viewName',
-						options: this.viewOptions(),
-						// Nothing to choose from, and a list of one blank line reads as
-						// something broken rather than as something not set up yet.
-						disabled: () => this.plugin.settings.basePath === '',
-					},
-				},
-				{
-					name: t('settings.open.openIn.name'),
-					desc: t('settings.open.openIn.desc'),
-					control: { type: 'dropdown', key: 'openIn', options: openTargets },
-				},
-				this.text('settings.open.coordsProperty.name', 'settings.open.coordsProperty.desc', 'coordsProperty', {
-					placeholder: DEFAULT_SETTINGS.coordsProperty,
-				}),
-				this.text('settings.open.placeProperty.name', 'settings.open.placeProperty.desc', 'placeProperty', {
-					placeholder: DEFAULT_SETTINGS.placeProperty,
-				}),
-				this.slider('settings.open.zoom.name', 'settings.open.zoom.desc', 'openZoom', 1, 18, 1),
-				this.toggle('settings.open.follow.name', 'settings.open.follow.desc', 'followActiveNote'),
-				this.text('settings.open.aroundView.name', 'settings.open.aroundView.desc', 'aroundViewName', {
-					placeholder: t('view.around'),
-				}),
-				// The only cosmetic field in the group, so it comes last.
-				this.text('settings.open.label.name', 'settings.open.label.desc', 'menuLabel', {
-					placeholder: t('command.openInMap'),
-				}),
-			]),
+				],
+				() => t(`coord.${this.plugin.settings.coordSystem}`)
+			),
 
-			this.group('external', []),
-			// Two lists rather than one: the built-ins are a fixed set to arrange,
-			// the custom ones a collection to add to, and `type: 'list'` gives each
-			// exactly the affordances it needs — drag handles for both, a delete and
-			// an add for the second only. A built-in is switched off, never removed:
-			// there would be no way back to it.
-			{
-				type: 'list',
-				heading: t('settings.external.builtin.heading'),
-				items: this.builtins().map((builtin, index) => ({
-					name: t(`link.provider.${builtin.id}`),
-					control: { type: 'toggle' as const, key: `externalMaps.${index}.on` as ControlKey },
-				})),
-				onReorder: (from: number, to: number) => {
-					void this.writeList('externalMaps', moved(this.builtins(), from, to));
-				},
-			},
-			{
-				type: 'list',
-				heading: t('settings.external.custom.heading'),
-				emptyState: t('settings.external.custom.empty'),
-				items: this.customs().map((entry, index) => ({
-					// Ordinary nameless rows retain the list's drag/delete affordances.
-					name: '',
-					searchable: false,
-					render: (setting: Setting) => this.customRow(setting, entry, index),
-				})),
-				addItem: {
-					name: t('settings.external.custom.add'),
-					action: () => {
-						void this.writeList('customMaps', [...this.customs(), { name: '', url: '', datum: 'wgs84' }]);
+			this.page(
+				'open',
+				[
+					{
+						name: t('settings.open.basePath.name'),
+						desc: t('settings.open.basePath.desc'),
+						// Picked out of the vault rather than typed. The only file this can
+						// name is a `.base`, and `filter` is what says so — a path typed by
+						// hand is one misremembered folder away from `notice.baseNotFound`,
+						// and nothing on screen would say which half was wrong. What is
+						// stored is unchanged: the full path, extension and all, which is
+						// what `getFileByPath` is handed.
+						control: {
+							type: 'file',
+							key: 'basePath',
+							placeholder: BASE_PATH_PLACEHOLDER,
+							filter: (file) => file.extension === 'base',
+						},
 					},
-				},
-				onDelete: (index: number) => {
-					void this.writeList(
-						'customMaps',
-						this.customs().filter((_, at) => at !== index)
-					);
-				},
-				onReorder: (from: number, to: number) => {
-					void this.writeList('customMaps', moved(this.customs(), from, to));
-				},
-			},
-
-			this.group('search', [
-				{
-					name: t('settings.search.provider.name'),
-					desc: t('settings.search.provider.desc'),
-					control: { type: 'dropdown', key: 'geocodeProvider', options: providers },
-				},
-				{
-					name: t('settings.search.keyStore.name'),
-					desc: t('settings.search.keyStore.desc'),
-					visible: () => this.plugin.settings.geocodeProvider === 'amap',
-					control: { type: 'dropdown', key: 'amapKeyStore', options: keyStores },
-				},
-				// One row per store, and only ever one of them on screen. Showing both
-				// would leave the reader working out which of two filled boxes is the
-				// one in effect, which is the question the dropdown just answered.
-				{
-					// Both rows say the same thing about the same key — only ever one
-					// of them is on screen, and `visible` takes the other out of the
-					// search index for that render cycle too.
-					name: t('settings.search.amapKey.name'),
-					desc: t('settings.search.amapKey.desc'),
-					visible: () => this.keyRow('secret'),
-					// SecretComponent is not declarative; route its change through the shared seam.
-					render: (setting: Setting) => {
-						setting.addComponent((el) =>
-							new SecretComponent(this.app, el)
-								.setValue(this.plugin.settings.amapSecretId)
-								.onChange((id) => this.setControlValue('amapSecretId', id))
-						);
+					{
+						name: t('settings.open.viewName.name'),
+						desc: t('settings.open.viewName.desc'),
+						control: {
+							type: 'dropdown',
+							key: 'viewName',
+							options: this.viewOptions(),
+							// Nothing to choose from, and a list of one blank line reads as
+							// something broken rather than as something not set up yet.
+							disabled: () => this.plugin.settings.basePath === '',
+						},
 					},
-				},
-				{
-					name: t('settings.search.amapKey.name'),
-					desc: t('settings.search.amapKey.desc'),
-					visible: () => this.keyRow('plugin'),
-					control: { type: 'text', key: 'amapKey' },
-				},
-			]),
+					{
+						name: t('settings.open.openIn.name'),
+						desc: t('settings.open.openIn.desc'),
+						control: { type: 'dropdown', key: 'openIn', options: openTargets },
+					},
+					this.text(
+						'settings.open.coordsProperty.name',
+						'settings.open.coordsProperty.desc',
+						'coordsProperty',
+						{
+							placeholder: DEFAULT_SETTINGS.coordsProperty,
+						}
+					),
+					this.text('settings.open.placeProperty.name', 'settings.open.placeProperty.desc', 'placeProperty', {
+						placeholder: DEFAULT_SETTINGS.placeProperty,
+					}),
+					this.slider('settings.open.zoom.name', 'settings.open.zoom.desc', 'openZoom', 1, 18, 1),
+					this.toggle('settings.open.follow.name', 'settings.open.follow.desc', 'followActiveNote'),
+					this.text('settings.open.aroundView.name', 'settings.open.aroundView.desc', 'aroundViewName', {
+						placeholder: t('view.around'),
+					}),
+					// The only cosmetic field in the group, so it comes last.
+					this.text('settings.open.label.name', 'settings.open.label.desc', 'menuLabel', {
+						placeholder: t('command.openInMap'),
+					}),
+				],
+				// The base everything on this page hangs off, named rather than
+				// summarized: what the row stores is the path, extension and all.
+				() => this.plugin.settings.basePath || t('settings.state.unset')
+			),
 
-			this.group('locate', [
-				this.toggle('settings.locate.enable.name', 'settings.locate.enable.desc', 'locate'),
-				{
-					name: t('settings.locate.auto.name'),
-					desc: this.propertyDesc('settings.locate.auto.desc'),
-					control: { type: 'toggle', key: 'autoFillCoords' },
-				},
-				this.text('settings.locate.exclude.name', 'settings.locate.exclude.desc', 'autoFillExclude', {
-					placeholder: DEFAULT_SETTINGS.autoFillExclude,
-				}),
-			]),
+			this.page(
+				'external',
+				[
+					// Two lists rather than one: the built-ins are a fixed set to arrange,
+					// the custom ones a collection to add to, and `type: 'list'` gives each
+					// exactly the affordances it needs — drag handles for both, a delete and
+					// an add for the second only. A built-in is switched off, never removed:
+					// there would be no way back to it.
+					{
+						type: 'list',
+						heading: t('settings.external.builtin.heading'),
+						items: this.builtins().map((builtin, index) => ({
+							name: t(`link.provider.${builtin.id}`),
+							control: { type: 'toggle' as const, key: `externalMaps.${index}.on` as ControlKey },
+						})),
+						onReorder: (from: number, to: number) => {
+							void this.writeList('externalMaps', moved(this.builtins(), from, to));
+						},
+					},
+					{
+						type: 'list',
+						heading: t('settings.external.custom.heading'),
+						emptyState: t('settings.external.custom.empty'),
+						items: this.customs().map((entry, index) => ({
+							// Ordinary nameless rows retain the list's drag/delete affordances.
+							name: '',
+							searchable: false,
+							render: (setting: Setting) => this.customRow(setting, entry, index),
+						})),
+						addItem: {
+							name: t('settings.external.custom.add'),
+							action: () => {
+								void this.writeList('customMaps', [
+									...this.customs(),
+									{ name: '', url: '', datum: 'wgs84' },
+								]);
+							},
+						},
+						onDelete: (index: number) => {
+							void this.writeList(
+								'customMaps',
+								this.customs().filter((_, at) => at !== index)
+							);
+						},
+						onReorder: (from: number, to: number) => {
+							void this.writeList('customMaps', moved(this.customs(), from, to));
+						},
+					},
+				],
+				// Both lists' switched-on entries: what the right-click menu will offer.
+				() =>
+					t('settings.external.enabled', {
+						count: String(this.builtins().filter((entry) => entry.on).length + this.customs().length),
+					})
+			),
+
+			this.page(
+				'search',
+				[
+					{
+						name: t('settings.search.provider.name'),
+						desc: t('settings.search.provider.desc'),
+						control: { type: 'dropdown', key: 'geocodeProvider', options: providers },
+					},
+					{
+						name: t('settings.search.keyStore.name'),
+						desc: t('settings.search.keyStore.desc'),
+						visible: () => this.plugin.settings.geocodeProvider === 'amap',
+						control: { type: 'dropdown', key: 'amapKeyStore', options: keyStores },
+					},
+					// One row per store, and only ever one of them on screen. Showing both
+					// would leave the reader working out which of two filled boxes is the
+					// one in effect, which is the question the dropdown just answered.
+					{
+						// Both rows say the same thing about the same key — only ever one
+						// of them is on screen, and `visible` takes the other out of the
+						// search index for that render cycle too.
+						name: t('settings.search.amapKey.name'),
+						desc: t('settings.search.amapKey.desc'),
+						visible: () => this.keyRow('secret'),
+						// SecretComponent is not declarative; route its change through the shared seam.
+						render: (setting: Setting) => {
+							setting.addComponent((el) =>
+								new SecretComponent(this.app, el)
+									.setValue(this.plugin.settings.amapSecretId)
+									.onChange((id) => this.setControlValue('amapSecretId', id))
+							);
+						},
+					},
+					{
+						name: t('settings.search.amapKey.name'),
+						desc: t('settings.search.amapKey.desc'),
+						visible: () => this.keyRow('plugin'),
+						control: { type: 'text', key: 'amapKey' },
+					},
+				],
+				// The short name, not the dropdown's label: the option carries a
+				// "needs a key" hint that reads as a warning on an entry.
+				() => t(`search.providerShort.${this.plugin.settings.geocodeProvider}`)
+			),
+
+			this.page(
+				'locate',
+				[
+					this.toggle('settings.locate.enable.name', 'settings.locate.enable.desc', 'locate'),
+					{
+						name: t('settings.locate.auto.name'),
+						desc: this.propertyDesc('settings.locate.auto.desc'),
+						control: { type: 'toggle', key: 'autoFillCoords' },
+					},
+					this.text('settings.locate.exclude.name', 'settings.locate.exclude.desc', 'autoFillExclude', {
+						placeholder: DEFAULT_SETTINGS.autoFillExclude,
+					}),
+				],
+				() => this.state(this.plugin.settings.locate)
+			),
 
 			// The notes' own pins, which are the native view's rather than this
-			// plugin's — hence a group of their own rather than a row among the
+			// plugin's — hence a page of their own rather than a row among the
 			// track knobs, which are about files a note points at.
-			this.group('pins', [
-				this.toggle('settings.pins.spread.name', 'settings.pins.spread.desc', 'spreadMarkers', {
-					zoom: String(SPREAD.fromZoom),
-				}),
-			]),
+			this.page(
+				'pins',
+				[
+					this.toggle('settings.pins.spread.name', 'settings.pins.spread.desc', 'spreadMarkers', {
+						zoom: String(SPREAD.fromZoom),
+					}),
+				],
+				() => this.state(this.plugin.settings.spreadMarkers)
+			),
 
-			this.group('tracks', [
+			// No `displayValue`: nine knobs and toggles, and no one of them is what
+			// the page is set to.
+			this.page('tracks', [
 				this.text('settings.tracks.color.name', 'settings.tracks.color.desc', 'trackColor', {
 					placeholder: DEFAULT_SETTINGS.trackColor,
 				}),
@@ -713,11 +776,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			]),
 
 			// Photos have distinct privacy/context text from deliberate track attachments.
-			{
-				type: 'group' as const,
-				heading: t('setting.photos'),
-				items: [
-					this.introItem(t('setting.photos.desc')),
+			this.page(
+				'photos',
+				[
 					this.toggle('setting.showPhotos', 'setting.showPhotos.desc', 'showPhotos'),
 					this.toggle('setting.photoThumbnails', 'setting.photoThumbnails.desc', 'photoThumbnails'),
 					{
@@ -734,7 +795,8 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 						action: () => void this.plugin.clearPhotoIndex(),
 					},
 				],
-			},
+				() => this.state(this.plugin.settings.showPhotos)
+			),
 		];
 	}
 
