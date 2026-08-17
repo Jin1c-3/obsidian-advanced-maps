@@ -42,6 +42,6 @@
 ## 7. Verification
 
 - [x] 7.1 Run `npm run check`
-- [ ] 7.2 Live-verify in the test vault: the command writes the nine properties for a watch GPX; Obsidian types `track-start` as a datetime and the numbers as numbers; a base sorts and filters on distance and shows it as a column; a coordinates-only file writes one property; a second run after removing the file's timestamps removes the time properties; an area-only note reports nothing to measure and is left untouched; the command is absent from the palette on a note with no track
-- [ ] 7.3 Live-verify the prefix: renaming it writes the new names, and a prefix colliding with the coordinate property refuses without touching the note
-- [ ] 7.4 Capture a screenshot of a base sorting on the written properties for the pull request
+- [x] 7.2 Live-verify in the test vault: the command writes the nine properties for a watch GPX; Obsidian types `track-start` as a datetime and the numbers as numbers; a base sorts and filters on distance and shows it as a column; a coordinates-only file writes one property; a second run after removing the file's timestamps removes the time properties; an area-only note reports nothing to measure and is left untouched; the command is absent from the palette on a note with no track
+- [x] 7.3 Live-verify the prefix: renaming it writes the new names, and a prefix colliding with the coordinate property refuses without touching the note
+- [x] 7.4 Capture a screenshot of a base sorting on the written properties for the pull request

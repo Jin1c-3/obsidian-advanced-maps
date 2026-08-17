@@ -92,7 +92,7 @@ track-highest-m: 1850
 track-duration-min: 161
 track-moving-min: 148
 track-speed-kmh: 5.5
-track-start: 2024-05-01T09:30:15
+track-start: 2024-05-01T09:30
 ```
 
 | Property             | Unit                           | Source                                    |
@@ -105,11 +105,15 @@ track-start: 2024-05-01T09:30:15
 | `track-duration-min` | minutes                        | Last timestamp minus first                |
 | `track-moving-min`   | minutes                        | Intervals above 0.9 km/h                  |
 | `track-speed-kmh`    | kilometres per hour, 1 decimal | Distance over moving time                 |
-| `track-start`        | local datetime                 | Earliest timestamp, in this device's zone |
+| `track-start`        | local datetime, to the minute  | Earliest timestamp, in this device's zone |
 
 The unit is in the name because a bare number in frontmatter is otherwise
 unlabelled. Now a Base can sort a column of rides by distance, filter to
-`track-ascent-m > 800`, or total a month.
+`track-ascent-m > 800`, or total a month. `track-start` stops at the minute for
+the same reason: that is the shape Obsidian types as a **Datetime** property,
+and with seconds on the end it would be plain text.
+
+![A Bases table of six rides, sorted by track-distance-km, with columns for ascent, elapsed and moving minutes, pace and start time, and Sum totals under distance and ascent](../track-stats-properties.png)
 
 Only what the file recorded is written. A GeoJSON route with no elevation and no
 timestamps leaves one property; a GPX from a watch leaves all nine. A figure with
@@ -123,7 +127,9 @@ Three things worth knowing:
 - **A note is one row.** If a note links two track files, one set of properties
   describes both. Distance, climb and moving time add up; `track-duration-min`
   is first stamp to last, so it spans the gap between a morning hike and an
-  afternoon ride, exactly as it would inside one two-segment file.
+  afternoon ride; and pace is the total distance over the total moving time, so
+  pairing a timed GPX with an untimed GeoJSON reads faster than either ride was.
+  All of that is exactly what one two-segment file already reports.
 - **It owns its prefix and nothing else.** **Track property prefix** in the
   settings decides the names, `track` by default. Anything outside that prefix is
   never read, written, or removed — and if the prefix would collide with the

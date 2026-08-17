@@ -257,8 +257,15 @@ function metric(value: number, places: number): number {
 }
 
 /**
- * `YYYY-MM-DDTHH:mm:ss` in this device's own timezone, which is what Obsidian
- * reads back as a `datetime` property.
+ * `YYYY-MM-DDTHH:mm` in this device's own timezone — the shape Obsidian types as
+ * a `datetime` property.
+ *
+ * To the minute, and not to the second. Measured against Obsidian 1.13:
+ * `2024-05-01T09:30` is inferred as `datetime`, `2024-05-01` as `date`, and
+ * `2024-05-01T09:30:15` as plain **text**. A second field is not more precision
+ * here — it is the difference between a property a base can sort as a time and
+ * one it compares as a string. The seconds are dropped rather than rounded, so
+ * the stamp names the minute the earliest point falls in.
  *
  * Local rather than UTC: a GPX timestamp is UTC and states no timezone, so the
  * trip's own local time is not recoverable from the file. Device-local is the
@@ -270,7 +277,7 @@ export function localStamp(ms: number): string {
 	const at = new Date(ms);
 	const pad = (value: number, width = 2) => String(value).padStart(width, '0');
 	const date = `${pad(at.getFullYear(), 4)}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
-	return `${date}T${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+	return `${date}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
 /** Trailing separators and surrounding space are how the box was typed, not part of a name. */

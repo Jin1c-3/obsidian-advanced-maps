@@ -109,13 +109,19 @@ segments is measured by those rules today. Concatenating two files reuses them
 exactly, so a note with two files is measured the same way as one file
 containing both, and there is no second merge rule to keep correct.
 
-_The known consequence:_ for a note holding a morning hike and an afternoon
-ride, `track-duration-min` spans the gap between them, because elapsed time is
-last timestamp minus first. Distance, ascent, moving time and speed do not — they
-are sums. This is the same answer one multi-segment file already gives, it is
-stated in the docs, and the alternative (a bespoke merge that sums elapsed times
-instead) would make `duration` mean something different depending on whether the
-segments arrived in one file or two.
+_The known consequences,_ both measured on a live vault rather than reasoned
+about: for a note holding a morning hike and an afternoon ride,
+`track-duration-min` spans the gap between them, because elapsed time is last
+timestamp minus first — distance, ascent and moving time are sums and do not.
+And pace is neither: it is total distance over total moving time, so a note that
+pairs a timed GPX with an untimed GeoJSON reports the untimed route's kilometres
+against the timed one's minutes and reads faster than either ride was.
+
+Both are the same answers one multi-segment file already gives, which is the
+point. The alternative — a bespoke merge that sums elapsed times and averages
+paces — would make two properties mean something different depending on whether
+the segments arrived in one file or two, and there would then be two rules to
+keep correct instead of one.
 
 ### D4 — Write what exists, remove what does not, and touch nothing outside the prefix
 
@@ -153,10 +159,19 @@ And a command that cannot measure anything should be inert rather than
 destructive: the alternative — deleting the nine properties — would quietly strip
 a note because a linked file was temporarily truncated or replaced.
 
-### D6 — The start stamp is device-local, to the second
+### D6 — The start stamp is device-local, to the minute
 
-`track-start` is written as `YYYY-MM-DDTHH:mm:ss` in the device's own timezone,
-which is what Obsidian reads as a `datetime` property.
+`track-start` is written as `YYYY-MM-DDTHH:mm` in the device's own timezone.
+
+_Why the minute and not the second,_ which is what this decision originally said:
+measured against Obsidian 1.13 rather than assumed. `2024-05-01T09:30` is
+inferred as a `datetime` property, `2024-05-01` as a `date`, and
+`2024-05-01T09:30:15` as plain **text** — a seconds field takes the value out of
+the type system entirely, quoting it does too, and a space in place of the `T`
+likewise. So the extra field is not more precision here; it is the difference
+between a property a base sorts and filters as a time and one it compares as a
+string, which is the whole reason this property exists. The seconds are dropped
+rather than rounded, so the stamp names the minute the earliest point falls in.
 
 _Why local rather than UTC:_ GPX timestamps are UTC and carry no timezone, so the
 trip's own local time is not recoverable from the file. Device-local is the only
@@ -210,7 +225,7 @@ statistics deliberately do not include them, exactly as the inline bar does not.
 
 ## Open Questions
 
-None. The one thing worth measuring rather than assuming — that Obsidian reads
-`YYYY-MM-DDTHH:mm:ss` written through `processFrontMatter` back as a `datetime`
-property, and that a Bases filter and sort then work on all nine — is a live
-check in tasks.md, not a design assumption.
+None. The one thing worth measuring rather than assuming — which written shapes
+Obsidian types as `datetime`, and whether a Bases filter and sort then work on
+all nine — was measured on a live vault before this document was final, and it
+changed D6: seconds were in the design and are not in the code.

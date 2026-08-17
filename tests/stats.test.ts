@@ -651,7 +651,7 @@ describe('statsProperties', () => {
 			'track-duration-min': 161,
 			'track-moving-min': 148,
 			'track-speed-kmh': 5.5,
-			'track-start': '2024-05-01T09:30:15',
+			'track-start': '2024-05-01T09:30',
 		});
 	});
 
@@ -702,16 +702,22 @@ describe('statsProperties', () => {
 });
 
 describe('localStamp', () => {
-	it('is local time on this device, to the second', () => {
-		expect(localStamp(new Date(2024, 4, 1, 9, 30, 15).getTime())).toBe('2024-05-01T09:30:15');
+	it('is local time on this device, to the minute', () => {
+		// Minutes and not seconds is what Obsidian types as a datetime property
+		// rather than as text; see the note on localStamp.
+		expect(localStamp(new Date(2024, 4, 1, 9, 30, 15).getTime())).toBe('2024-05-01T09:30');
+	});
+
+	it('drops the seconds rather than rounding them up into the next minute', () => {
+		expect(localStamp(new Date(2024, 4, 1, 9, 30, 59).getTime())).toBe('2024-05-01T09:30');
 	});
 
 	it('pads every field so the value stays sortable as text', () => {
-		expect(localStamp(new Date(2024, 0, 5, 7, 4, 9).getTime())).toBe('2024-01-05T07:04:09');
+		expect(localStamp(new Date(2024, 0, 5, 7, 4, 9).getTime())).toBe('2024-01-05T07:04');
 	});
 
-	it('round-trips through the local-time parser Obsidian reads it with', () => {
-		const at = new Date(2019, 10, 3, 23, 59, 58).getTime();
+	it('round-trips through the local-time parser that reads it back', () => {
+		const at = new Date(2019, 10, 3, 23, 59).getTime();
 		expect(new Date(localStamp(at)).getTime()).toBe(at);
 	});
 });
