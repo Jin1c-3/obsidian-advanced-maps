@@ -2,6 +2,7 @@ import type { App, TFile } from 'obsidian';
 import { parseTrack, type ParsedTrack } from './parse';
 import { parseExif, photoTrack, type ExifThumbnail, type PhotoDatum, type PhotoExif } from './exif';
 import { projectGeometry, type CoordSystem } from './coords';
+import { trackStats, type TrackStats } from './stats';
 import { PHOTO_EXTS, PHOTO_HEAD_BYTES, PHOTO_ICON_PREFIX } from './constants';
 import { indexEntry, storedExif, type PhotoIndex } from './photo-index';
 
@@ -31,6 +32,8 @@ export interface TrackRecord extends ParsedTrack {
 	error?: string;
 	/** Tile-space geometry memoized per non-WGS coordinate system. */
 	projected?: Map<CoordSystem, ParsedTrack['features']>;
+	/** Measurements memoized on first ask; see `recordStats`. */
+	stats?: TrackStats;
 	/** EXIF thumbnail data, present only when a photo supplied a usable coordinate. */
 	photo?: PhotoThumbnailState;
 	/** Coordinate setting used for this photo; part of cache freshness. */
@@ -358,6 +361,21 @@ export async function readHead(app: App, file: TFile, bytes: number): Promise<Ui
 		const full = await app.vault.readBinary(file);
 		return new Uint8Array(full).slice(0, bytes);
 	}
+}
+
+/**
+ * Measure a record once, on demand, and keep the answer on the record.
+ *
+ * Read from `features` and never from `projected`: statistics describe the
+ * ground, and a tile datum moves a point by hundreds of metres — the same rule
+ * the inline statistics strip follows. Lazy because most drawn tracks are never
+ * asked about, and memoized on the record so a file is walked at most once per
+ * revision: the cache replaces the whole record when a file changes, which
+ * takes this with it.
+ */
+export function recordStats(rec: TrackRecord | undefined): TrackStats | null {
+	if (!rec || rec.error || !rec.features) return null;
+	return (rec.stats ??= trackStats(rec.features));
 }
 
 /** Project once per tile system, preserving only properties used by map layers. */

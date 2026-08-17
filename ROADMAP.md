@@ -11,75 +11,34 @@ already installed on the view — and others disproportionately expensive.
 
 ## Next
 
-### Statistics on a base map, not just inline
+### A vault places can pass through
 
-The numbers under an inline `![[track.gpx]]` exist now. A track drawn on a
-**base** map view shows none of them, because the surface it would use is the
-note's own popup — and that popup is the native manager's.
+Two halves of one idea, moved up here from _Worth doing_ once the popup work
+below them shipped. Neither half touches a native seam — one reads a file, the
+other reads what a view has already resolved — which makes this the least
+blocked work on this page.
 
-The cheap half of this shipped in 1.14.0: **Write track statistics to
-properties** puts the same figures into the note's own frontmatter, where a base
-sorts, filters, totals and columns them without a popup being involved at all.
-It is not a substitute — those are a note's tracks summed, and a cursor over one
-track still wants that track's own numbers — but what is left here is now only
-the popup.
+### Import a KML's placemarks as notes
 
-The landing place already exists: `hover()` in `track-layer.ts` reuses the
-native popup when the cursor is over a track. So the question is what goes into
-that card, and the card belongs to a **note**, which may carry several tracks.
-Three answers, and the first is the one to try:
+A `.kml` is drawn as a track today. But a Google My Maps export is usually a
+hundred **placemarks** — a saved-restaurants list — and those become circles on
+a map and nothing else: not rows, no properties, nothing a filter or a formula
+can reach. Reading each placemark's name, description and coordinate into a note
+turns them into what the rest of the plugin already works on. `parse.ts` reads
+the file already; what is missing is the writing.
 
-- **Whichever track is under the cursor.** Cleanest meaning, and it needs one
-  more data change on top of what start/end markers already added: a track
-  feature's properties are `{ amColor, amIndex, amName?, amRole? }`, and
-  `amIndex` points at the _note_ — the loop that builds them walks
-  `item.trackFiles` and stamps them all with the same index. Per-track numbers
-  need a second index alongside it.
-- **The note's tracks summed.** No data change, and a morning hike plus an
-  afternoon ride add up to a number that describes neither.
-- **A panel of our own on click.** Most freedom, but it leaves the native look
-  behind, which is the thing this plugin is for.
+### Getting places back out
 
-One unknown to probe rather than assume: `PopupManager` declares `showPopup` and
-`hidePopup` and no handle on the element, so appending to the card means finding
-it after `showPopup` returns. Measure it with `obsidian eval` first.
+The inverse of the entry above, and asked for twice: esm7/obsidian-map-view#269
+wants waypoints it can carry into GaiaGPS and onto a Suunto watch, #313 wants a
+KML it can hand to Google My Maps. Both are one command — take the notes a base
+matched, write their coordinates as GPX waypoints, KML placemarks, or CSV rows.
+No native seam is involved; it reads what the view already resolved and writes
+one file, in WGS-84 like everything that leaves this plugin.
 
-The elevation profile stays inline. A popup is narrow and the SVG needs width.
-
-### Waypoint names on hover, on a base map
-
-A waypoint's own name shows on hover today, but only on an inline
-`![[track.gpx]]` embed — see CLAUDE.md's "Start/end markers, direction and
-waypoint names". The embed half shipped; the base-view half did not, for the
-same reason the section above is still open: hovering a track on a **base**
-view already opens the row's own popup, through `hover()` in `track-layer.ts`
-calling `popupManager.showPopup`, and a second, independent tooltip on that
-same hover risks visually fighting it — two floating boxes, or one hiding the
-other — with `PopupManager` owning DOM neither this plugin nor a hand-built
-tooltip has a handle on.
-
-The two gaps are almost certainly the same seam. Whatever eventually reaches
-_inside_ that popup's own content — to add per-track statistics, the entry
-directly above this one — is probably the same mechanism a waypoint's name
-under the cursor should go through too, rather than two separate answers to
-"how does this plugin add something to a popup it does not own."
-
-### Photo thumbnails on hover, on a base map
-
-A third twin of the same gap. A photo pin's own thumbnail shows on hover today
-— see CLAUDE.md's "Coordinates from a photo's EXIF" — but only on an inline
-`![[photo.jpg]]` embed, for the identical reason a waypoint's name is
-embed-only: hovering a track (or, now, a photo) on a **base** view already
-opens the row's own popup through `hover()` in `track-layer.ts` calling
-`popupManager.showPopup`, and a second, independent tooltip on that same hover
-risks fighting it — two floating boxes, or one hiding the other — with
-`PopupManager` owning DOM this plugin has no handle on.
-
-Not a fourth answer to "how does this plugin add something to a popup it does
-not own" — it is the same open question as the two entries above it, and
-whatever eventually answers one almost certainly answers all three: a
-per-track statistics line, a waypoint's name, and a photo's own thumbnail are
-all "one more thing this plugin wants inside a card it did not build."
+The pair is the point. A vault that a hundred saved restaurants can come into
+and a watch route can come out of is a place data passes through, rather than
+somewhere it goes to be retyped.
 
 ## Worth doing
 
@@ -178,28 +137,6 @@ things a note can be attached to, and #356 because a filled polygon there
 swallows the right-click that would have put a note inside it. The second is
 already answered here — an area is the lowest-priority pointer target, so the
 map's own context menu opens over one exactly as it does anywhere else.
-
-### Import a KML's placemarks as notes
-
-A `.kml` is drawn as a track today. But a Google My Maps export is usually a
-hundred **placemarks** — a saved-restaurants list — and those become circles on
-a map and nothing else: not rows, no properties, nothing a filter or a formula
-can reach. Reading each placemark's name, description and coordinate into a note
-turns them into what the rest of the plugin already works on. `parse.ts` reads
-the file already; what is missing is the writing.
-
-### Getting places back out
-
-The inverse of the entry above, and asked for twice: esm7/obsidian-map-view#269
-wants waypoints it can carry into GaiaGPS and onto a Suunto watch, #313 wants a
-KML it can hand to Google My Maps. Both are one command — take the notes a base
-matched, write their coordinates as GPX waypoints, KML placemarks, or CSV rows.
-No native seam is involved; it reads what the view already resolved and writes
-one file, in WGS-84 like everything that leaves this plugin.
-
-The pair is the point. A vault that a hundred saved restaurants can come into
-and a watch route can come out of is a place data passes through, rather than
-somewhere it goes to be retyped.
 
 ### "Convert to coordinates" in the editor's menu
 

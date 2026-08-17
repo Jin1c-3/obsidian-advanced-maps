@@ -49,6 +49,28 @@ waypoints. **Show track markers** turns these extras off.
 
 ![A GPX route with a green start, red ring end, and arrows showing direction](../track-markers.png)
 
+## Pointing at a route on a Base map
+
+Hovering a route opens the note's own popup — the same card its pin opens — with
+one row added for the thing under the pointer.
+
+- **A route** adds that one file's distance, climb and elapsed time, labelled
+  with the file's own name. A note carrying a morning hike and an afternoon ride
+  reports each on its own, rather than summing them into a number that describes
+  neither.
+- **A named waypoint** adds its name instead. **Show track markers** turns that
+  off along with the markers themselves.
+- **An area** adds nothing. A boundary is not a distance travelled.
+
+Only the figures a file recorded appear: a GPX with no elevations shows distance
+and time, one with no timestamps shows distance and climb. The rest — descent,
+elevation range, moving time, pace and the profile — stays under an inline
+`![[track.gpx]]`, where there is room for it.
+
+If a note's displayed properties are all empty, the built-in map raises no popup
+for it at all, so there is nothing to add a row to. That is its own rule for
+pins, and it applies here unchanged.
+
 ## GeoJSON and KML areas
 
 GeoJSON and KML can hold an area rather than a route. An area is filled in the

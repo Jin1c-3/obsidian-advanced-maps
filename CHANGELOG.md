@@ -8,6 +8,26 @@ where they do not.
 
 ### Added
 
+- **The popup on a Base map now says what you are pointing at.** Hovering a
+  track there opened the note's own card and told you nothing about which of its
+  tracks you were on; a waypoint's name and a photo's thumbnail showed on an
+  inline `![[track.gpx]]` embed and nowhere else.
+
+  That card gains one row. Point at a route and it reports **that one file's**
+  distance, climb and elapsed time, labelled with the file's own name — so a
+  note holding a morning hike and an afternoon ride reports each separately
+  instead of summing them. Point at a named waypoint and it says the name, under
+  the same **Show track markers** setting that governs the markers. Point at a
+  photo and it shows the photo. An area adds nothing, because a boundary is not
+  a distance travelled.
+
+  Only figures the file recorded appear, never a zero standing in for a figure
+  never written, and the numbers are measured on the file's own WGS-84 data — so
+  a map drawn on Chinese tiles reports the same distance as the embed does. The
+  full set and the elevation profile stay inline, where there is room for them.
+  A note whose displayed properties are all empty still raises no popup at all;
+  that is the built-in map's rule for pins and it is left alone.
+
 - **You can name the statistics columns yourself.** **Write track statistics to
   properties** took its names from one prefix, so a vault written in Chinese got
   a column headed `track-distance-km` beside columns called `日期` and `地点` —

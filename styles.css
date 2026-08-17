@@ -81,6 +81,21 @@
 	text-overflow: ellipsis;
 }
 
+/* A pointed photo's preview inside the note popup a base map already raises —
+ * see track-layer.ts's describe(). Bounded rather than sized: the popup is the
+ * host's and the rest of its rows have to stay reachable, so a portrait photo
+ * is held to the same box a landscape one is. Narrower than the inline tooltip
+ * above because this shares a card with the note's own properties. */
+.bases-map-popup .advanced-maps-popup-photo {
+	display: block;
+	width: auto;
+	height: auto;
+	max-width: 140px;
+	max-height: 140px;
+	margin-bottom: var(--size-2-1);
+	border-radius: var(--radius-s);
+}
+
 /* Distance/ascent/duration bar and elevation profile under an inline map.
  * Deliberately a sibling of .advanced-maps-embed rather than a child of it:
  * that box has a fixed height and `overflow: hidden` so the map fills exactly

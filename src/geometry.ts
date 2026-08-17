@@ -209,7 +209,14 @@ export interface TrackFeatureProps extends Record<string, unknown> {
 	amRole?: 'start' | 'end' | 'photo';
 	/** MapLibre image id for a photo thumbnail. */
 	amPhoto?: string;
-	/** Vault path opened from a photo marker. */
+	/**
+	 * Vault path of the file this feature was read from — the photo a marker
+	 * opens, and the track file a line was drawn from. `amIndex` names the note,
+	 * which is not enough on its own: one note may link several tracks, and
+	 * telling them apart is what lets a hover describe the track pointed at. The
+	 * path doubles as the cache key, so `plugin.tracks.get(amPath)` is how a
+	 * drawn feature reaches the record it came from.
+	 */
 	amPath?: string;
 }
 
@@ -220,7 +227,8 @@ export interface TrackFeatureProps extends Record<string, unknown> {
 export function trackFeatures(
 	features: Array<Feature<Geometry, Record<string, unknown> | null>>,
 	color: string,
-	index: number
+	index: number,
+	source: string
 ): Array<Feature<Geometry, TrackFeatureProps>> {
 	const out: Array<Feature<Geometry, TrackFeatureProps>> = [];
 	for (const feature of features) {
@@ -228,6 +236,10 @@ export function trackFeatures(
 		// drawn path rather than a world away from the line they belong to.
 		const geometry = unwrapGeometry(feature.geometry);
 		const props: TrackFeatureProps = { amColor: color, amIndex: index };
+		// Every feature names its own file, endpoints synthesized below included.
+		// A parsed feature carrying its own path still wins, so a parser that
+		// reads several sources out of one container keeps saying so.
+		if (source !== '') props.amPath = source;
 		if (feature.geometry.type === 'Point') {
 			const name = feature.properties?.name;
 			if (typeof name === 'string' && name !== '') props.amName = name;
@@ -243,15 +255,17 @@ export function trackFeatures(
 		const endpoints = lineEndpoints(geometry);
 		if (!endpoints) continue;
 		const [start, end] = endpoints;
+		const endpoint: TrackFeatureProps = { amColor: color, amIndex: index };
+		if (source !== '') endpoint.amPath = source;
 		out.push({
 			type: 'Feature',
 			geometry: { type: 'Point', coordinates: start },
-			properties: { amColor: color, amIndex: index, amRole: 'start' },
+			properties: { ...endpoint, amRole: 'start' },
 		});
 		out.push({
 			type: 'Feature',
 			geometry: { type: 'Point', coordinates: end },
-			properties: { amColor: color, amIndex: index, amRole: 'end' },
+			properties: { ...endpoint, amRole: 'end' },
 		});
 	}
 	return out;
