@@ -165,6 +165,19 @@ export interface ViewConfig {
 export interface MapConfig {
 	mapTiles?: string | string[];
 	mapTilesDark?: string | string[];
+	/**
+	 * The camera bounds and starting zoom, as `loadConfig` resolves them from the
+	 * view's own options (`obsidian-maps/src/map-view.ts`, `getNumericConfig`).
+	 * All three are numbers there; declared optional and read through a `typeof`
+	 * check like every other member of this file.
+	 *
+	 * `minZoom` and `defaultZoom` are handed to the MapLibre constructor and
+	 * re-applied by `applyConfigToMap`, which is what lets an offline basemap
+	 * bound the camera by raising a number rather than by driving the map.
+	 */
+	minZoom?: number;
+	maxZoom?: number;
+	defaultZoom?: number;
 	center?: unknown;
 	/** This plugin's own field: the untouched WGS-84 value `center` came from. */
 	__amCenterWgs?: unknown;
@@ -342,6 +355,23 @@ export interface GeoJSONSource {
 	setData(data: unknown): void;
 }
 
+/**
+ * A raster tile source, for the one field this plugin writes.
+ *
+ * Standard MapLibre, declared here for the same reason the rest of this
+ * interface is: no `maplibre-gl` dependency to import the real types from.
+ * Measured on the runtime MapLibre Obsidian ships: assigning `maxzoom` on a live
+ * source takes effect at the next covering-tile computation, with no reload and
+ * no `setTiles` — so a pack's deepest level can be stated without discarding the
+ * tiles already on screen.
+ */
+export interface RasterTileSource {
+	type?: string;
+	tiles?: string[];
+	minzoom?: number;
+	maxzoom?: number;
+}
+
 export interface MapControl {
 	onAdd(map?: MapLibreMap): HTMLElement;
 	onRemove(map?: MapLibreMap): void;
@@ -383,7 +413,9 @@ export interface MapLibreMap {
 	scrollZoom: { disable(): void; enable(): void };
 	isStyleLoaded?(): boolean;
 	getStyle?(): unknown;
-	getSource(id: string): GeoJSONSource | undefined;
+	/** Defaulted rather than overloaded: every existing call wants the GeoJSON
+	 *  source it added, and the offline basemap asks for a raster one by name. */
+	getSource<T = GeoJSONSource>(id: string): T | undefined;
 	addSource(id: string, spec: unknown): void;
 	removeSource(id: string): void;
 	getLayer(id: string): unknown;
@@ -422,6 +454,10 @@ export interface MapLibreMap {
 	getCenter(): LngLat | null;
 	setCenter(center: LngLat): void;
 	getZoom?(): number;
+	/** Public MapLibre API. Used to bring a live map up to the shallowest level an
+	 *  offline pack covers; the native view sets the same bound from its config
+	 *  when a map is built, so this is only for maps already on screen. */
+	setMinZoom?(zoom: number): void;
 	/** A move around the map the reader can follow with their eyes. */
 	flyTo?(options: { center?: [number, number]; zoom?: number }): void;
 	/** …and the same move made instantly, for a map that has only just appeared. */

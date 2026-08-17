@@ -1,3 +1,4 @@
+import { OFFLINE_TILES_OFF } from './basemap';
 import { TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES } from './coords';
 import { t } from './i18n';
@@ -17,6 +18,30 @@ export function trackOptionGroup(): ViewOptionGroup {
 			knobSlider('trackWeight', t('options.lineWidth')),
 			knobSlider('trackOpacity', t('options.lineOpacity')),
 			knobSlider('fitMaxZoom', t('options.fitMaxZoom')),
+		],
+	};
+}
+
+/**
+ * Whether this map draws the basemap configured in the plugin settings.
+ *
+ * The pack is one folder on one machine, so it belongs in plugin settings;
+ * whether a given map uses it belongs beside the background it replaces. Empty
+ * is the default and means "use it", so a base file written before this existed
+ * reads as a map that follows the setting.
+ */
+export function offlineTilesOptionGroup(): ViewOptionGroup {
+	return {
+		displayName: t('options.offlineTiles'),
+		type: 'group',
+		items: [
+			{
+				displayName: t('options.offlineTilesUse'),
+				type: 'dropdown',
+				key: 'offlineTiles',
+				options: { '': t('options.offlineTiles.on'), [OFFLINE_TILES_OFF]: t('options.offlineTiles.off') },
+				default: '',
+			},
 		],
 	};
 }
@@ -48,16 +73,18 @@ export function groupIndexByKey(list: ViewOptionGroup[], key: string): number {
 }
 
 /**
- * Slot our two groups into the built-in list: Tracks behind Markers, and the
- * coordinate system behind Background, next to the tile URLs that determine it.
- * Both are located by option key so the built-in wording can change freely.
+ * Slot our three groups into the built-in list: Tracks behind Markers, and — in
+ * this order — the offline basemap and the coordinate system behind Background,
+ * which is where a background is chosen and where the datum it implies is asked
+ * about. Each is located by option key so the built-in wording can change freely.
  */
 export function appendTrackOptions(options: ViewOptionGroup[] | undefined): ViewOptionGroup[] {
 	const list = Array.isArray(options) ? options.slice() : [];
 
 	const background = groupIndexByKey(list, 'mapTiles');
-	if (background === -1) list.push(coordOptionGroup());
-	else list.splice(background + 1, 0, coordOptionGroup());
+	const afterBackground = [offlineTilesOptionGroup(), coordOptionGroup()];
+	if (background === -1) list.push(...afterBackground);
+	else list.splice(background + 1, 0, ...afterBackground);
 
 	const markers = groupIndexByKey(list, 'coordinates');
 	if (markers === -1) list.push(trackOptionGroup());

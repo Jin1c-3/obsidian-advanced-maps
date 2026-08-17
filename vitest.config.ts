@@ -21,6 +21,7 @@ export default defineConfig({
 			// Only the parts that can run outside Obsidian are worth a threshold;
 			// the view wrappers need a live Bases map to mean anything.
 			include: [
+				'src/basemap.ts',
 				'src/coords.ts',
 				'src/exif.ts',
 				'src/parse.ts',

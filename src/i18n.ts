@@ -130,6 +130,10 @@ const en = {
 	'options.fitMaxZoom': 'Max zoom when fitting',
 	'options.coordSystem': 'Coordinate system',
 	'options.tileCoordSystem': 'Tile coordinate system',
+	'options.offlineTiles': 'Offline basemap',
+	'options.offlineTilesUse': 'Use it on this map',
+	'options.offlineTiles.on': 'Yes, when one is configured',
+	'options.offlineTiles.off': "No — keep this view's own background",
 
 	/* ---- commands ---- */
 	'command.openInMap': 'Open in map',
@@ -291,6 +295,26 @@ const en = {
 	'settings.coord.default.name': 'Default coordinate system',
 	'settings.coord.default.desc':
 		'Used by inline ![[track.gpx]] maps, and by every map view that does not set its own.',
+
+	/* ---- settings: offline basemap ---- */
+	'settings.tiles.heading': 'Offline basemap',
+	'settings.tiles.intro':
+		'A folder of map tiles already on your disk becomes the background of every map, drawn from the file system ' +
+		'with nothing asked of the network. The tiles are only ever read: nothing is downloaded, and nothing under ' +
+		'that folder is written to or moved.',
+	'settings.tiles.path.name': 'Tile path',
+	'settings.tiles.path.desc':
+		'The path your tiles are addressed by, holding {z}, {x} and {y} — for example ' +
+		'/home/you/tiles/{z}/{x}/{y}.png. Absolute, or relative to the vault. Empty leaves every map the background ' +
+		'it already has.',
+	'settings.tiles.error.placeholders': 'Needs {z}, {x} and {y} in it.',
+	'settings.tiles.minZoom.name': 'Shallowest level in the pack',
+	'settings.tiles.minZoom.desc':
+		'The lowest-numbered folder your tiles go down to. Maps stop zooming out there rather than emptying.',
+	'settings.tiles.maxZoom.name': 'Deepest level in the pack',
+	'settings.tiles.maxZoom.desc':
+		'The highest-numbered folder your tiles go up to. Past it the map keeps drawing, magnified, instead of asking ' +
+		'for tiles you do not have. Setting it too low costs sharpness; too high fills the console with failed reads.',
 
 	/* ---- settings: open in map ---- */
 	'settings.open.heading': 'Open in map',
@@ -530,6 +554,10 @@ const zh: Record<TranslationKey, string> = {
 	'options.fitMaxZoom': '自动缩放上限',
 	'options.coordSystem': '坐标系',
 	'options.tileCoordSystem': '瓦片坐标系',
+	'options.offlineTiles': '离线底图',
+	'options.offlineTilesUse': '这张地图用不用',
+	'options.offlineTiles.on': '用（设置里配了就用）',
+	'options.offlineTiles.off': '不用，保留这个视图自己的底图',
 
 	'command.openInMap': '在地图中打开',
 	'command.insertMap': '插入本篇相关笔记的地图',
@@ -645,6 +673,19 @@ const zh: Record<TranslationKey, string> = {
 		'国内底图与 GPS 原始坐标相差 300–600 米。选对坐标系，标记和轨迹会在绘制时换算过去，与底图对齐；磁盘上的内容不会改动。',
 	'settings.coord.default.name': '默认坐标系',
 	'settings.coord.default.desc': '内联 ![[track.gpx]] 地图，以及没有单独设置的地图视图都用它。',
+
+	'settings.tiles.heading': '离线底图',
+	'settings.tiles.intro':
+		'磁盘上现成的一整套瓦片可以当所有地图的底图，直接从文件系统读，不走网络。瓦片只读不写：这里不会下载任何东西，也不会改动或移动那个文件夹里的内容。',
+	'settings.tiles.path.name': '瓦片路径',
+	'settings.tiles.path.desc':
+		'瓦片的寻址路径，要含 {z}、{x}、{y}，例如 /home/you/tiles/{z}/{x}/{y}.png 。可以是绝对路径，也可以相对于仓库。留空则各地图保持原有底图。',
+	'settings.tiles.error.placeholders': '需要同时包含 {z}、{x} 和 {y} 。',
+	'settings.tiles.minZoom.name': '瓦片最浅层级',
+	'settings.tiles.minZoom.desc': '这套瓦片里编号最小的那层。地图缩小到这里就停住，而不是变成空白。',
+	'settings.tiles.maxZoom.name': '瓦片最深层级',
+	'settings.tiles.maxZoom.desc':
+		'这套瓦片里编号最大的那层。再往里放大时地图会把已有瓦片放大接着画，而不是去要没有的瓦片。填小了损失清晰度，填大了控制台会刷一屏读取失败。',
 
 	'settings.open.heading': '在地图中打开',
 	'settings.open.intro':

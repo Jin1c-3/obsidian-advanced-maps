@@ -2,6 +2,7 @@
 
 import { Component, Keymap, TFile } from 'obsidian';
 import type { FeatureCollection, Geometry } from 'geojson';
+import { boundOfflineSource, restyleForBasemap } from './basemap';
 import {
 	CURSOR_LAYER,
 	CURSOR_SRC,
@@ -312,8 +313,14 @@ export class TrackEmbed extends Component {
 	 * showing data the file no longer has.
 	 */
 	private watchStyleReloads(map: MapLibreMap): void {
+		// This is bound after the first draw, which already waited for the style, so
+		// the constructor's own `style.load` is gone by now. Bound that one here.
+		this.boundBasemap(map);
 		map.on('style.load', () => {
 			if (this.dead) return;
+			// A fresh style has a fresh raster source with the default zoom bounds
+			// back, whether or not the track is redrawn below.
+			this.boundBasemap(map);
 			if (this.reading) {
 				// Noted rather than drawn, so the one path that ends a read without
 				// drawing — an unreadable file — can still put the last good track
@@ -323,6 +330,24 @@ export class TrackEmbed extends Component {
 			}
 			this.redraw();
 		});
+	}
+
+	/**
+	 * Stop this map asking for levels the pack does not hold.
+	 *
+	 * An inline map has no view options to decline the offline basemap with, so it
+	 * follows the plugin setting — the same answer its headless config gave the
+	 * native view when the style was built.
+	 */
+	private boundBasemap(map: MapLibreMap): void {
+		const pack = this.plugin.offlineBasemap();
+		if (pack) boundOfflineSource(map, pack.url, pack.sourceMaxZoom);
+	}
+
+	/** The pack was configured, changed or cleared while this map was on screen. */
+	refreshBasemap(): void {
+		if (this.dead) return;
+		restyleForBasemap(this.view);
 	}
 
 	/** Draw the committed data as its own operation, superseding any older one. */

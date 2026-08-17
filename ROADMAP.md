@@ -11,50 +11,24 @@ already installed on the view — and others disproportionately expensive.
 
 ## Next
 
-### Basemap tiles that are already on disk
+### "Convert to coordinates" in the editor's menu
 
-Moved up from _Worth doing_ once the place interchange that stood here shipped,
-and now the only entry on this page with no unknown left in it: both obstacles
-are measured, both are this plugin's to solve, and neither needs anything from
-the host that is not already there. It is also the last piece of a map that works
-with no network at all — the notes, the routes and the photos already do.
+Promoted once the offline basemap that stood here shipped, and picked for the
+same reason that one was: there is no unknown left in it. `geolink.ts` already
+reads a coordinate out of pasted text, behind a modal opened from the command
+palette. A link sitting in a note could go through the same reader from the
+editor's own right-click menu, with no box to open — `editor-menu` is a
+documented workspace event, the selection is in hand, and the write is the
+`processFrontMatter` seam every other coordinate command already uses.
 
-This entry used to sit under _Deliberately not_, on the grounds that MapLibre's
-`addProtocol` is a module-level export and `transformRequest` a constructor
-option, and this plugin has neither. That is true, and it is not what a local
-basemap needs. Measured against a live map view rather than argued:
+Cheap, and it is where somebody who has just pasted a share link actually is.
 
-- The native background setting validates nothing. `settings.ts` stores whatever
-  string is typed, and `style.ts` asks only whether it contains `{z}`, `{x}` or
-  `{y}` — if it does, that string becomes the `tiles` array of a raster source
-  and reaches MapLibre without ever passing through `requestUrl`.
-- MapLibre fetches raster tiles from `app://…/{z}/{x}/{y}.png` on the main
-  thread: sixteen tiles, sixteen 200s, no map errors, and the pixels confirmed by
-  reading the canvas back. The path may sit outside the vault, so a tile pack
-  does not have to be a folder Obsidian indexes.
-- This plugin's own layers survive the style swap. After `updateMapStyle()` the
-  style held `custom-tiles-0`, every `advanced-maps-*` layer, and `marker-pins`.
-
-Two things do stand in the way, and both are the plugin's to solve:
-
-- **The `app://` token is per-launch.** The main process builds it as
-  `"app://" + Ut(36) + "/"`, `Ut` being a `Math.random()` hex generator, hands it
-  to the renderer over the `file-url` IPC, and persists it nowhere. A URL typed
-  into the native setting by hand therefore rots at the next restart, which is
-  why this is a feature rather than a paragraph of documentation: the current
-  `app.vault.adapter.resourcePathPrefix` has to be written in at attach time.
-- **The native raster source states no `maxzoom`**, so it defaults to 22 and
-  every zoom past the pack's deepest level asks for tiles that are not there —
-  twenty-eight `Failed to fetch` errors on one zoom-in. MapLibre keeps drawing
-  over-zoomed parents, so the map goes blurry rather than blank, and setting
-  `maxzoom` followed by `setTiles` on the source took the count to zero.
-
-What this is not is a **download** button. Bulk-fetching a provider's tiles is
-their terms to give and not this plugin's to assume; the feature is pointing at
-a pack the reader already holds. A single-file `.pmtiles` or `.mbtiles` does
-still need `addProtocol` and stays out of reach, so the shape is a directory
-tree of tiles, unpacked once, plus a source this plugin owns and can bound.
-Mobile (`capacitor://`) is untested.
+The neighbouring entry, _Dropping a note onto the map to place it_, stays under
+_Worth doing_ deliberately: its one open question — whether a real drag from the
+file explorer reaches the map container, or is taken by the workspace's own
+drag-over pipeline first — cannot be answered by a synthetic `DragEvent`. It
+needs a human hand on a real drag, and until somebody does that the work cannot
+be scoped.
 
 ## Worth doing
 
@@ -115,13 +89,6 @@ swallows the right-click that would have put a note inside it. The second is
 already answered here — an area is the lowest-priority pointer target, so the
 map's own context menu opens over one exactly as it does anywhere else.
 
-### "Convert to coordinates" in the editor's menu
-
-`geolink.ts` already reads a coordinate out of pasted text, behind a modal. A
-link sitting in a note could go through the same reader from the editor's own
-right-click menu, with no box to open. Cheap, and it is where somebody who just
-pasted a share link actually is.
-
 ### Edges between linked notes
 
 Map View draws lines between the markers of notes that link to each other. One
@@ -153,10 +120,12 @@ getting reopened.
   are not usable in every country this plugin's users are in. It is a whole
   product, not a feature.
 - **Downloading tiles for offline use.** Serving tiles that are already on disk
-  turned out to be reachable and moved up to _Next_. Fetching them in
-  bulk from a provider did not: that is their terms of service to grant, and a
-  plugin that ships a "download this area" button grants it on the reader's
-  behalf.
+  turned out to be reachable and has shipped. Fetching them in bulk from a
+  provider did not: that is their terms of service to grant, and a plugin that
+  ships a "download this area" button grants it on the reader's behalf. A
+  single-file `.pmtiles` or `.mbtiles` is out for the original reason — it needs
+  `addProtocol`, which is a module-level export of a MapLibre this plugin does
+  not bundle — so a pack has to be unpacked into a directory tree first.
 - **Drawing and editing shapes on the map.** No drawing library is reachable, so
   it would be hand-rolled from pointer events. The elevation profile under an
   inline map is hand-rolled SVG for the same reason, and is about the size such

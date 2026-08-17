@@ -1,17 +1,20 @@
 /* Plugin orchestration: wrap the native Maps registration and coordinate features. */
 
 import {
+	FileSystemAdapter,
 	FileView,
 	getLanguage,
 	Notice,
 	parseFrontMatterAliases,
 	parseYaml,
+	Platform,
 	Plugin,
 	requestUrl,
 	stringifyYaml,
 	TFile,
 } from 'obsidian';
 import type { CachedMetadata, Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
+import { offlineTileUrl, offlineZoomBounds, type OfflineBasemap } from './basemap';
 import { FOCUS_RETRY_MS, FOCUS_TRIES, PHOTO_EXTS, TRACK_EXTS } from './constants';
 import { formatLatLng, parseLatLng } from './coords';
 import { TrackEmbed } from './embed';
@@ -326,7 +329,11 @@ export default class AdvancedMapsPlugin extends Plugin {
 		const view = this.nativeFactory({ app: this.app }, parentEl);
 		view.__advancedMapsHeadless = true;
 		view.config = {
-			get: () => undefined,
+			// An inline map has no view options to decline the offline basemap with,
+			// so it follows the plugin setting — answered here rather than by
+			// rewriting the config afterwards, so the native `loadConfig` derives
+			// everything else from it exactly as it would from a real view's tiles.
+			get: (key) => this.headlessOption(key),
 			getAsPropertyId: () => null,
 			getEvaluatedFormula: () => undefined,
 			getDisplayName: (prop) => String(prop),
@@ -334,6 +341,47 @@ export default class AdvancedMapsPlugin extends Plugin {
 		};
 		view.data = { data: [], properties: [] };
 		return view;
+	}
+
+	/** What a headless view's stub config answers; undefined for everything native. */
+	private headlessOption(key: string): unknown {
+		if (key !== 'mapTiles' && key !== 'mapTilesDark' && key !== 'minZoom') return undefined;
+		const pack = this.offlineBasemap();
+		if (!pack) return undefined;
+		return key === 'minZoom' ? pack.cameraMinZoom : [pack.url];
+	}
+
+	/**
+	 * The basemap on disk, resolved for right now, or null when there is none.
+	 *
+	 * Resolved per call rather than cached: `Platform.resourcePathPrefix` carries
+	 * a token the main process rebuilds at every launch, so a cached URL would
+	 * survive a window reload and fail after a restart — the failure that is
+	 * hardest to connect back to its cause.
+	 */
+	offlineBasemap(): OfflineBasemap | null {
+		const { offlineTiles, offlineTilesMinZoom, offlineTilesMaxZoom } = this.settings;
+		const adapter = this.app.vault.adapter;
+		// Only a filesystem vault can say where a vault-relative template starts;
+		// an absolute one does not need it.
+		const base = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : '';
+		const url = offlineTileUrl(offlineTiles, Platform.resourcePathPrefix, base);
+		if (url === null) return null;
+		return { url, ...offlineZoomBounds(offlineTilesMinZoom, offlineTilesMaxZoom) };
+	}
+
+	/**
+	 * Put the new background under every map already on screen.
+	 *
+	 * The native view compares a snapshot of its *own* option values to decide
+	 * whether to restyle, so a plugin setting changing is invisible to it and no
+	 * restyle would follow. Rebuilding the config is what re-runs the wrapper that
+	 * substitutes — or, once the pack is cleared, what stops it, which is how the
+	 * native background comes back without anything having been saved to undo.
+	 */
+	refreshBasemaps(): void {
+		for (const layer of this.layers) layer.refreshBasemap();
+		for (const embed of this.embeds) embed.refreshBasemap();
 	}
 
 	refreshTracks(): void {

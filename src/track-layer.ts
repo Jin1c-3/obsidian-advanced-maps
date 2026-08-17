@@ -6,6 +6,13 @@ import { Keymap, Menu } from 'obsidian';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import type { PaneType, TFile } from 'obsidian';
 import {
+	applyOfflineTiles,
+	boundOfflineSource,
+	restyleForBasemap,
+	usesOfflineTiles,
+	type OfflineBasemap,
+} from './basemap';
+import {
 	AREA_LAYER,
 	ARROW_LAYER,
 	ENDPOINT_LAYER,
@@ -320,9 +327,13 @@ export class TrackLayer {
 			});
 		}
 
-		// Project the configured centre where the shared config object is created.
+		// Point the map at a basemap on disk, and project the configured centre —
+		// both where the shared config object is created, and in that order: the
+		// centre is projected with the datum of whichever tiles are actually going
+		// to be drawn.
 		this.wrap(view, 'loadConfig', (orig) => (tileSetId?: string) => {
 			const config = orig.call(view, tileSetId);
+			applyOfflineTiles(config, this.basemap());
 			this.projectConfigCenter(config);
 			return config;
 		});
@@ -698,10 +709,19 @@ export class TrackLayer {
 					: initialSystem;
 		this.realignCamera();
 
+		// The style the MapLibre constructor was handed loads after this runs, so
+		// the handler below is what bounds it. This call is for the other case: a
+		// map adopted from a view that was already open, whose style is loaded
+		// already and will not announce itself again.
+		this.boundBasemap(map);
+
 		// A new style is a blank slate: every source and layer is gone. The
 		// built-in view puts its markers back, so put the tracks back too rather
 		// than riding on its one-shot `styledata` handler.
 		this.mapEvents.on(map, 'style.load', () => {
+			// Before the tracks: a fresh style has a fresh raster source with the
+			// default bounds back, and this is ahead of MapLibre's first render.
+			this.boundBasemap(map);
 			// The native marker layer is one of the things wiped, and it comes back
 			// carrying its own default offset — so forget what was applied to the
 			// old one, or `applySpread` will decide the fan is already up. It is
@@ -827,6 +847,40 @@ export class TrackLayer {
 			(prop) => config.getDisplayName(prop)
 		);
 		return true;
+	}
+
+	/* ---- a basemap already on disk ---- */
+
+	/**
+	 * The pack this view draws, or null. The view option wins: a map that has
+	 * declined the offline basemap keeps whatever background it was configured
+	 * with, and every other map on the vault stays on the pack.
+	 */
+	private basemap(): OfflineBasemap | null {
+		let option: unknown;
+		try {
+			option = this.view.config ? this.view.config.get('offlineTiles') : undefined;
+		} catch {
+			/* stub config */
+		}
+		return usesOfflineTiles(option) ? this.plugin.offlineBasemap() : null;
+	}
+
+	/** Stop the map asking for levels the pack does not hold. A no-op without one. */
+	private boundBasemap(map: NonNullable<BasesMapView['map']>): void {
+		const pack = this.basemap();
+		if (pack) boundOfflineSource(map, pack.url, pack.sourceMaxZoom);
+	}
+
+	/** The pack was configured, changed or cleared while this map was on screen. */
+	refreshBasemap(): void {
+		if (this.detached || !restyleForBasemap(this.view)) return;
+		// Turning a pack on over a Chinese background changes what "auto" answers,
+		// and that moves every pin by a few hundred metres. Realign the camera
+		// against the tiles that are about to be drawn, before the restyle's own
+		// marker rebuild lands.
+		this.realignCamera();
+		this.locate?.replaceDot();
 	}
 
 	/** Preserve the real-world camera centre across tile-datum changes. */

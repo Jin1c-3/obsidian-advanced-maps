@@ -1,4 +1,5 @@
 import {
+	debounce,
 	parseYaml,
 	PluginSettingTab,
 	SecretComponent,
@@ -7,6 +8,7 @@ import {
 	type SettingDefinition,
 	type SettingDefinitionItem,
 } from 'obsidian';
+import { TILE_ZOOM_MAX, tilesProblem } from './basemap';
 import { SPREAD, TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
 import type { PhotoDatum } from './exif';
@@ -32,6 +34,15 @@ export type OpenTarget = (typeof OPEN_TARGETS)[number];
 export interface AdvancedMapsSettings {
 	/** Default coordinate mode; a view option can override it. */
 	coordSystem: CoordMode;
+	/** A basemap already on disk: the filesystem path its tiles are addressed by,
+	 *  holding `{z}`, `{x}` and `{y}`. Empty leaves every map its own background.
+	 *  Stored as a path and never as a URL — the `app://` prefix a URL needs is
+	 *  rebuilt at every launch, so a stored one would rot overnight. */
+	offlineTiles: string;
+	/** The shallowest and deepest levels that pack holds, which is what keeps the
+	 *  map from asking for tiles outside it. */
+	offlineTilesMinZoom: number;
+	offlineTilesMaxZoom: number;
 	trackColor: string;
 	trackWeight: number;
 	trackOpacity: number;
@@ -96,6 +107,11 @@ export interface AdvancedMapsSettings {
  * Device location starts disabled because it prompts and writes physical position. */
 export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	coordSystem: 'auto',
+	offlineTiles: '',
+	// A common depth for a hand-unpacked pack, and safe either way: too low
+	// costs sharpness at the deepest levels, never correctness.
+	offlineTilesMinZoom: 0,
+	offlineTilesMaxZoom: 16,
 	trackColor: 'var(--bases-map-marker-background)',
 	trackWeight: TRACK_KNOBS.trackWeight.def,
 	trackOpacity: TRACK_KNOBS.trackOpacity.def,
@@ -151,6 +167,9 @@ export function isExcluded(path: string, setting: string): boolean {
 }
 
 const BASE_PATH_PLACEHOLDER = 'places.base';
+
+/** The shape of a tile template rather than a path anyone actually has. */
+const OFFLINE_TILES_PLACEHOLDER = '/path/to/tiles/{z}/{x}/{y}.png';
 
 /** Marks a rendered description's mention of the coordinate property, so a
  *  rename can find it without re-rendering the pane; see `propertyDesc`. */
@@ -213,7 +232,8 @@ export function fallsBackToDefault(key: string): key is PlaceholderDefaultKey {
 }
 
 /** The pane's topics, each a page reached from its root; `trackProps` nests inside `tracks`. */
-type PageKey = 'coord' | 'open' | 'external' | 'search' | 'locate' | 'pins' | 'tracks' | 'photos' | 'trackProps';
+type PageKey =
+	'coord' | 'tiles' | 'open' | 'external' | 'search' | 'locate' | 'pins' | 'tracks' | 'photos' | 'trackProps';
 
 /** Indexed entry keys keep list rows on the declarative settings read/write seam. */
 type EntryKey = `externalMaps.${number}.on` | `customMaps.${number}.${'name' | 'url' | 'datum'}`;
@@ -278,6 +298,13 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 */
 	private views: string[] | null = null;
 	private viewsPath: string | null = null;
+
+	/**
+	 * Restyling every open map is expensive, and the box that names the pack
+	 * writes on every keystroke — as does a slider being dragged. Waits for the
+	 * typing to stop rather than rebuilding a style per character.
+	 */
+	private readonly refreshBasemaps = debounce(() => this.plugin.refreshBasemaps(), 500, true);
 
 	constructor(
 		app: App,
@@ -545,6 +572,34 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		this.update();
 	}
 
+	/**
+	 * The path template, saying what is wrong with it as it is typed.
+	 *
+	 * Structural only: whether the three placeholders are there. Whether anything
+	 * is at that path cannot be asked without enumerating a directory outside the
+	 * vault, and a pack whose path is wrong draws nothing, which is visible at
+	 * once.
+	 */
+	private offlineTilesRow(setting: Setting): void {
+		const say = (value: string) => {
+			// Empty is "no pack", not a mistake.
+			const problem = value.trim() === '' ? null : tilesProblem(value);
+			setting.setErrorMessage(problem === null ? null : t(`settings.tiles.error.${problem}`));
+		};
+		setting.addText((text) => {
+			text.setPlaceholder(OFFLINE_TILES_PLACEHOLDER)
+				.setValue(this.plugin.settings.offlineTiles)
+				.onChange((value) => {
+					say(value);
+					void this.setControlValue('offlineTiles', value);
+				});
+			text.inputEl.addClass('advanced-maps-tiles-path');
+		});
+		// A template saved by an older version, or left half-written, states itself
+		// on arrival rather than waiting to be typed in again.
+		say(this.plugin.settings.offlineTiles);
+	}
+
 	/** Draw three fields in one list row so delete/reorder indexes stay entry-aligned. */
 	private customRow(setting: Setting, entry: CustomMap, index: number): void {
 		setting.settingEl.addClass('advanced-maps-map-entry');
@@ -611,6 +666,40 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					},
 				],
 				() => t(`coord.${this.plugin.settings.coordSystem}`)
+			),
+
+			this.page(
+				'tiles',
+				[
+					{
+						name: t('settings.tiles.path.name'),
+						desc: t('settings.tiles.path.desc'),
+						// Hand-built rather than a declarative text control so the row can
+						// say what is wrong with a template while it is still being typed,
+						// the same way a custom external-map URL does. The write still goes
+						// through the shared seam.
+						render: (setting: Setting) => this.offlineTilesRow(setting),
+					},
+					this.slider(
+						'settings.tiles.minZoom.name',
+						'settings.tiles.minZoom.desc',
+						'offlineTilesMinZoom',
+						0,
+						TILE_ZOOM_MAX,
+						1
+					),
+					this.slider(
+						'settings.tiles.maxZoom.name',
+						'settings.tiles.maxZoom.desc',
+						'offlineTilesMaxZoom',
+						0,
+						TILE_ZOOM_MAX,
+						1
+					),
+				],
+				// The pack itself, named rather than summarized: a path is what the
+				// page is set to, and what a reader checking it wants to read back.
+				() => this.plugin.settings.offlineTiles || t('settings.state.unset')
 			),
 
 			this.page(
@@ -936,6 +1025,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		switch (key) {
 			case 'coordSystem':
 				this.plugin.reprojectAll();
+				break;
+			case 'offlineTiles':
+			case 'offlineTilesMinZoom':
+			case 'offlineTilesMaxZoom':
+				// Not on the track-refresh list below: this replaces the ground under
+				// the tracks rather than the tracks, and the redraw the new style
+				// triggers puts them back by itself.
+				this.refreshBasemaps();
 				break;
 			case 'coordsProperty':
 				// Rewritten rather than re-rendered: this fires on every keystroke
