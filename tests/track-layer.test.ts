@@ -77,11 +77,12 @@ function view(map: MapLibreMap | null): BasesMapView {
 	};
 }
 
-function plugin(): AdvancedMapsPlugin {
+function plugin(pack: ReturnType<AdvancedMapsPlugin['offlineBasemap']> = null): AdvancedMapsPlugin {
 	return {
 		settings: { followActiveNote: false, coordSystem: 'gcj02' },
 		layers: new Set(),
 		resolveTracks: () => [],
+		offlineBasemap: () => pack,
 	} as unknown as AdvancedMapsPlugin;
 }
 
@@ -561,5 +562,86 @@ describe('the places a map can export', () => {
 		]);
 		const layer = new TrackLayer(plugin(), v).attach();
 		expect((layer as unknown as Exporter).mapPlaces('file').map((p) => p.name)).toEqual(['Good']);
+	});
+});
+
+describe('the basemap a map draws', () => {
+	const PACK = {
+		url: 'app://token/mnt/tiles/{z}/{x}/{y}.png',
+		sourceMaxZoom: 14,
+		cameraMinZoom: 2,
+	};
+
+	/** A view whose native `loadConfig` answers with the background it is given. */
+	function configured(option: unknown, native: string) {
+		const v = view(mapAt());
+		v.config = {
+			get: (key) => (key === 'offlineTiles' ? option : undefined),
+			getDisplayName: String,
+		};
+		v.loadConfig = () => ({ mapTiles: [native], mapTilesDark: [native], minZoom: 0, defaultZoom: 4 });
+		return v;
+	}
+
+	it('substitutes the pack where the shared config object is built', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = configured('', 'https://tiles.example.com/{z}/{x}/{y}.png');
+		new TrackLayer(plugin(PACK), v).attach();
+
+		const config = v.loadConfig();
+		expect(config.mapTiles).toEqual([PACK.url]);
+		expect(config.mapTilesDark).toEqual([PACK.url]);
+		// The camera bound rides along on the number the native view already applies.
+		expect(config.minZoom).toBe(2);
+		expect(config.defaultZoom).toBe(4);
+	});
+
+	it('leaves a view that has declined it on its own background', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = configured('off', 'https://tiles.example.com/{z}/{x}/{y}.png');
+		new TrackLayer(plugin(PACK), v).attach();
+
+		expect(v.loadConfig().mapTiles).toEqual(['https://tiles.example.com/{z}/{x}/{y}.png']);
+		expect(v.loadConfig().minZoom).toBe(0);
+	});
+
+	it('leaves every view alone when no pack is configured', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = configured('', 'https://tiles.example.com/{z}/{x}/{y}.png');
+		new TrackLayer(plugin(null), v).attach();
+
+		expect(v.loadConfig().mapTiles).toEqual(['https://tiles.example.com/{z}/{x}/{y}.png']);
+	});
+
+	it('projects the configured centre against the tiles that will actually be drawn', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		// Automatic mode, and a Chinese background the pack is about to replace.
+		const amap = () => {
+			const v = view(mapAt());
+			v.config = {
+				get: (key) => (key === 'offlineTiles' ? '' : key === 'coordSystem' ? 'auto' : undefined),
+				getDisplayName: String,
+			};
+			v.loadConfig = () => ({
+				mapTiles: ['https://webrd01.is.autonavi.com/{z}/{x}/{y}.png'],
+				center: '30.242000,120.149000',
+			});
+			return v;
+		};
+
+		const packed = amap();
+		new TrackLayer(plugin(PACK), packed).attach();
+		// A local path names no provider, so automatic answers WGS-84 and the
+		// centre is left where the base file put it — shifted, it would be the
+		// GCJ-02 value against tiles that never moved.
+		expect(packed.loadConfig().center).toBe('30.242000,120.149000');
+
+		// The same view without a pack keeps the Amap background, and there the
+		// same centre does move — which is what makes the assertion above about
+		// the order of the two substitutions rather than about nothing happening.
+		const plain = amap();
+		new TrackLayer(plugin(null), plain).attach();
+		const [lng, lat] = wgs2gcj(120.149, 30.242);
+		expect(plain.loadConfig().center).toBe(`${lat},${lng}`);
 	});
 });

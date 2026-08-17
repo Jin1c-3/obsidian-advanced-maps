@@ -4,6 +4,42 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [Unreleased]
+
+### Added
+
+- **A folder of map tiles already on your disk can be the background of every
+  map.** Everything else this plugin draws already worked with no network — the
+  notes, the routes, the photos and their thumbnails are files in your vault —
+  and the ground under them did not. Close the lid on a plane and the tracks
+  were still there over a blank grey rectangle.
+
+  **Settings → Offline basemap** takes the path your tiles are addressed by:
+  `/home/you/tiles/{z}/{x}/{y}.png`, absolute or relative to the vault, `{-y}`
+  included for packs laid out in TMS row order. Every map draws it, inline
+  `![[route.gpx]]` maps included, and no tile request leaves the machine.
+
+  Two more rows say which levels the pack covers, because each end fails its own
+  way. Past the deepest one the map keeps drawing, magnifying the tiles you have
+  rather than issuing a failed read for every tile that is not there. Below the
+  shallowest, the camera stops at the edge of the pack rather than going blank.
+
+  A path rather than a URL, on purpose: the prefix a URL needs is rebuilt every
+  time Obsidian starts, so a hand-typed one works until the next restart. This
+  resolves it as each map is built.
+
+  Any map view can decline, from the **Background** section of its own options
+  where its background is configured. Nothing overwrites what you configured
+  there — the basemap is substituted as the map is built — so switching it off
+  brings that background straight back, and clearing the setting returns every
+  map at once.
+
+  Nothing is downloaded: bulk-fetching a provider's tiles is theirs to permit,
+  not this plugin's to do on your behalf. The pack is only ever read. A
+  single-file `.mbtiles` or `.pmtiles` still needs a hook into a map library
+  this plugin does not bundle; unpack it into a directory tree and it works.
+  Measured on desktop; mobile reaches local files another way and is untested.
+
 ## [1.16.0]
 
 ### Added

@@ -17,13 +17,14 @@ Base or Around map without creating another map in the note.
 
 ## Where the settings live
 
-**Settings → Community plugins → Advanced Maps** opens on eight entries, one per
+**Settings → Community plugins → Advanced Maps** opens on nine entries, one per
 topic. Open one to reach its rows; the entry states what it is set to, so the
 pane answers the common questions without being opened.
 
 | Entry                | Holds                                                                                                                                                    |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Coordinate system    | The default datum for inline maps and for views that set none                                                                                            |
+| Offline basemap      | A folder of tiles on disk to draw as the background, and the zoom levels it holds                                                                        |
 | Open in map          | Base file, view name, target, coordinate and place properties, zoom, follow, Around view name, menu label                                                |
 | Open in external map | The built-in map apps and your own                                                                                                                       |
 | Place search         | Search source and, for Amap, where its key is kept                                                                                                       |
@@ -44,6 +45,7 @@ search, which reaches rows inside these pages the same way it reaches any other.
 | Where is a note's coordinate?                           | The map view's **Coordinates** property                                                                          |
 | Which Base powers navigation and Around?                | Advanced Maps **Base file path** and **View name** settings                                                      |
 | How a specific map draws tracks or converts its basemap | `trackWeight`, `trackOpacity`, `fitMaxZoom`, and `coordSystem` view keys when present; plugin settings otherwise |
+| Whether a map draws the offline basemap                 | The `offlineTiles` view key; the pack itself is a plugin setting                                                 |
 
 ## Operational boundaries
 
@@ -69,6 +71,7 @@ telemetry, update ping, or server.
 | When                     | What leaves                                      | Destination                   |
 | ------------------------ | ------------------------------------------------ | ----------------------------- |
 | A map is visible         | Tile requests: your IP and viewed area           | The selected basemap provider |
+| A map draws a tile pack  | Nothing; the tiles are read from disk            | —                             |
 | You search for a place   | Search text, language, and configured key        | The selected geocoder         |
 | You reverse-geocode      | The one coordinate you requested                 | The selected geocoder         |
 | You open an external map | The clicked coordinate                           | The map app you chose         |

@@ -41,6 +41,7 @@ workflow.
 src/
   main.ts, track-layer.ts        plugin lifecycle and one native map enhancement
   layers.ts, geometry.ts         owned MapLibre sources, layers, icons, bounds
+  basemap.ts                     a tile pack on disk as one map's background
   track-cache.ts, parse.ts       cached GPX/GeoJSON/KML/TCX/photo ingestion
   exif.ts                        bounded EXIF/container reader
   embed.ts, photo-modal.ts       inline track maps and photo presentation
@@ -99,6 +100,7 @@ tests/                            Vitest suites; no vault required
 - [Photo map rendering](openspec/specs/photo-map-rendering/spec.md)
 - [Pin spreading](openspec/specs/pin-spreading/spec.md)
 - [Coordinate datum](openspec/specs/coordinate-datum/spec.md)
+- [Offline basemap](openspec/specs/offline-basemap/spec.md)
 - [Note and map navigation](openspec/specs/note-map-navigation/spec.md)
 - [Location and geocoding](openspec/specs/location-and-geocoding/spec.md)
 - [Inline track maps](openspec/specs/inline-track-maps/spec.md)

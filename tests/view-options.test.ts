@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { appendTrackOptions, coordOptionGroup, groupIndexByKey, trackOptionGroup } from '../src/view-options';
+import {
+	appendTrackOptions,
+	coordOptionGroup,
+	groupIndexByKey,
+	offlineTilesOptionGroup,
+	trackOptionGroup,
+} from '../src/view-options';
 import { COORD_MODES } from '../src/coords';
 import type { ViewOptionGroup } from '../src/types/obsidian-internals';
 
@@ -34,11 +40,14 @@ describe('appendTrackOptions', () => {
 	it('slots each group in behind the one it belongs with', () => {
 		const list = appendTrackOptions(NATIVE);
 		const names = list.map((g) => g.displayName);
-		expect(names.indexOf(coordOptionGroup().displayName)).toBe(1); // right after Background
-		expect(names.indexOf(trackOptionGroup().displayName)).toBe(3); // right after Markers
+		// Where a background is chosen, then what it is made of, then the datum it
+		// implies — and the track knobs behind the markers they sit beside.
+		expect(names.indexOf(offlineTilesOptionGroup().displayName)).toBe(1);
+		expect(names.indexOf(coordOptionGroup().displayName)).toBe(2);
+		expect(names.indexOf(trackOptionGroup().displayName)).toBe(4);
 		expect(names[0]).toBe('Background');
-		expect(names[2]).toBe('Markers');
-		expect(names[4]).toBe('Popup');
+		expect(names[3]).toBe('Markers');
+		expect(names[5]).toBe('Popup');
 	});
 
 	it('leaves the list it was given alone', () => {
@@ -49,13 +58,13 @@ describe('appendTrackOptions', () => {
 
 	it('appends when the built-in wording — and its anchors — have moved on', () => {
 		const list = appendTrackOptions([group('Something else', ['unrelated'])]);
-		expect(list).toHaveLength(3);
+		expect(list).toHaveLength(4);
 		expect(list[0].displayName).toBe('Something else');
 	});
 
 	it('copes with no options at all', () => {
-		expect(appendTrackOptions(undefined)).toHaveLength(2);
-		expect(appendTrackOptions([])).toHaveLength(2);
+		expect(appendTrackOptions(undefined)).toHaveLength(3);
+		expect(appendTrackOptions([])).toHaveLength(3);
 	});
 });
 
@@ -68,5 +77,14 @@ describe('option groups', () => {
 
 	it('keeps the track sliders on the keys TrackLayer reads', () => {
 		expect(trackOptionGroup().items.map((i) => i.key)).toEqual(['trackWeight', 'trackOpacity', 'fitMaxZoom']);
+	});
+
+	it('defaults the offline basemap to on, with "off" the only way to decline', () => {
+		const item = offlineTilesOptionGroup().items[0];
+		expect(item.key).toBe('offlineTiles');
+		// Empty is the default, so a base written before this existed follows the
+		// plugin setting rather than opting out by omission.
+		expect(item.default).toBe('');
+		expect(Object.keys(item.options ?? {})).toEqual(['', 'off']);
 	});
 });
