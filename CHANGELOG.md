@@ -4,7 +4,7 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
-## [Unreleased]
+## [1.17.0]
 
 ### Added
 
@@ -850,7 +850,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.16.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.0...HEAD
+[1.17.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.16.0...1.17.0
 [1.16.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.15.0...1.16.0
 [1.15.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.14.0...1.15.0
 [1.14.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.13.6...1.14.0
