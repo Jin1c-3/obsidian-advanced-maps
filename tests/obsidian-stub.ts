@@ -149,6 +149,49 @@ export class TFile {
 	stat = { mtime: 0, ctime: 0, size: 0 };
 }
 
+export class TFolder {
+	path = '';
+	name = '';
+	children: unknown[] = [];
+}
+
+export abstract class PopoverSuggest<T> {
+	constructor(public app: unknown) {}
+	open(): void {}
+	close(): void {}
+	abstract renderSuggestion(value: T, el: HTMLElement): void;
+	abstract selectSuggestion(value: T, evt?: unknown): void;
+}
+
+/** Only ever subclassed here, so this exists so that `extends` has a class. */
+export abstract class AbstractInputSuggest<T> extends PopoverSuggest<T> {
+	limit = 100;
+	constructor(
+		app: unknown,
+		public textInputEl: HTMLInputElement | HTMLDivElement
+	) {
+		super(app);
+	}
+	setValue(value: string): void {
+		if (this.textInputEl instanceof HTMLInputElement) this.textInputEl.value = value;
+	}
+	getValue(): string {
+		return this.textInputEl instanceof HTMLInputElement ? this.textInputEl.value : '';
+	}
+	onSelect(_cb: (value: T, evt: unknown) => unknown): this {
+		return this;
+	}
+	abstract getSuggestions(query: string): T[] | Promise<T[]>;
+}
+
+/** The real one collapses repeated separators and trims the outer ones. */
+export function normalizePath(path: string): string {
+	return path
+		.replace(/\\/g, '/')
+		.replace(/\/{2,}/g, '/')
+		.replace(/^\/+|\/+$/g, '');
+}
+
 export class Notice {
 	constructor(public message: string) {}
 	hide(): void {}

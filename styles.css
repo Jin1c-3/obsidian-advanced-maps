@@ -397,3 +397,27 @@
 	font-size: var(--font-ui-smaller);
 	user-select: text;
 }
+
+/* The two place dialogs. The preview and the destination line are both there to
+ * make an irreversible write reviewable before it happens: what is about to be
+ * created, and where. */
+.advanced-maps-places-modal {
+	width: min(520px, 94vw);
+}
+
+.advanced-maps-places-preview {
+	margin: var(--size-4-2) 0;
+	padding: var(--size-4-2) var(--size-4-3);
+	max-height: 8em;
+	overflow-y: auto;
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	font-size: var(--font-ui-smaller);
+	user-select: text;
+}
+
+.advanced-maps-places-more,
+.advanced-maps-places-note {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}

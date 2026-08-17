@@ -66,6 +66,7 @@ views:
 | [照片地图](docs/guide/photo-maps.zh-CN.md)                     | 照片目录、OneDrive、链接照片、缩略图、索引                |
 | [轨迹与区域](docs/guide/tracks-and-areas.zh-CN.md)             | 轨迹链接、内联地图、GPX/GeoJSON/KML/TCX、面、统计写进属性 |
 | [周围视图与导航](docs/guide/around-and-navigation.zh-CN.md)    | 周围视图、复用 Base、在地图中打开、跟随、重合图钉         |
+| [地点的进出](docs/guide/places-in-and-out.zh-CN.md)            | 把地标文件导入成笔记，把 Base 导出成 GPX/KML/CSV          |
 | [坐标与地图服务](docs/guide/coordinates-and-services.zh-CN.md) | WGS-84/GCJ-02/BD-09、外部地图、搜索、地理编码、定位       |
 | [参考与隐私](docs/guide/reference-and-privacy.zh-CN.md)        | 支持输入、选项职责、使用边界、网络披露                    |
 

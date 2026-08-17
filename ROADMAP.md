@@ -11,38 +11,13 @@ already installed on the view — and others disproportionately expensive.
 
 ## Next
 
-### A vault places can pass through
-
-Two halves of one idea, moved up here from _Worth doing_ once the popup work
-below them shipped. Neither half touches a native seam — one reads a file, the
-other reads what a view has already resolved — which makes this the least
-blocked work on this page.
-
-### Import a KML's placemarks as notes
-
-A `.kml` is drawn as a track today. But a Google My Maps export is usually a
-hundred **placemarks** — a saved-restaurants list — and those become circles on
-a map and nothing else: not rows, no properties, nothing a filter or a formula
-can reach. Reading each placemark's name, description and coordinate into a note
-turns them into what the rest of the plugin already works on. `parse.ts` reads
-the file already; what is missing is the writing.
-
-### Getting places back out
-
-The inverse of the entry above, and asked for twice: esm7/obsidian-map-view#269
-wants waypoints it can carry into GaiaGPS and onto a Suunto watch, #313 wants a
-KML it can hand to Google My Maps. Both are one command — take the notes a base
-matched, write their coordinates as GPX waypoints, KML placemarks, or CSV rows.
-No native seam is involved; it reads what the view already resolved and writes
-one file, in WGS-84 like everything that leaves this plugin.
-
-The pair is the point. A vault that a hundred saved restaurants can come into
-and a watch route can come out of is a place data passes through, rather than
-somewhere it goes to be retyped.
-
-## Worth doing
-
 ### Basemap tiles that are already on disk
+
+Moved up from _Worth doing_ once the place interchange that stood here shipped,
+and now the only entry on this page with no unknown left in it: both obstacles
+are measured, both are this plugin's to solve, and neither needs anything from
+the host that is not already there. It is also the last piece of a map that works
+with no network at all — the notes, the routes and the photos already do.
 
 This entry used to sit under _Deliberately not_, on the grounds that MapLibre's
 `addProtocol` is a module-level export and `transformRequest` a constructor
@@ -80,6 +55,8 @@ a pack the reader already holds. A single-file `.pmtiles` or `.mbtiles` does
 still need `addProtocol` and stays out of reach, so the shape is a directory
 tree of tiles, unpacked once, plus a source this plugin owns and can bound.
 Mobile (`capacitor://`) is untested.
+
+## Worth doing
 
 ### Dropping a note onto the map to place it
 
@@ -176,7 +153,7 @@ getting reopened.
   are not usable in every country this plugin's users are in. It is a whole
   product, not a feature.
 - **Downloading tiles for offline use.** Serving tiles that are already on disk
-  turned out to be reachable and moved up to _Worth doing_. Fetching them in
+  turned out to be reachable and moved up to _Next_. Fetching them in
   bulk from a provider did not: that is their terms of service to grant, and a
   plugin that ships a "download this area" button grants it on the reader's
   behalf.

@@ -17,6 +17,7 @@ the topic pages below as recipes and reference.
 | Map a photo folder or the photos linked from notes                                   | [Photo maps](photo-maps.md)                             |
 | Draw GPX, GeoJSON, KML, TCX, areas, or inline route statistics                       | [Tracks and areas](tracks-and-areas.md)                 |
 | Map the notes connected to this one, open notes in a Base, or follow the active note | [Around and navigation](around-and-navigation.md)       |
+| Bring a file of saved places into notes, or take a Base's places back out            | [Places in and out](places-in-and-out.md)               |
 | Align mainland basemaps, parse map links, search places, or open another map app     | [Coordinates and services](coordinates-and-services.md) |
 | Check supported files, option ownership, privacy, operational limits, or attribution | [Reference and privacy](reference-and-privacy.md)       |
 

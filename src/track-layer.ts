@@ -48,6 +48,8 @@ import {
 } from './layers';
 import { customMapLabel, customMapUrl, customMaps, enabledBuiltins, externalMapUrl, resolveBuiltins } from './maplinks';
 import { PhotoModal } from './photo-modal';
+import { valueText, type Place } from './places';
+import { ExportPlacesModal, exportStem, type ExportSource } from './places-modal';
 import { iconOffsetExpression, spreadFactor, spreadPins, type SpreadPin, type SpreadPlan } from './spread';
 import { appendDetail, statsSummary, type PointedDetail } from './popup-rows';
 import { pooled, projectedFeatures, recordStats } from './track-cache';
@@ -362,6 +364,9 @@ export class TrackLayer {
 				// through the one helper that converts a click exactly once.
 				this.addStampNoteItem(ev, map, system);
 				this.addExternalMapItems(ev, map, system);
+				// Not one of them: this is about the whole map rather than the
+				// clicked pixel, and reads no coordinate off the event at all.
+				this.addExportPlacesItem(ev);
 			});
 		}
 
@@ -517,6 +522,108 @@ export class TrackLayer {
 			if (url !== null) items.push({ title: customMapLabel(entry), url });
 		}
 		return items;
+	}
+
+	/**
+	 * Offer to carry this map's places out of the vault as a file.
+	 *
+	 * Offered only when the view can actually say what it holds: a manager with no
+	 * readable `markers`, or one holding none, gets no entry rather than an empty
+	 * file. Its own menu section, since it is not one of the point actions above.
+	 */
+	private addExportPlacesItem(ev: MouseEvent): void {
+		const places = this.mapPlaces('file');
+		if (places.length === 0) return;
+		Menu.forEvent(ev).addItem((item) =>
+			item
+				.setTitle(t('menu.exportPlaces'))
+				.setIcon('download')
+				.setSection('export-places')
+				.onClick(() => this.exportPlaces())
+		);
+	}
+
+	/**
+	 * The places this map shows, named by `nameId` — `file` for the note's own
+	 * file name, or `p<n>` for the n-th property the base displays.
+	 *
+	 * `marker.coordinates` is the note's own `[lat, lng]`, which is the whole
+	 * point of reading markers rather than the drawn geometry: the features this
+	 * plugin hands MapLibre have been through the tile datum, and exporting those
+	 * would make a file depend on which basemap happened to be configured. The
+	 * two are one property apart and nothing about the result looks wrong — a
+	 * 500 m shift is invisible in a list of numbers.
+	 */
+	private mapPlaces(nameId: string): Place[] {
+		const markers = this.view.markerManager?.markers;
+		if (!Array.isArray(markers)) return [];
+		const properties = this.view.data?.properties;
+		const index = nameId.startsWith('p') ? Number(nameId.slice(1)) : -1;
+		const property = Array.isArray(properties) && index >= 0 ? properties[index] : undefined;
+
+		const out: Place[] = [];
+		for (const marker of markers) {
+			const coords = marker?.coordinates;
+			if (!Array.isArray(coords) || coords.length < 2) continue;
+			const [lat, lng] = coords;
+			if (!isFinite(lat) || !isFinite(lng)) continue;
+			const file = marker.entry?.file;
+			const fallback = file?.basename ?? '';
+			let name = '';
+			if (property !== undefined && typeof marker.entry?.getValue === 'function') {
+				try {
+					name = valueText(marker.entry.getValue(property));
+				} catch {
+					/* a row that cannot answer for this property keeps its file name */
+				}
+			}
+			out.push({
+				// Never nameless: an empty property falls back to the file name, and a
+				// file name is the one thing every row has.
+				name: name || fallback || t('places.export.defaultName'),
+				description: '',
+				lat,
+				lng,
+				path: file?.path ?? '',
+			});
+		}
+		return out;
+	}
+
+	/** `file` first, then every property this base displays, by its shown label. */
+	private exportNameSources(): ExportSource['names'] {
+		const names: ExportSource['names'] = [{ id: 'file', label: t('places.export.nameByFile') }];
+		const properties = this.view.data?.properties;
+		const config = this.view.config;
+		if (!Array.isArray(properties) || !config) return names;
+		properties.forEach((property, i) => {
+			try {
+				const label = config.getDisplayName(property);
+				if (typeof label === 'string' && label !== '') names.push({ id: `p${i}`, label });
+			} catch {
+				/* a property with no display name is simply not offered */
+			}
+		});
+		return names;
+	}
+
+	private exportPlaces(): void {
+		const places = this.mapPlaces('file');
+		if (places.length === 0) return;
+		const source: ExportSource = {
+			count: places.length,
+			names: this.exportNameSources(),
+			// Rebuilt per choice rather than held: choosing what names a place is
+			// the whole of what that dialog decides.
+			places: (nameId) => this.mapPlaces(nameId),
+		};
+		const app = this.view.app;
+		// With a base open in its own tab this is the base's own file name, which
+		// is the name the reader already calls this map by.
+		const stem = exportStem(app.workspace.getActiveFile()?.basename ?? null);
+		new ExportPlacesModal(app, source, stem, (path, text) =>
+			this.plugin.writePlacesFile(path, text, source.count)
+		).open();
 	}
 
 	detach(): void {

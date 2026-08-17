@@ -132,6 +132,18 @@ export interface BasesViewRegistration {
 /** One row of the base's query result. */
 export interface BasesEntry {
 	file: TFile;
+	/**
+	 * One displayed property's value for this row, as a Bases `Value` — a class
+	 * this plugin does not import, hence `unknown`.
+	 *
+	 * Public in the Maps source's own typings, where every marker is built from
+	 * `entry.getValue(mapConfig.coordinatesProp)`
+	 * (obsidian-maps/src/map/markers.ts:78), and optional here because this
+	 * plugin's own stub entries have no such method. Measured on Maps 0.2.2 /
+	 * Obsidian 1.13.7: it throws for a property the row cannot answer, which is
+	 * why the native collector wraps it in a `try`.
+	 */
+	getValue?(property: unknown): unknown;
 	[key: string]: unknown;
 }
 
@@ -180,6 +192,22 @@ export interface MapMarker {
 }
 
 export interface MarkerManager {
+	/**
+	 * Every marker this manager last built.
+	 *
+	 * `private markers: MapMarker[]` in obsidian-maps/src/map/markers.ts:20 —
+	 * `private` is a compile-time word, and at runtime it is an ordinary own
+	 * property. It is assigned wholesale at the end of `updateMarkers`, so it is
+	 * the rows the base matched **and** placed: already filtered to those whose
+	 * coordinate property resolved through the native `coordinateFromValue`.
+	 *
+	 * Measured on Maps 0.2.2 / Obsidian 1.13.7: 303 markers on a 16,503-row base,
+	 * each `{entry, coordinates, icon, color, imageKey}`, with `coordinates` the
+	 * note's own `[lat, lng]` — this plugin's datum shift happens to the features
+	 * handed to MapLibre, never to these. Optional and `Array.isArray`-checked at
+	 * every read: absent means the feature that wanted it stands down.
+	 */
+	markers?: MapMarker[];
 	updateMarkers(data?: BasesData): Promise<void>;
 	createGeoJSONFeatures(markers: MapMarker[]): MarkerFeature[];
 	getCustomColor(entry: BasesEntry, config: MapConfig | undefined): string | null | undefined;
