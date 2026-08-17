@@ -489,3 +489,77 @@ describe('native popup-content wrapper', () => {
 		expect(v.popupManager.createPopupContent === native).toBe(true);
 	});
 });
+
+describe('the places a map can export', () => {
+	/** What `mapPlaces` is: private in TypeScript, an ordinary method at runtime. */
+	type Exporter = { mapPlaces(nameId: string): Array<{ name: string; lat: number; lng: number; path?: string }> };
+
+	function withMarkers(markers: unknown[]): BasesMapView {
+		const v = view(mapAt());
+		(v.markerManager as unknown as { markers: unknown[] }).markers = markers;
+		return v;
+	}
+
+	function marker(path: string, coordinates: [number, number], value?: unknown) {
+		return {
+			entry: {
+				file: { path, basename: path.replace(/^.*\//, '').replace(/\.md$/, '') },
+				getValue: () => value,
+			},
+			coordinates,
+		};
+	}
+
+	it('reads the notes own coordinates, not the shifted ones the map drew', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const wgs: [number, number] = [39.90923, 116.397428];
+		const v = withMarkers([marker('notes/Gate.md', wgs)]);
+		const layer = new TrackLayer(plugin(), v).attach();
+
+		// The stub view is on GCJ-02, where this point is drawn some 500 m away.
+		const [shiftedLng, shiftedLat] = wgs2gcj(wgs[1], wgs[0]);
+		expect(shiftedLat === wgs[0]).toBe(false);
+		expect(shiftedLng === wgs[1]).toBe(false);
+
+		const places = (layer as unknown as Exporter).mapPlaces('file');
+		expect(places).toEqual([{ name: 'Gate', description: '', lat: wgs[0], lng: wgs[1], path: 'notes/Gate.md' }]);
+	});
+
+	it('names a place by the file, or by a property when one is chosen', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = withMarkers([
+			marker('notes/20250405.md', [30.1, 120.1], { isTruthy: () => true, toString: () => 'West Lake' }),
+			// A row whose chosen property is empty keeps its file name.
+			marker('notes/20250406.md', [30.2, 120.2], { isTruthy: () => false, toString: () => '' }),
+		]);
+		v.data = { data: [], properties: ['note.place'] };
+		const layer = new TrackLayer(plugin(), v).attach();
+		const exporter = layer as unknown as Exporter;
+
+		expect(exporter.mapPlaces('file').map((p) => p.name)).toEqual(['20250405', '20250406']);
+		expect(exporter.mapPlaces('p0').map((p) => p.name)).toEqual(['West Lake', '20250406']);
+	});
+
+	it('answers nothing when the manager cannot say what it holds', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = view(mapAt());
+		const layer = new TrackLayer(plugin(), v).attach();
+		// No `markers` at all: the entry is not offered rather than an empty file
+		// being written.
+		expect((layer as unknown as Exporter).mapPlaces('file')).toEqual([]);
+
+		const empty = new TrackLayer(plugin(), withMarkers([])).attach();
+		expect((empty as unknown as Exporter).mapPlaces('file')).toEqual([]);
+	});
+
+	it('skips a marker whose coordinate is not a pair of numbers', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = withMarkers([
+			marker('notes/Bad.md', [NaN, 120] as [number, number]),
+			{ entry: { file: { path: 'notes/None.md', basename: 'None' } }, coordinates: null },
+			marker('notes/Good.md', [30.3, 120.3]),
+		]);
+		const layer = new TrackLayer(plugin(), v).attach();
+		expect((layer as unknown as Exporter).mapPlaces('file').map((p) => p.name)).toEqual(['Good']);
+	});
+});

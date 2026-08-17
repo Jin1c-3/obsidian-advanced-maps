@@ -7,13 +7,17 @@ export interface ParsedTrack {
 	waypoints?: number;
 }
 
-/** Preserve optional name and position-aligned timestamps; return null when empty. */
+/** Preserve optional name, description and position-aligned timestamps; return null when empty. */
 function buildProperties(
 	name: string | undefined,
-	times: (number | null)[] | undefined
+	times: (number | null)[] | undefined,
+	description?: string
 ): Record<string, unknown> | null {
 	const props: Record<string, unknown> = {};
 	if (name) props.name = name;
+	// The sentence a reader wrote about a place, kept because importing places as
+	// notes reads it. Nothing on the drawing path looks at it.
+	if (description) props.description = description;
 	// An all-null times array carries no information a reader could use, so it
 	// is left off entirely — the key's mere presence is the signal that at
 	// least one point in this feature has a real timestamp.
@@ -27,20 +31,24 @@ interface CollectedPoints {
 	/** Only meaningful for `<wpt>` — a `<trkpt>`/`<rtept>` almost never names
 	 *  one, and `addLine()` ignores this array either way. */
 	names: (string | undefined)[];
+	/** Same: a waypoint's `<desc>`, which is where a saved place keeps the reason
+	 *  it was saved. */
+	descriptions: (string | undefined)[];
 }
 
 /**
  * `<trkpt>` / `<rtept>` / `<wpt>` all share this shape: lat/lon as attributes,
- * elevation, time and name as optional children. All three of `positions`,
- * `times` and `names` are always returned at the same length — callers that
- * don't need one of them (a track segment has no use for `names`) just don't
- * look — so there is one place that keeps the three arrays in step rather than
- * each call site re-deriving that.
+ * elevation, time, name and description as optional children. Every one of
+ * `positions`, `times`, `names` and `descriptions` is always returned at the
+ * same length — callers that don't need one of them (a track segment has no use
+ * for `names`) just don't look — so there is one place that keeps the arrays in
+ * step rather than each call site re-deriving that.
  */
 function collectPoints(parent: Document | Element, tag: string): CollectedPoints {
 	const positions: Position[] = [];
 	const times: (number | null)[] = [];
 	const names: (string | undefined)[] = [];
+	const descriptions: (string | undefined)[] = [];
 	const nodes = parent.getElementsByTagName(tag);
 	for (let i = 0; i < nodes.length; i++) {
 		const node = nodes[i];
@@ -55,8 +63,9 @@ function collectPoints(parent: Document | Element, tag: string): CollectedPoints
 		const ms = timeText ? Date.parse(timeText) : NaN;
 		times.push(isFinite(ms) ? ms : null);
 		names.push(node.getElementsByTagName('name')[0]?.textContent?.trim() || undefined);
+		descriptions.push(node.getElementsByTagName('desc')[0]?.textContent?.trim() || undefined);
 	}
-	return { positions, times, names };
+	return { positions, times, names, descriptions };
 }
 
 /** Minimal GPX reader: track segments, routes and waypoints. */
@@ -88,7 +97,7 @@ export function parseGpx(text: string): ParsedTrack {
 	for (let i = 0; i < wpts.positions.length; i++) {
 		features.push({
 			type: 'Feature',
-			properties: buildProperties(wpts.names[i], undefined),
+			properties: buildProperties(wpts.names[i], undefined, wpts.descriptions[i]),
 			geometry: { type: 'Point', coordinates: wpts.positions[i] },
 		});
 		waypoints++;
@@ -203,15 +212,17 @@ export function parseKml(text: string): ParsedTrack {
 
 	const features: ParsedTrack['features'] = [];
 
-	// Walk up to the nearest enclosing <Placemark> and read its own <name> —
-	// not the first <name> anywhere below it, which could belong to a nested
-	// <Style> or <ExtendedData> entry instead.
-	const placemarkName = (el: Element): string | undefined => {
+	// Walk up to the nearest enclosing <Placemark> and read one of its own direct
+	// children — not the first such element anywhere below it, which could belong
+	// to a nested <Style> or <ExtendedData> entry instead. Both the name and the
+	// description are read this way, since a <Style> is as likely to carry a
+	// <description> of its own as a <name>.
+	const placemarkChild = (el: Element, wanted: string): string | undefined => {
 		let node: Element | null = el.parentElement;
 		while (node) {
 			if (node.localName === 'Placemark') {
 				for (let i = 0; i < node.children.length; i++) {
-					if (node.children[i].localName === 'name') return node.children[i].textContent?.trim() || undefined;
+					if (node.children[i].localName === wanted) return node.children[i].textContent?.trim() || undefined;
 				}
 				return undefined;
 			}
@@ -219,6 +230,8 @@ export function parseKml(text: string): ParsedTrack {
 		}
 		return undefined;
 	};
+	const placemarkName = (el: Element): string | undefined => placemarkChild(el, 'name');
+	const placemarkDescription = (el: Element): string | undefined => placemarkChild(el, 'description');
 
 	const addLineLike = (el: Element) => {
 		const coordEl = firstByLocalName(el, 'coordinates');
@@ -226,7 +239,7 @@ export function parseKml(text: string): ParsedTrack {
 		if (positions.length > 1) {
 			features.push({
 				type: 'Feature',
-				properties: buildProperties(placemarkName(el), undefined),
+				properties: buildProperties(placemarkName(el), undefined, placemarkDescription(el)),
 				geometry: { type: 'LineString', coordinates: positions },
 			});
 		}
@@ -269,7 +282,7 @@ export function parseKml(text: string): ParsedTrack {
 		if (rings.length === 0) continue;
 		features.push({
 			type: 'Feature',
-			properties: buildProperties(placemarkName(polygon), undefined),
+			properties: buildProperties(placemarkName(polygon), undefined, placemarkDescription(polygon)),
 			geometry: { type: 'Polygon', coordinates: rings },
 		});
 	}
@@ -286,7 +299,7 @@ export function parseKml(text: string): ParsedTrack {
 		if (positions.length > 0) {
 			features.push({
 				type: 'Feature',
-				properties: buildProperties(placemarkName(point), undefined),
+				properties: buildProperties(placemarkName(point), undefined, placemarkDescription(point)),
 				geometry: { type: 'Point', coordinates: positions[0] },
 			});
 		}
@@ -315,7 +328,7 @@ export function parseKml(text: string): ParsedTrack {
 		if (positions.length > 1) {
 			features.push({
 				type: 'Feature',
-				properties: buildProperties(placemarkName(track), times),
+				properties: buildProperties(placemarkName(track), times, placemarkDescription(track)),
 				geometry: { type: 'LineString', coordinates: positions },
 			});
 		}

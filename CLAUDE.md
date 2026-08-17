@@ -49,6 +49,7 @@ src/
   geolink.ts, link-modal.ts      coordinates parsed from pasted map links
   geocode.ts, search-modal.ts    place search and reverse-geocoding boundary
   maplinks.ts                    external-map URL construction
+  places.ts, places-modal.ts     saved places into notes, and back out as files
   locate.ts                      device-location policy and session breaker
   settings.ts, view-options.ts   declarative settings and native view options
   map-events.ts                  paired MapLibre listener ownership
@@ -102,6 +103,7 @@ tests/                            Vitest suites; no vault required
 - [Location and geocoding](openspec/specs/location-and-geocoding/spec.md)
 - [Inline track maps](openspec/specs/inline-track-maps/spec.md)
 - [External map links](openspec/specs/external-map-links/spec.md)
+- [Place interchange](openspec/specs/place-interchange/spec.md)
 - [Maintainer workflow](openspec/specs/maintainer-workflow/spec.md)
 
 During an unarchived OpenSpec change, proposed deltas live under

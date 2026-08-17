@@ -30,7 +30,7 @@ A note in a base result SHALL contribute supported track files referenced by bod
 
 ### Requirement: Supported track formats preserve equivalent data
 
-The plugin SHALL read GPX, GeoJSON, KML, and TCX geometry and SHALL preserve available elevation, timestamps, waypoint names, and line names needed by downstream map features. Reading SHALL tolerate the formatting a valid file is permitted to vary, including whitespace around the separators inside a KML coordinate tuple. Where a format distinguishes an area from a line, that distinction SHALL survive reading: a KML polygon's outer boundary and its holes SHALL be preserved as one area rather than as unrelated lines, while a ring that no polygon declares as a boundary SHALL keep being read as a line.
+The plugin SHALL read GPX, GeoJSON, KML, and TCX geometry and SHALL preserve available elevation, timestamps, waypoint names, waypoint descriptions, and line names needed by downstream map features. Reading SHALL tolerate the formatting a valid file is permitted to vary, including whitespace around the separators inside a KML coordinate tuple. Where a format distinguishes an area from a line, that distinction SHALL survive reading: a KML polygon's outer boundary and its holes SHALL be preserved as one area rather than as unrelated lines, while a ring that no polygon declares as a boundary SHALL keep being read as a line.
 
 #### Scenario: Equivalent route is supplied in each format
 
@@ -61,6 +61,11 @@ The plugin SHALL read GPX, GeoJSON, KML, and TCX geometry and SHALL preserve ava
 
 - **WHEN** a ring appears with no enclosing polygon to declare it a boundary
 - **THEN** it is read as a line, as before, and no interior is claimed for it
+
+#### Scenario: A saved place carries a description beside its name
+
+- **WHEN** a KML placemark holds a `<description>`, or a GPX waypoint a `<desc>`
+- **THEN** that text is preserved on the feature alongside its name, so a reader of the parsed file can carry it into a note, and a place with no description carries none rather than an empty one
 
 ### Requirement: Tracks inherit note ownership
 

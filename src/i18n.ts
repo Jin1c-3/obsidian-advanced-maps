@@ -61,6 +61,12 @@ const en = {
 	'menu.openExternal': 'Open in external map',
 	/* Beside the native "New note here", whose other half it is. */
 	'menu.stampNote': "Set a note's coordinates here",
+	/* On a file rather than on the map: the one entry this plugin adds to the
+	 * file menu, and the only one of the two that names a file. */
+	'menu.importPlaces': 'Import places as notes…',
+	/* About the whole map rather than the clicked point, which is why it sits in
+	 * a section of its own. */
+	'menu.exportPlaces': 'Export places…',
 
 	/* ---- picking the note a clicked point belongs to ---- */
 	'picker.placeholder': 'Which note is at {coords}?',
@@ -72,6 +78,42 @@ const en = {
 	'replace.cancel': 'Leave it',
 	'replace.confirm': 'Replace',
 	'notice.stamp.done': '{file} — {property}: {coords}',
+
+	/* ---- places in and out ---- */
+	'places.cancel': 'Cancel',
+	'places.import.title': 'Import places as notes',
+	'places.import.intro': '{file} holds {count} places. Each becomes a note carrying its coordinate.',
+	'places.import.more': '…and {count} more',
+	'places.import.folder': 'Destination folder',
+	'places.import.folderPlaceholder': 'Vault root',
+	'places.import.undo':
+		'Every note lands in this folder, and nothing already there is overwritten — so deleting the folder ' +
+		'undoes the import. Importing the same file again later makes a second set of notes rather than ' +
+		'updating these.',
+	'places.import.confirm': 'Import',
+	'notice.places.none': 'No places in {file} — it holds routes or areas rather than points.',
+	'notice.places.readFailed': 'Could not read {file}: {reason}',
+	'notice.places.folderFailed': 'Could not create {folder}: {reason}',
+	'notice.places.imported': 'Imported {count} places into {folder}',
+	'notice.places.importedSome': 'Imported {count} places into {folder}; {failed} could not be written',
+	'places.export.title': 'Export places',
+	'places.export.intro': 'This map shows {count} places.',
+	'places.export.format': 'Format',
+	'places.format.gpx': 'GPX — waypoints',
+	'places.format.kml': 'KML — placemarks',
+	'places.format.csv': 'CSV — one row per place',
+	'places.export.nameBy': 'Name each place by',
+	'places.export.nameByDesc': "Falls back to the note's file name wherever the property is empty.",
+	'places.export.nameByFile': 'File name',
+	'places.export.path': 'Save as',
+	'places.export.needsPath': 'Give the file a path inside the vault.',
+	'places.export.taken': '{path} already exists.',
+	'places.export.willWrite': 'Writes {path}',
+	'places.export.confirm': 'Export',
+	/* Only reached when nothing names the map — the file name is normally the base's. */
+	'places.export.defaultName': 'places',
+	'notice.places.exported': 'Wrote {count} places to {path}',
+	'notice.places.exportFailed': 'Could not write {path}: {reason}',
 
 	/* ---- coordinate systems ---- */
 	/* Named by provider, not by standard: nobody picks a basemap by its datum. */
@@ -430,6 +472,8 @@ const zh: Record<TranslationKey, string> = {
 
 	'menu.openExternal': '用外部地图打开',
 	'menu.stampNote': '把某篇笔记的坐标设成这里',
+	'menu.importPlaces': '把地点导入成笔记…',
+	'menu.exportPlaces': '导出地点…',
 
 	'picker.placeholder': '{coords} 是哪篇笔记？',
 	'picker.empty': '没有叫这个名字的笔记。',
@@ -440,6 +484,39 @@ const zh: Record<TranslationKey, string> = {
 	'replace.cancel': '保持原样',
 	'replace.confirm': '替换',
 	'notice.stamp.done': '{file} —— {property}：{coords}',
+
+	'places.cancel': '取消',
+	'places.import.title': '把地点导入成笔记',
+	'places.import.intro': '{file} 里有 {count} 个地点，每个都会变成一篇带坐标的笔记。',
+	'places.import.more': '……还有 {count} 个',
+	'places.import.folder': '放到哪个文件夹',
+	'places.import.folderPlaceholder': '仓库根目录',
+	'places.import.undo':
+		'笔记全部落在这个文件夹里，已有的文件不会被覆盖 —— 所以删掉这个文件夹就等于撤销这次导入。' +
+		'以后再导入同一个文件，会再生成一份新的笔记，而不是更新这一份。',
+	'places.import.confirm': '导入',
+	'notice.places.none': '{file} 里没有地点 —— 它装的是轨迹或面，不是点。',
+	'notice.places.readFailed': '读不了 {file}：{reason}',
+	'notice.places.folderFailed': '建不了 {folder}：{reason}',
+	'notice.places.imported': '已把 {count} 个地点导入 {folder}',
+	'notice.places.importedSome': '已把 {count} 个地点导入 {folder}；有 {failed} 个没能写成笔记',
+	'places.export.title': '导出地点',
+	'places.export.intro': '这张地图上有 {count} 个地点。',
+	'places.export.format': '格式',
+	'places.format.gpx': 'GPX · 途经点',
+	'places.format.kml': 'KML · 地标',
+	'places.format.csv': 'CSV · 一行一个地点',
+	'places.export.nameBy': '用什么给地点命名',
+	'places.export.nameByDesc': '属性为空的那些，仍然用笔记的文件名。',
+	'places.export.nameByFile': '文件名',
+	'places.export.path': '存成',
+	'places.export.needsPath': '给这个文件一个仓库里的路径。',
+	'places.export.taken': '{path} 已经存在了。',
+	'places.export.willWrite': '会写入 {path}',
+	'places.export.confirm': '导出',
+	'places.export.defaultName': '地点',
+	'notice.places.exported': '已把 {count} 个地点写进 {path}',
+	'notice.places.exportFailed': '写不了 {path}：{reason}',
 
 	'coord.auto': '自动 · 跟随当前底图',
 	'coord.wgs84': 'OpenStreetMap、天地图、ArcGIS · WGS-84',

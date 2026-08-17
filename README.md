@@ -73,6 +73,7 @@ keys, supported photos, and the next recipes.
 | [Photo maps](docs/guide/photo-maps.md)                             | Photo folders, OneDrive, linked photos, thumbnails, index                         |
 | [Tracks and areas](docs/guide/tracks-and-areas.md)                 | Route links, inline maps, GPX/GeoJSON/KML/TCX, polygons, statistics as properties |
 | [Around and navigation](docs/guide/around-and-navigation.md)       | Around views, reusable Base, Open in map, follow, shared pins                     |
+| [Places in and out](docs/guide/places-in-and-out.md)               | Importing a file of placemarks as notes, exporting a Base as GPX/KML/CSV          |
 | [Coordinates and services](docs/guide/coordinates-and-services.md) | WGS-84/GCJ-02/BD-09, external maps, search, geocoding, location                   |
 | [Reference and privacy](docs/guide/reference-and-privacy.md)       | Supported inputs, option ownership, operational limits, network disclosure        |
 

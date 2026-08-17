@@ -24,6 +24,7 @@ export default defineConfig({
 				'src/coords.ts',
 				'src/exif.ts',
 				'src/parse.ts',
+				'src/places.ts',
 				'src/geometry.ts',
 				'src/map-events.ts',
 				'src/geolink.ts',

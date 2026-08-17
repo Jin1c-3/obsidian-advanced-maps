@@ -31,6 +31,8 @@ import {
 import { MapModal } from './modal';
 import { currentCoords, NotePickerModal, ReplaceCoordsModal } from './note-picker';
 import { PhotoIndex, pluginIndexIO } from './photo-index';
+import { noteName, placesFrom, type Place } from './places';
+import { ImportPlacesModal } from './places-modal';
 import { nativeBehind, ownedBy, stamp, type RegistrationOwner } from './registration';
 import { PlaceSearchModal } from './search-modal';
 import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMapsSettings } from './settings';
@@ -110,6 +112,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.registerReverseGeocode();
 		this.registerFillFromPhoto();
 		this.registerWriteStats();
+		this.registerImportPlaces();
 		// Its own listener rather than a line inside the one the locator already
 		// has on `file-open`: that one is about writing to the note, this one is
 		// about moving a camera, and neither should be able to break the other.
@@ -1136,6 +1139,126 @@ export default class AdvancedMapsPlugin extends Plugin {
 			return;
 		}
 		new Notice(t('notice.stats.done', { count: String(written), distance: formatDistance(stats.distance) }));
+	}
+
+	/* ---- saved places, into notes ---- */
+
+	/**
+	 * Offered on any file this plugin parses, because `file-menu` is synchronous
+	 * and whether a file holds points is only knowable after reading it. A TCX has
+	 * no point form at all and simply yields none, which is reported like any
+	 * other file that holds only routes.
+	 */
+	private registerImportPlaces(): void {
+		this.registerEvent(
+			this.app.workspace.on('file-menu', (menu, file) => {
+				if (!(file instanceof TFile) || !TRACK_EXTS.has(file.extension)) return;
+				menu.addItem((item) =>
+					item
+						.setTitle(t('menu.importPlaces'))
+						.setIcon('map-pin')
+						.onClick(() => void this.importPlaces(file))
+				);
+			})
+		);
+	}
+
+	/** Read the file through the same cache the map draws from, then let the
+	 *  reader see the count and choose where it lands before anything is written. */
+	private async importPlaces(file: TFile): Promise<void> {
+		const rec = await this.tracks.load(file, this.settings.photoDatum);
+		if (rec.error) {
+			new Notice(t('notice.places.readFailed', { file: file.name, reason: rec.error }));
+			return;
+		}
+		const places = placesFrom(rec.features, file.basename);
+		if (places.length === 0) {
+			new Notice(t('notice.places.none', { file: file.name }));
+			return;
+		}
+		// Beside the file it came from, under the file's own name: a folder the
+		// reader can find again, and one this import can be undone by deleting.
+		const parent = file.parent?.path ?? '';
+		const folder = parent === '' || parent === '/' ? file.basename : `${parent}/${file.basename}`;
+		new ImportPlacesModal(this.app, file.name, places, folder, (chosen) =>
+			this.writePlaceNotes(places, chosen, file.basename)
+		).open();
+	}
+
+	/**
+	 * One note per place, all inside the one folder the reader named.
+	 *
+	 * Sequential rather than a burst of parallel creates: a file of several
+	 * hundred places would otherwise open that many writes at once, and each name
+	 * has to be settled against the ones already claimed before the next is
+	 * chosen. No note links the source file — this plugin resolves track
+	 * attachments through a note's links, so a wikilink here would make one KML a
+	 * drawn track owned by every note the import created.
+	 */
+	private async writePlaceNotes(places: Place[], folder: string, fallback: string): Promise<void> {
+		const root = folder === '/' ? '' : folder;
+		if (root !== '' && !this.app.vault.getFolderByPath(root)) {
+			try {
+				await this.app.vault.createFolder(root);
+			} catch (e) {
+				new Notice(
+					t('notice.places.folderFailed', {
+						folder: root,
+						reason: e instanceof Error ? e.message : String(e),
+					})
+				);
+				return;
+			}
+		}
+
+		// Every name already in the destination, so an import never replaces a note
+		// that was there first.
+		const taken = new Set<string>();
+		const dir = root === '' ? this.app.vault.getRoot() : this.app.vault.getFolderByPath(root);
+		for (const child of dir?.children ?? []) {
+			if (child instanceof TFile) taken.add(child.basename.toLowerCase());
+		}
+
+		const property = this.settings.coordsProperty;
+		let written = 0;
+		let failed = 0;
+		for (const place of places) {
+			const name = noteName(place.name, fallback, taken);
+			const path = root === '' ? `${name}.md` : `${root}/${name}.md`;
+			const front = stringifyYaml({ [property]: formatLatLng(place.lat, place.lng) });
+			const body = place.description === '' ? '' : `${place.description}\n`;
+			try {
+				await this.app.vault.create(path, `---\n${front}---\n\n${body}`);
+				written++;
+			} catch (e) {
+				console.error('Advanced Maps: could not create', path, e);
+				failed++;
+			}
+		}
+
+		const shown = { count: String(written), folder: root === '' ? '/' : root, failed: String(failed) };
+		new Notice(failed === 0 ? t('notice.places.imported', shown) : t('notice.places.importedSome', shown));
+	}
+
+	/* ---- saved places, out of a map ---- */
+
+	/** The one file an export writes, reported by path because it is a vault file
+	 *  from here on — openable, syncable, and drawable like any other track. */
+	async writePlacesFile(path: string, text: string, count: number): Promise<void> {
+		try {
+			// `create` fails outright on a folder that is not there, and a reader
+			// typing `exports/places.gpx` means the folder as much as the file — the
+			// same reading the import half already takes of its destination.
+			const folder = path.slice(0, path.lastIndexOf('/'));
+			if (folder !== '' && !this.app.vault.getFolderByPath(folder)) {
+				await this.app.vault.createFolder(folder);
+			}
+			await this.app.vault.create(path, text);
+		} catch (e) {
+			new Notice(t('notice.places.exportFailed', { path, reason: e instanceof Error ? e.message : String(e) }));
+			return;
+		}
+		new Notice(t('notice.places.exported', { count: String(count), path }));
 	}
 
 	/* ---- location ---- */

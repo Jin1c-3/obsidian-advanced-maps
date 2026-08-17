@@ -4,6 +4,37 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [Unreleased]
+
+### Added
+
+- **A file of saved places can become notes, and the places a Base matched can
+  become a file.** A Google My Maps export or a phone's saved-restaurants list
+  drew as a hundred circles owned by whichever note linked it, and that was the
+  end of them — not rows, no properties, nothing a filter or a formula could
+  reach. The way back out did not exist at all.
+
+  Right-click a `.kml`, `.gpx` or `.geojson` and choose **Import places as
+  notes…**. The dialog says how many places the file holds and asks where they
+  go; each one becomes a note carrying its coordinate in your coordinate
+  property, named after the placemark, with the placemark's description as its
+  body. Nothing existing is overwritten — a name already taken gets a suffix —
+  and everything lands in the one folder you named, so deleting that folder
+  undoes the import.
+
+  Right-click a Base map and choose **Export places…** for the other direction:
+  every place on that map as GPX waypoints, KML placemarks or CSV rows. Places
+  are named by the note's file name or by any property the Base displays, which
+  is what makes an export readable when your notes are named `20250405162700`.
+  The file is written into your vault at a path you confirm, and a path already
+  taken blocks the write rather than replacing what is there.
+
+  Exported coordinates are the notes' own WGS-84 values, never the shifted
+  positions the markers were drawn at, so the same Base exported over Amap and
+  over OpenStreetMap gives identical files. A KML `<description>` and a GPX
+  `<desc>` are now read where they were previously discarded, and markup in one
+  arrives in the note as the text it renders as rather than as markup.
+
 ## [1.15.0]
 
 ### Added

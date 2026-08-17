@@ -550,3 +550,54 @@ describe('one walk, four formats', () => {
 		expect(lineOf(asKml(), 'kml').properties?.times).toBeUndefined();
 	});
 });
+
+describe('what a saved place says about itself', () => {
+	it('keeps a GPX waypoint description', () => {
+		const gpx = `<?xml version="1.0"?>
+<gpx version="1.1">
+  <wpt lat="31.2304" lon="121.4737"><name>Bund</name><desc>Go at night</desc></wpt>
+  <wpt lat="31.24" lon="121.48"><name>Nanjing Road</name></wpt>
+</gpx>`;
+		const { features } = parseGpx(gpx);
+		expect(features[0].properties).toEqual({ name: 'Bund', description: 'Go at night' });
+		// No description means no key at all, not an empty one.
+		expect(features[1].properties).toEqual({ name: 'Nanjing Road' });
+	});
+
+	it('keeps a KML placemark description', () => {
+		const kml = `<?xml version="1.0"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+  <Placemark>
+    <name>Bund</name>
+    <description>Go at night</description>
+    <Point><coordinates>121.4737,31.2304</coordinates></Point>
+  </Placemark>
+</Document></kml>`;
+		expect(parseKml(kml).features[0].properties).toEqual({ name: 'Bund', description: 'Go at night' });
+	});
+
+	it("reads the placemark's own description, not a style's", () => {
+		const kml = `<?xml version="1.0"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+  <Placemark>
+    <Style><IconStyle><name>pin</name></IconStyle><description>the icon set</description></Style>
+    <name>Bund</name>
+    <description>Go at night</description>
+    <Point><coordinates>121.4737,31.2304</coordinates></Point>
+  </Placemark>
+</Document></kml>`;
+		expect(parseKml(kml).features[0].properties).toEqual({ name: 'Bund', description: 'Go at night' });
+	});
+
+	it('carries a description on a line as well as on a point', () => {
+		const kml = `<?xml version="1.0"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+  <Placemark>
+    <name>Ridge</name>
+    <description>Steep after the hut</description>
+    <LineString><coordinates>121.4,31.2 121.5,31.3</coordinates></LineString>
+  </Placemark>
+</Document></kml>`;
+		expect(parseKml(kml).features[0].properties).toEqual({ name: 'Ridge', description: 'Steep after the hut' });
+	});
+});
