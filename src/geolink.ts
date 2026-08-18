@@ -1,9 +1,10 @@
 /* Pure, offline provider-aware coordinate parsing; short redirects are identified but never followed. */
 
 import { outOfChina, type CoordSystem } from './coords';
+import { codeIssue, decodeCenter, findPlusCode } from './pluscode';
 
 /** Who wrote the text, as far as we can tell. Names the UI can show. */
-export type Provider = 'amap' | 'baidu' | 'tencent' | 'google' | 'apple' | 'osm' | 'geo' | 'dms' | 'plain';
+export type Provider = 'amap' | 'baidu' | 'tencent' | 'google' | 'apple' | 'osm' | 'geo' | 'dms' | 'plain' | 'pluscode';
 
 export interface ParsedPoint {
 	/** The numbers as written, still in `system`. */
@@ -202,6 +203,24 @@ function readOsm(url: URL): ParsedPoint | null {
 	return null;
 }
 
+/**
+ * `plus.codes/8FVC9G8F+6W` — the canonical share URL for a code, which is a
+ * URL and so never reaches the bare-text readers below.
+ *
+ * The path is decoded first: a `+` written literally in a path stays a `+`, but
+ * a share sheet that percent-encodes it hands over `%2B`.
+ */
+function readPlusCodeUrl(url: URL): ParsedPoint | null {
+	let path: string;
+	try {
+		path = decodeURIComponent(url.pathname);
+	} catch {
+		// A stray percent that is not an escape; the raw path is still worth trying.
+		path = url.pathname;
+	}
+	return readPlusCode(path.replace(/^\/+/, ''));
+}
+
 /* ---- host routing ---- */
 
 /**
@@ -224,6 +243,7 @@ const HOSTS: ReadonlyArray<[RegExp, (url: URL) => ParsedPoint | null]> = [
 	[GOOGLE_HOST, readGoogle],
 	[/(^|\.)apple\.com$/i, readApple],
 	[/(^|\.)openstreetmap\.org$|(^|\.)osm\.org$/i, readOsm],
+	[/(^|\.)plus\.codes$/i, readPlusCodeUrl],
 ];
 
 /** Links whose coordinate only exists on the far end of a redirect. */
@@ -263,6 +283,32 @@ function readPlain(text: string): ParsedPoint | null {
 	const m = text.match(/(-?\d+(?:\.\d+)?)\s*[,，]\s*(-?\d+(?:\.\d+)?)/);
 	if (!m) return null;
 	return point(Number(m[1]), Number(m[2]), 'wgs84', 'plain');
+}
+
+/**
+ * An Open Location Code — `8FVC9G8F+6W`, what Google Maps calls a Plus Code.
+ *
+ * WGS-84, and deliberately not passed through `chinaAware` the way the Google
+ * and Apple link readers are. Those two are provider artifacts that declare no
+ * datum, so the coordinate has to answer for itself; a Plus Code is a
+ * specification, and its author states the datum. Google's own maintainer, on
+ * whether the format accommodates GCJ-02: "No, no plans… our recommendation is
+ * that a plus code should be based on WGS-84, since it is vastly more likely
+ * that any system you use a plus code with is going to assume the decoded
+ * values are WGS-84" (google/open-location-code#359). This is the same rule
+ * `readGeoUri` below already follows for a `geo:` URI.
+ *
+ * A code read off a map that draws China shifted is the one case this gets
+ * wrong, and the modal's datum override is where that is answered.
+ */
+function readPlusCode(text: string): ParsedPoint | null {
+	const code = findPlusCode(text);
+	// `codeIssue` rather than decoding whatever decodes: a padded code has an
+	// answer and it is a region, and the modal explains that instead of writing
+	// its middle down.
+	if (!code || codeIssue(code)) return null;
+	const centre = decodeCenter(code);
+	return centre ? point(centre.lat, centre.lng, 'wgs84', 'pluscode') : null;
 }
 
 /** `geo:30.24,120.14` — WGS-84 by RFC 5870, unless it names another CRS. */
@@ -328,5 +374,7 @@ export function parseGeoLink(text: string): ParsedPoint | null {
 	// numbers are right there and would parse perfectly.
 	if (/\bgeo:/i.test(trimmed)) return readGeoUri(trimmed);
 
-	return readDms(trimmed) ?? readPlain(trimmed);
+	// Ahead of the two number readers, though nothing they match can also be a
+	// code: a Plus Code holds no decimal point and no comma-separated pair.
+	return readPlusCode(trimmed) ?? readDms(trimmed) ?? readPlain(trimmed);
 }
