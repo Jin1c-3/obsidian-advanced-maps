@@ -65,8 +65,14 @@ the notice names the note and the value either way.
 ## Set coordinates from a map link
 
 **Set coordinates from a map link** understands common mainland and
-international share links, `geo:` URIs, degrees/minutes/seconds, and plain
-`lat,lng`. It previews the result and always writes WGS-84.
+international share links, `geo:` URIs, Plus Codes, degrees/minutes/seconds, and
+plain `lat,lng`. It previews the result and always writes WGS-84.
+
+A Plus Code — `8FVC9G8F+6W`, on its own or as a `plus.codes` link — is read as
+WGS-84, which is what the format is defined on. Codes that name no single place
+are refused with the reason: a short code such as `9G8F+6W` has dropped the
+digits that say which part of the world it is in, and a padded one such as
+`8FVC0000+` stands for a region kilometres across.
 
 ![The map-link parser showing the WGS-84 coordinate it will write](../../images/link-modal.png)
 

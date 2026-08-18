@@ -4,6 +4,7 @@ import { Modal, Notice, Setting } from 'obsidian';
 import type { App } from 'obsidian';
 import { COORD_MODES, formatLatLng, toWgs84, type CoordSystem } from './coords';
 import { parseGeoLink, shortLink, type ParsedPoint } from './geolink';
+import { plusCodeIssue } from './pluscode';
 import { t } from './i18n';
 
 /** What the user chose in the dropdown: "as detected", or a forced datum. */
@@ -81,7 +82,7 @@ export class LinkModal extends Modal {
 		try {
 			const clip = (await navigator.clipboard.readText()).trim();
 			if (!clip || this.text) return;
-			if (!parseGeoLink(clip) && !shortLink(clip)) return;
+			if (!parseGeoLink(clip) && !shortLink(clip) && !plusCodeIssue(clip)) return;
 			input.value = clip;
 			this.text = clip;
 			input.select();
@@ -102,11 +103,16 @@ export class LinkModal extends Modal {
 		}
 
 		if (!this.parsed) {
-			const short = shortLink(this.text);
-			// The one failure with a cure: say what it is instead of "no coordinate".
-			const message = short
-				? t('link.short', { provider: t(`link.provider.${short.provider}`) })
-				: t('link.unreadable');
+			// The failures with a cure: say what it is instead of "no coordinate".
+			// The Plus Code issues are asked about first because they are the more
+			// specific reading of text that is not a link at all.
+			const issue = plusCodeIssue(this.text);
+			const short = issue ? null : shortLink(this.text);
+			const message = issue
+				? t(`link.pluscode.${issue}`)
+				: short
+					? t('link.short', { provider: t(`link.provider.${short.provider}`) })
+					: t('link.unreadable');
 			this.setState('advanced-maps-link-bad', message, false);
 			return;
 		}

@@ -150,10 +150,10 @@ const en = {
 	/* ---- "set coordinates from a link" ---- */
 	'link.title': 'Set coordinates from a map link',
 	'link.intro':
-		'Paste a share link from Amap, Baidu, Tencent, Google or Apple Maps — or plain coordinates. Whatever ' +
-		'system it is in, what gets written is WGS-84.',
+		'Paste a share link from Amap, Baidu, Tencent, Google or Apple Maps — or a Plus Code, or plain ' +
+		'coordinates. Whatever system it is in, what gets written is WGS-84.',
 	'link.input': 'Link or coordinates',
-	'link.placeholder': 'Paste a link, or 30.260901,120.147030',
+	'link.placeholder': 'Paste a link, 8FVC9G8F+6W, or 30.260901,120.147030',
 	'link.system': 'Coordinate system',
 	'link.system.detected': 'As detected',
 	'link.confirm': 'Set',
@@ -170,6 +170,13 @@ const en = {
 	'link.provider.geo': 'a geo: URI',
 	'link.provider.dms': 'degrees, minutes, seconds',
 	'link.provider.plain': 'plain coordinates',
+	'link.provider.pluscode': 'a Plus Code',
+	'link.pluscode.short':
+		'That is a short Plus Code. It only means somewhere near a place you have not named — paste the full ' +
+		'code, the one with eight characters before the +.',
+	'link.pluscode.imprecise':
+		'That Plus Code is padded with zeros, so it names an area kilometres across rather than a place. Paste ' +
+		'the full code.',
 
 	/* ---- place search ---- */
 	'search.placeholder': 'Type a place name…',
@@ -579,9 +586,9 @@ const zh: Record<TranslationKey, string> = {
 
 	'link.title': '从地图链接填写坐标',
 	'link.intro':
-		'粘贴高德、百度、腾讯、Google 或 Apple 地图的分享链接，或者直接粘坐标。不管原来是哪个坐标系，写进笔记的都是 WGS-84。',
+		'粘贴高德、百度、腾讯、Google 或 Apple 地图的分享链接，也可以是 Plus Code 或直接粘坐标。不管原来是哪个坐标系，写进笔记的都是 WGS-84。',
 	'link.input': '链接或坐标',
-	'link.placeholder': '粘贴链接，或 30.260901,120.147030',
+	'link.placeholder': '粘贴链接、8FVC9G8F+6W，或 30.260901,120.147030',
 	'link.system': '坐标系',
 	'link.system.detected': '按识别结果',
 	'link.confirm': '填写',
@@ -598,6 +605,10 @@ const zh: Record<TranslationKey, string> = {
 	'link.provider.geo': 'geo: 链接',
 	'link.provider.dms': '度分秒',
 	'link.provider.plain': '纯坐标',
+	'link.provider.pluscode': 'Plus Code',
+	'link.pluscode.short': '这是简写的 Plus Code，只有在知道大概位置时才有意义。请粘贴完整的那种 —— 加号前面有八位。',
+	'link.pluscode.imprecise':
+		'这个 Plus Code 用 0 补过位，指的是几公里见方的一片区域，不是一个地点。请粘贴完整的那种。',
 
 	'search.placeholder': '输入地点名称…',
 	'search.empty': '没有匹配结果。',

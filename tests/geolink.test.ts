@@ -272,3 +272,55 @@ describe('shortLink', () => {
 		expect(parseGeoLink('https://surl.amap.com/abc123')).toBeNull();
 	});
 });
+
+describe('parseGeoLink: Plus Codes', () => {
+	/* 8FVC9G8F+6W is the reference documentation's own example, in Zurich. */
+	const ZURICH = { lat: 47.3655625, lng: 8.5248125 };
+
+	it('reads a bare full code as WGS-84', () => {
+		const p = parseGeoLink('8FVC9G8F+6W');
+		expect(p?.provider).toBe('pluscode');
+		// WGS-84 by the format's own definition, not by where the point lands:
+		// google/open-location-code#359. `chinaAware` is for provider URLs that
+		// declare no datum, and a Plus Code is not one.
+		expect(p?.system).toBe('wgs84');
+		near(p!.lat, ZURICH.lat, 1e-4);
+		near(p!.lng, ZURICH.lng, 1e-4);
+	});
+
+	it('does not shift a code that decodes inside China', () => {
+		// The same rule where it actually costs something: a code near Hangzhou
+		// stays WGS-84 rather than being read as GCJ-02 the way a Google URL is.
+		const p = parseGeoLink('8Q22746W+9R');
+		expect(p?.provider).toBe('pluscode');
+		expect(p?.system).toBe('wgs84');
+		expect(toWgs(p!).lat).toBeCloseTo(p!.lat, 12);
+		expect(toWgs(p!).lng).toBeCloseTo(p!.lng, 12);
+	});
+
+	it('reads a plus.codes share URL', () => {
+		const p = parseGeoLink('https://plus.codes/8FVC9G8F+6W');
+		expect(p?.provider).toBe('pluscode');
+		near(p!.lat, ZURICH.lat, 1e-4);
+	});
+
+	it('reads a plus.codes URL whose separator was percent-encoded', () => {
+		const p = parseGeoLink('https://plus.codes/8FVC9G8F%2B6W');
+		expect(p?.provider).toBe('pluscode');
+		near(p!.lat, ZURICH.lat, 1e-4);
+	});
+
+	it('finds a code written among other words', () => {
+		expect(parseGeoLink('Plus Code: 8FVC9G8F+6W')?.provider).toBe('pluscode');
+	});
+
+	it('refuses the codes that name no single place', () => {
+		expect(parseGeoLink('9G8F+6W')).toBeNull();
+		expect(parseGeoLink('8FVC0000+')).toBeNull();
+		expect(parseGeoLink('https://plus.codes/9G8F+6W')).toBeNull();
+	});
+
+	it('leaves plain coordinates to the plain reader', () => {
+		expect(parseGeoLink('30.260901,120.147030')?.provider).toBe('plain');
+	});
+});
