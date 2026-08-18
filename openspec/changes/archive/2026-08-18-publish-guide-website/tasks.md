@@ -46,7 +46,7 @@
 - [x] 6.1 Add `.github/workflows/docs.yml` with `pages` and `id-token` permissions, triggered on pushes to `main` touching `docs/**`, `website/**`, or the workflow, plus `workflow_dispatch`, and a concurrency group
 - [x] 6.2 Have the workflow run the link check and the site build before `actions/deploy-pages`, so a failure publishes nothing
 - [x] 6.3 Enable GitHub Pages on the repository with GitHub Actions as the source, and set the repository homepage to <https://jin1c-3.github.io/obsidian-advanced-maps/>
-- [ ] 6.4 After the first deploy, load the live site and confirm both locales, the locale switcher, search, and the figures work over the real base path
+- [x] 6.4 After the first deploy, load the live site and confirm both locales, the locale switcher, search, and the figures work over the real base path
 
 ## 7. Build the persistent demo folder
 
