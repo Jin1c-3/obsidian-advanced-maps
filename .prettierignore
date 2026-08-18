@@ -4,3 +4,6 @@ main.js
 main.js.map
 versions.json
 manifest.json
+website/dist/
+website/src/content/
+website/package-lock.json

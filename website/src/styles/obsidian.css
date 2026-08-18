@@ -1,0 +1,155 @@
+/*
+ * Starlight tuned to look like Obsidian, so the guide reads like the app it
+ * documents. Values follow Obsidian's default theme: its accent (#8b6cef), its
+ * greys, its 5/8/12px corner radii, and its 700px readable line length.
+ *
+ * No font is downloaded. Obsidian ships Inter and falls back to the system UI
+ * font; the stack below does the same, which also keeps the published page free
+ * of any third-party request.
+ */
+
+:root {
+	--sl-font:
+		Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+		'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+	--sl-font-mono: ui-monospace, 'SFMono-Regular', 'Source Code Pro', Menlo, Consolas, monospace;
+
+	--sl-content-width: 46rem; /* Obsidian's readable line length */
+	--sl-text-code: 0.9em;
+	--sl-line-height: 1.6;
+
+	--am-radius-s: 5px;
+	--am-radius-m: 8px;
+	--am-radius-l: 12px;
+}
+
+/*
+ * Starlight's scale is written for dark mode and inverted for light:
+ * `--sl-color-white` is the text colour and `--sl-color-black` the page, so the
+ * light block below has to swap them rather than repeat "white is white".
+ */
+
+/* Dark: Obsidian's default dark theme. */
+:root {
+	--sl-color-accent-low: #2a2440;
+	--sl-color-accent: #8b6cef;
+	--sl-color-accent-high: #b9a6f7;
+	--sl-color-white: #f2f2f2;
+	--sl-color-gray-1: #dadada;
+	--sl-color-gray-2: #b3b3b3;
+	--sl-color-gray-3: #8a8a8a;
+	--sl-color-gray-4: #5c5c5c;
+	--sl-color-gray-5: #363636;
+	--sl-color-gray-6: #262626;
+	--sl-color-gray-7: #1f1f1f;
+	--sl-color-black: #1e1e1e;
+
+	--sl-color-bg: #1e1e1e;
+	--sl-color-bg-nav: #161616;
+	--sl-color-bg-sidebar: #161616;
+	--sl-color-bg-inline-code: #262626;
+	--sl-color-hairline: #2f2f2f;
+	--sl-color-hairline-light: #333;
+	--sl-color-hairline-shade: #262626;
+	--sl-color-text-accent: #a48cf2;
+}
+
+/* Light: Obsidian's default light theme. */
+:root[data-theme='light'] {
+	--sl-color-accent-low: #e4defc;
+	--sl-color-accent: #7852ee;
+	--sl-color-accent-high: #4a2fa8;
+	--sl-color-white: #1a1a1a;
+	--sl-color-gray-1: #222222;
+	--sl-color-gray-2: #3a3a3a;
+	--sl-color-gray-3: #5c5c5c;
+	--sl-color-gray-4: #8a8a8a;
+	--sl-color-gray-5: #c8c8c8;
+	--sl-color-gray-6: #ececec;
+	--sl-color-gray-7: #f5f5f5;
+	--sl-color-black: #ffffff;
+
+	--sl-color-bg: #ffffff;
+	--sl-color-bg-nav: #f7f7f7;
+	--sl-color-bg-sidebar: #f7f7f7;
+	--sl-color-bg-inline-code: #ececec;
+	--sl-color-hairline: #e3e3e3;
+	--sl-color-hairline-light: #ededed;
+	--sl-color-hairline-shade: #e3e3e3;
+	--sl-color-text-accent: #6c4ae0;
+}
+
+/* Obsidian's sidebar: quieter and denser than the page text. */
+.sidebar-content {
+	font-size: var(--sl-text-sm);
+}
+
+.sidebar-content a {
+	border-radius: var(--am-radius-s);
+	padding-block: 0.25rem;
+}
+
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover {
+	background-color: var(--sl-color-accent-low);
+	color: var(--sl-color-text-accent);
+	font-weight: 600;
+}
+
+/* A link is accent-coloured and only underlines under the pointer, as in a note. */
+.sl-markdown-content a:not(:where(.not-content *)) {
+	text-decoration: none;
+	color: var(--sl-color-text-accent);
+}
+
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+	text-decoration: underline;
+}
+
+/* Rounded surfaces throughout, matching Obsidian's radii. */
+.sl-markdown-content :is(pre, table, img, video, .expressive-code .frame) {
+	border-radius: var(--am-radius-m);
+}
+
+.sl-markdown-content code:not(:where(pre *)) {
+	border-radius: var(--am-radius-s);
+	padding: 0.15em 0.35em;
+}
+
+.sl-markdown-content img {
+	border: 1px solid var(--sl-color-hairline);
+}
+
+/* Obsidian renders a blockquote as an accent-bordered aside. */
+.sl-markdown-content blockquote:not(:where(.not-content *)) {
+	border-inline-start: 3px solid var(--sl-color-accent);
+	color: var(--sl-color-gray-2);
+}
+
+/* A table reads as a note table: quiet header, hairline rules. */
+.sl-markdown-content :is(th, td) {
+	border-color: var(--sl-color-hairline);
+}
+
+.sl-markdown-content th {
+	background-color: var(--sl-color-bg-sidebar);
+	font-weight: 600;
+}
+
+/* The "installing a build the store does not have yet" disclosures. */
+.sl-markdown-content details {
+	background-color: var(--sl-color-bg-sidebar);
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: var(--am-radius-m);
+	padding: 0.75rem 1rem;
+}
+
+.sl-markdown-content summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+/* Headings sit slightly tighter than Starlight's default, as Obsidian's do. */
+.sl-markdown-content :is(h2, h3, h4) {
+	margin-top: 1.5em;
+}

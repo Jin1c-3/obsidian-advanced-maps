@@ -3,7 +3,7 @@
 [![CI](https://github.com/Jin1c-3/obsidian-advanced-maps/actions/workflows/ci.yml/badge.svg)](https://github.com/Jin1c-3/obsidian-advanced-maps/actions/workflows/ci.yml)
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[English](README.md) · **简体中文** · [用户指南](docs/guide/README.zh-CN.md)
+[English](README.md) · **简体中文** · [用户指南](https://jin1c-3.github.io/obsidian-advanced-maps/zh-cn/)（[仓库内版本](docs/guide/zh-cn/README.md)）
 
 把 Obsidian 原生 **Maps** 视图变成地图相册、轨迹浏览器，以及当前笔记的关联笔记地图。
 
@@ -12,10 +12,10 @@ Advanced Maps 可以从整个照片目录读取 GPS，绘制 GPX、GeoJSON、KML
 MapLibre、底图、图钉、气泡和所有内置地图选项仍然原生提供。不使用 Leaflet，不附带渲
 染器，也没有运行时依赖。
 
-![同一个 Base 同时包含照片目录和笔记目录：16,273 条结果——笔记显示为红色图钉，照片按 EXIF 位置显示缩略图，中间是一条步行 GPX 轨迹，当前缩放放不下缩略图的照片仍保留圆点](docs/photo-album.png)
+![同一个 Base 同时包含照片目录和笔记目录：63 条结果——笔记按类别显示为不同颜色的图钉，照片按 EXIF 位置显示缩略图，中间是一条步行 GPX 轨迹，当前缩放放不下缩略图的照片仍保留圆点](docs/images/photo-album.png)
 
-_一个 Base，一张地图：红色图钉是地点笔记，缩略图按照片自己的 EXIF 落点，线是某篇笔记
-链接的 `.gpx`，共 16,273 条结果。_
+_一个 Base，一张地图：图钉是地点笔记，颜色来自 Base 公式；缩略图按照片自己的 EXIF 落
+点，线是某篇笔记链接的 `.gpx`，共 63 条结果。_
 
 ## 三个核心用法
 
@@ -32,10 +32,14 @@ _一个 Base，一张地图：红色图钉是地点笔记，缩略图按照片�
 需要 Obsidian 1.13.1 或更高版本，并启用 **Bases** 和第一方 **Maps** 插件。没有这个原生
 视图时，Advanced Maps 会说明或跳过不可用的增强，让 Obsidian 保持可用。
 
-- **Release：**从 [Releases](https://github.com/Jin1c-3/obsidian-advanced-maps/releases)
-  下载 `main.js`、`manifest.json` 和 `styles.css`，放进
-  `<库>/.obsidian/plugins/advanced-maps/`，然后启用插件。
-- **BRAT：**添加 `Jin1c-3/obsidian-advanced-maps`。
+在 Obsidian 里安装：打开**设置 → 第三方插件**，如果处于**安全模式**就先关掉，点**浏
+览**，搜索 `Advanced Maps`，然后**安装**并**启用**。市场页面见
+[community.obsidian.md/plugins/advanced-maps](https://community.obsidian.md/plugins/advanced-maps)。
+
+市场里还没有的版本，可以从 [Releases](https://github.com/Jin1c-3/obsidian-advanced-maps/releases)
+下载 `main.js`、`manifest.json` 和 `styles.css` 放进
+`<库>/.obsidian/plugins/advanced-maps/`，或者在 BRAT 里添加
+`Jin1c-3/obsidian-advanced-maps`。
 
 ## 快速开始
 
@@ -56,23 +60,23 @@ views:
 ```
 
 第一个分支显示 `coords` 属性中带坐标的笔记，第二个分支直接按 GPS 元数据显示支持的照
-片。Base 边界、视图键、照片格式和后续配方见[快速开始指南](docs/guide/getting-started.zh-CN.md)。
+片。Base 边界、视图键、照片格式和后续配方见[快速开始指南](docs/guide/zh-cn/getting-started.md)。
 
 ## 用户指南
 
 | 主题                                                           | 内容                                                      |
 | -------------------------------------------------------------- | --------------------------------------------------------- |
-| [快速开始](docs/guide/getting-started.zh-CN.md)                | 安装、Base 边界、第一张地图、视图键                       |
-| [照片地图](docs/guide/photo-maps.zh-CN.md)                     | 照片目录、OneDrive、链接照片、缩略图、索引                |
-| [轨迹与区域](docs/guide/tracks-and-areas.zh-CN.md)             | 轨迹链接、内联地图、GPX/GeoJSON/KML/TCX、面、统计写进属性 |
-| [周围视图与导航](docs/guide/around-and-navigation.zh-CN.md)    | 周围视图、复用 Base、在地图中打开、跟随、重合图钉         |
-| [地点的进出](docs/guide/places-in-and-out.zh-CN.md)            | 把地标文件导入成笔记，把 Base 导出成 GPX/KML/CSV          |
-| [离线底图](docs/guide/offline-basemap.zh-CN.md)                | 磁盘上现成的瓦片当底图、层级边界、按视图关闭              |
-| [坐标与地图服务](docs/guide/coordinates-and-services.zh-CN.md) | WGS-84/GCJ-02/BD-09、外部地图、搜索、地理编码、定位       |
-| [参考与隐私](docs/guide/reference-and-privacy.zh-CN.md)        | 支持输入、选项职责、使用边界、网络披露                    |
+| [快速开始](docs/guide/zh-cn/getting-started.md)                | 安装、Base 边界、第一张地图、视图键                       |
+| [照片地图](docs/guide/zh-cn/photo-maps.md)                     | 照片目录、OneDrive、链接照片、缩略图、索引                |
+| [轨迹与区域](docs/guide/zh-cn/tracks-and-areas.md)             | 轨迹链接、内联地图、GPX/GeoJSON/KML/TCX、面、统计写进属性 |
+| [周围视图与导航](docs/guide/zh-cn/around-and-navigation.md)    | 周围视图、复用 Base、在地图中打开、跟随、重合图钉         |
+| [地点的进出](docs/guide/zh-cn/places-in-and-out.md)            | 把地标文件导入成笔记，把 Base 导出成 GPX/KML/CSV          |
+| [离线底图](docs/guide/zh-cn/offline-basemap.md)                | 磁盘上现成的瓦片当底图、层级边界、按视图关闭              |
+| [坐标与地图服务](docs/guide/zh-cn/coordinates-and-services.md) | WGS-84/GCJ-02/BD-09、外部地图、搜索、地理编码、定位       |
+| [参考与隐私](docs/guide/zh-cn/reference-and-privacy.md)        | 支持输入、选项职责、使用边界、网络披露                    |
 
 笔记、轨迹和照片内容不会自行离开。插件没有遥测、更新检查或自己的服务器；
-[隐私说明](docs/guide/reference-and-privacy.zh-CN.md#什么会离开你的库)列出了使用地图或外
+[隐私说明](docs/guide/zh-cn/reference-and-privacy.md#什么会离开你的库)列出了使用地图或外
 部服务时发出的请求。
 
 ## 项目文档

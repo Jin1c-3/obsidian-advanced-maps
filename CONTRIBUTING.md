@@ -17,8 +17,12 @@ builds without restarting Obsidian. Keep personal vault paths in the ignored
 ## Architecture and changes
 
 [CLAUDE.md](CLAUDE.md) is the concise technical entry point and links all
-capability specs. The [user guide](docs/guide/README.md) is the canonical home
+capability specs. The [user guide](docs/guide/en/README.md) is the canonical home
 for user-facing instructions; keep the root README as a concise landing page.
+The guide is also published at
+<https://jin1c-3.github.io/obsidian-advanced-maps/>, built from those same files
+by the Astro Starlight project in `website/` — nothing under `website/src/content`
+is edited by hand.
 Read the specs for observable contracts, the relevant active or archived
 OpenSpec design for cross-cutting rationale, and adjacent source comments for
 narrow implementation constraints.
@@ -63,7 +67,22 @@ npm run check
 
 This is the CI sequence: formatting, type-aware lint (including
 `eslint-plugin-obsidianmd`), typecheck, Vitest and coverage gates, manifest
-validation, production build, and bundle smoke loading.
+validation, production build, bundle smoke loading, and the documentation
+reference check.
+
+A change that touches the guide should also build the site, which CI does on
+every pull request:
+
+```bash
+npm --prefix website ci   # once
+npm run docs:build        # or docs:dev to read it at localhost:4321
+```
+
+A new guide page needs the same file name under `docs/guide/en/` and
+`docs/guide/zh-cn/`, a link from each locale's `README.md`, and its slug in the
+`sidebar` list in `website/astro.config.mjs`. Figures live in `docs/images/` and
+are referenced as `../../images/<name>`, which resolves both in this repository
+and on the site.
 
 Pure modules and their per-file coverage thresholds are configured in
 `vitest.config.ts`. Changes to coordinate conversion, parsers, statistics,
@@ -73,6 +92,42 @@ tests in the same PR.
 
 View wrappers also need a real vault with a live Bases map. Exercise the changed
 seam there when relevant and record what was tried and observed in the PR.
+
+## Figures
+
+Every figure in `docs/images/` is captured from one persistent demo folder in a
+local vault — never from real notes. The folder is self-contained and excluded
+from the vault's own bases, so nothing personal can reach a screenshot.
+
+```text
+<vault>/advanced-maps-demo/
+  places/   13 landmark notes: coords + a kind property the base colours by
+  routes/   6 GPX walks and rides, West Lake as GeoJSON with island holes,
+            3 lakeside parks as KML
+  trips/    a note per route; two embed their track, one is the Around demo
+  photos/   36 geotagged JPEGs, each with an embedded thumbnail
+  atlas.base  Atlas / Tracks / Areas / Photos maps and the Rides table
+  _build/   the generators and the OSM, OSRM and SRTM data they ran on
+```
+
+Rules that keep the figures honest:
+
+- **Real coordinates only.** Landmarks come from Nominatim, paths from OSRM,
+  elevation from SRTM. A hand-typed coordinate a few hundred metres out looks
+  exactly like the broken datum conversion several figures exist to disprove.
+- **English interface.** One figure set serves both locales, so Obsidian's
+  language is English when capturing. Each locale's prose names the controls in
+  its own language.
+- **Nothing personal.** No real note, property, name, or face. The demo
+  photographs are face-free and re-tagged onto the demo walk.
+
+Capturing, on a 1.5× display with the sidebars collapsed: size the window to
+1100×792, drive the app through `obsidian eval`, take the shot with
+`obsidian dev:screenshot`, then crop to the element's own rectangle with ffmpeg
+(image pixels are CSS pixels × 1.5). Map graphics stay PNG quantised to 256
+colours; photographic frames are JPEG. A basemap that requires attribution gets
+a black strip under it, drawn with `pad` + `drawtext` — use a font with both
+Latin and CJK glyphs, such as `wqy-zenhei`.
 
 ## Translations
 

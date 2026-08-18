@@ -1,0 +1,24 @@
+{
+  "name": "advanced-maps-website",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "The Advanced Maps user guide, published as a static site.",
+  "scripts": {
+    "sync": "node scripts/sync-docs.mjs",
+    "predev": "npm run sync",
+    "dev": "astro dev",
+    "prebuild": "npm run sync",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.41.7",
+    "astro": "7.2.2",
+    "sharp": "0.35.3"
+  },
+  "allowScripts": {
+    "sharp@0.35.3": true,
+    "esbuild@0.28.2": true
+  }
+}
