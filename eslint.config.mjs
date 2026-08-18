@@ -21,7 +21,7 @@ export default tseslint.config(
 	...tseslint.configs.recommendedTypeChecked,
 	...obsidianmd.configs.recommended,
 	{
-		files: ['**/*.ts'],
+		files: ['**/*.ts', '**/*.mts'],
 		languageOptions: {
 			globals: { ...globals.browser },
 			parserOptions: { ecmaVersion: 2022, sourceType: 'module', projectService: true },
@@ -45,7 +45,7 @@ export default tseslint.config(
 		},
 	},
 	{
-		files: ['**/*.mjs', 'vitest.config.ts'],
+		files: ['**/*.mjs', 'vitest.config.mts'],
 		languageOptions: {
 			globals: { ...globals.node },
 		},

@@ -85,7 +85,7 @@ are referenced as `../../images/<name>`, which resolves both in this repository
 and on the site.
 
 Pure modules and their per-file coverage thresholds are configured in
-`vitest.config.ts`. Changes to coordinate conversion, parsers, statistics,
+`vitest.config.mts`. Changes to coordinate conversion, parsers, statistics,
 external links, geometry, event binding, location decisions, view options,
 Around views, geolink/geocoding, pin spreading, or localization need focused
 tests in the same PR.
