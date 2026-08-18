@@ -180,7 +180,7 @@ describe('PhotoIndex entry conversion', () => {
 		time: 1700000000000,
 		datum: 'WGS-84',
 		orientation: 6,
-		thumbnail: { bytes: Uint8Array.from([0xff, 0xd8]), width: 4, height: 3 },
+		thumbnail: { bytes: Uint8Array.from([0xff, 0xd8]) },
 	};
 
 	it('keeps the raw EXIF values and records the thumbnail without its bytes', () => {

@@ -423,6 +423,33 @@ export default class AdvancedMapsPlugin extends Plugin {
 	 * Resolve direct result files plus embeds, body links, and frontmatter links.
 	 * Metadata-cache discovery leaves the base query unchanged; TFile identity deduplicates.
 	 */
+	/**
+	 * The attachments a note points at that `accept` admits, in reading order.
+	 *
+	 * The three reference sources are read separately because Obsidian keeps them
+	 * separate, and all three count. Stated once: every caller has to agree on
+	 * the order and on the de-duplication, and a second copy of this loop is a
+	 * second place for a fourth source or an ordering rule to be missed.
+	 */
+	private linkedAttachments(file: TFile, cache: CachedMetadata, accept: (extension: string) => boolean): TFile[] {
+		const out: TFile[] = [];
+		// A Set beside the list rather than scanning `out`: an album note can
+		// reference hundreds of photos, and a linear scan per reference makes
+		// resolving one note quadratic in its own attachments.
+		const seen = new Set<TFile>();
+		// Embeds first, so a note that both embeds and links the same file keeps
+		// the order it reads in; `getFirstLinkpathDest` answers the same TFile for
+		// both, which is what makes the identity check enough to de-duplicate.
+		for (const ref of [...(cache.embeds ?? []), ...(cache.links ?? []), ...(cache.frontmatterLinks ?? [])]) {
+			const dest = this.app.metadataCache.getFirstLinkpathDest(ref.link, file.path);
+			if (dest && accept(dest.extension) && !seen.has(dest)) {
+				seen.add(dest);
+				out.push(dest);
+			}
+		}
+		return out;
+	}
+
 	resolveTracks(file: TFile): TFile[] {
 		if (this.isTrackFile(file.extension)) return [file];
 		if (file.extension !== 'md') return [];
@@ -433,14 +460,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		const memo = this.trackLinks.get(cache);
 		if (memo) return memo;
 
-		const out: TFile[] = [];
-		// Embeds first, so a note that both embeds and links the same file keeps
-		// the order it reads in; `getFirstLinkpathDest` answers the same TFile for
-		// both, which is what makes the identity check enough to de-duplicate.
-		for (const ref of [...(cache.embeds ?? []), ...(cache.links ?? []), ...(cache.frontmatterLinks ?? [])]) {
-			const dest = this.app.metadataCache.getFirstLinkpathDest(ref.link, file.path);
-			if (dest && this.isTrackFile(dest.extension) && !out.includes(dest)) out.push(dest);
-		}
+		const out = this.linkedAttachments(file, cache, (extension) => this.isTrackFile(extension));
 		this.trackLinks.set(cache, out);
 		return out;
 	}
@@ -1036,7 +1056,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 			await this.writePlace(file, name);
 			new Notice(t('notice.reverseGeocode.done', { property: this.settings.placeProperty, value: name }));
 		} catch (e) {
-			const reason = e instanceof GeocodeError ? e.message : e instanceof Error ? e.message : String(e);
+			const reason = e instanceof Error ? e.message : String(e);
 			new Notice(t('notice.reverseGeocode.failed', { reason }));
 		}
 	}
@@ -1047,12 +1067,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 	private resolvePhotos(file: TFile): TFile[] {
 		const cache = this.app.metadataCache.getFileCache(file);
 		if (!cache) return [];
-		const out: TFile[] = [];
-		for (const ref of [...(cache.embeds ?? []), ...(cache.links ?? []), ...(cache.frontmatterLinks ?? [])]) {
-			const dest = this.app.metadataCache.getFirstLinkpathDest(ref.link, file.path);
-			if (dest && PHOTO_EXTS.has(dest.extension) && !out.includes(dest)) out.push(dest);
-		}
-		return out;
+		// Not memoized like `resolveTracks`, and deliberately past `isTrackFile`:
+		// this answers an explicit command, so it admits photos whether or not the
+		// display setting draws them.
+		return this.linkedAttachments(file, cache, (extension) => PHOTO_EXTS.has(extension));
 	}
 
 	/** EXIF is local file data, so this command is independent of device-location permission. */

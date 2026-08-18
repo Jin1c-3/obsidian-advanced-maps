@@ -15,7 +15,7 @@ import type { BasesMapView, MapConfig, MapLibreMap, RasterTileSource } from './t
  * the forms that satisfy one of them. `{-y}` is the TMS row order, which
  * MapLibre substitutes as readily as `{y}` and which real packs are laid out in.
  */
-export const TILE_PLACEHOLDERS: ReadonlyArray<readonly string[]> = [['{z}'], ['{x}'], ['{y}', '{-y}']];
+const TILE_PLACEHOLDERS: ReadonlyArray<readonly string[]> = [['{z}'], ['{x}'], ['{y}', '{-y}']];
 
 /** The deepest level a tile pyramid is addressed at; MapLibre's own ceiling. */
 export const TILE_ZOOM_MAX = 22;

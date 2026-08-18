@@ -16,6 +16,7 @@ import {
 import {
 	applyTrackPaint,
 	cancelPhotoImages,
+	guardLocateControl,
 	disposePhotoImages,
 	drawTracks,
 	ensurePhotoImages,
@@ -106,7 +107,7 @@ afterEach(() => {
 function photos(count: number): PhotoIconSource[] {
 	return Array.from({ length: count }, (_, index) => ({
 		id: `photo-${index}`,
-		thumbnail: { bytes: Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]), width: 1, height: 1 },
+		thumbnail: { bytes: Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]) },
 		orientation: 1,
 		coordinates: [index, index],
 	}));
@@ -297,7 +298,7 @@ describe('photo icon bounds', () => {
 	});
 
 	it('reads a deferred thumbnail only for the photos a map admits for decoding', async () => {
-		const thumbnail: ExifThumbnail = { bytes: Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]), width: 1, height: 1 };
+		const thumbnail: ExifThumbnail = { bytes: Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]) };
 		const load = vi.fn(() => Promise.resolve(thumbnail));
 		const decode = vi.fn(() => new Promise<ImageBitmap>(() => undefined));
 		vi.stubGlobal('createImageBitmap', decode);
@@ -389,5 +390,63 @@ describe('photo icon bounds', () => {
 		await Promise.resolve();
 		await Promise.resolve();
 		expect(addImage).not.toHaveBeenCalled();
+	});
+});
+
+describe('guardLocateControl', () => {
+	/** A control whose method lives on the prototype, as a plain class gives it. */
+	class PrototypeControl {
+		seen: Array<[number, number]> = [];
+		updatePosition(lat: number, lng: number): void {
+			this.seen.push([lat, lng]);
+		}
+	}
+
+	/** The same control written with a class field — an *own* property. */
+	class FieldControl {
+		seen: Array<[number, number]> = [];
+		updatePosition = (lat: number, lng: number): void => {
+			this.seen.push([lat, lng]);
+		};
+	}
+
+	const mapWith = (control: unknown): MapLibreMap => ({ _controls: [control] }) as unknown as MapLibreMap;
+
+	it('moves a WGS-84 fix into tile space on the way through', () => {
+		const control = new PrototypeControl();
+		const guard = guardLocateControl(mapWith(control), () => 'gcj02');
+		control.updatePosition(39.9, 116.4);
+
+		expect(guard).not.toBeNull();
+		// Shifted, and still latitude-first as the native method expects.
+		expect(control.seen[0][0]).not.toBe(39.9);
+		expect(control.seen[0][0]).toBeCloseTo(39.9, 1);
+	});
+
+	it('hands a prototype method back by removing the shadowing own property', () => {
+		const control = new PrototypeControl();
+		const guard = guardLocateControl(mapWith(control), () => 'wgs84');
+		guard?.restore();
+
+		expect(Object.prototype.hasOwnProperty.call(control, 'updatePosition')).toBe(false);
+		control.updatePosition(1, 2);
+		expect(control.seen).toEqual([[1, 2]]);
+	});
+
+	it('puts an own-property method back instead of deleting it', () => {
+		// A class field has no prototype implementation behind it: deleting it
+		// would leave the host's locate button permanently broken, including after
+		// this plugin is uninstalled.
+		const control = new FieldControl();
+		const guard = guardLocateControl(mapWith(control), () => 'wgs84');
+		guard?.restore();
+
+		expect(typeof control.updatePosition).toBe('function');
+		control.updatePosition(1, 2);
+		expect(control.seen).toEqual([[1, 2]]);
+	});
+
+	it('answers null when no control on the map has the method', () => {
+		expect(guardLocateControl(mapWith({}), () => 'wgs84')).toBeNull();
 	});
 });

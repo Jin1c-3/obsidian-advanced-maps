@@ -2,6 +2,7 @@
 
 import type { Feature, Geometry } from 'geojson';
 import { COORD_DIGITS } from './coords';
+import { pointsOf } from './geometry';
 
 /** Longest note name an imported place is given, before the collision suffix. */
 const MAX_NAME = 80;
@@ -45,20 +46,22 @@ export function placesFrom(
 ): Place[] {
 	const out: Place[] = [];
 	for (const feature of features) {
-		const geometry = feature.geometry;
-		if (!geometry || geometry.type !== 'Point') continue;
-		const [lng, lat] = geometry.coordinates;
-		// A file that parsed is not a file whose every number is usable.
-		if (!isFinite(lat) || !isFinite(lng)) continue;
 		const props = feature.properties;
 		const named = typeof props?.name === 'string' ? props.name.trim() : '';
 		const described = typeof props?.description === 'string' ? props.description : '';
-		out.push({
-			name: named || `${fallback} ${out.length + 1}`,
-			description: descriptionText(described),
-			lat,
-			lng,
-		});
+		// Every standalone position, not only a bare Point: a MultiPoint placemark
+		// is several places sharing one name, and a GeometryCollection can hold
+		// either. Lines and areas are still skipped — see above.
+		for (const [lng, lat] of pointsOf(feature.geometry)) {
+			// A file that parsed is not a file whose every number is usable.
+			if (!isFinite(lat) || !isFinite(lng)) continue;
+			out.push({
+				name: named || `${fallback} ${out.length + 1}`,
+				description: descriptionText(described),
+				lat,
+				lng,
+			});
+		}
 	}
 	return out;
 }

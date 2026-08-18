@@ -46,6 +46,21 @@ function numParam(q: URLSearchParams, ...names: string[]): number | null {
 	return null;
 }
 
+/**
+ * The first of `names` that is present and not blank, or null.
+ *
+ * The sibling of `numParam`, and for the same reason: `q.get` answers `''` for
+ * `?location=` rather than null, so a plain `??` chain stops at the blank one
+ * and never reaches the parameter that actually carries the coordinate.
+ */
+function firstParam(q: URLSearchParams, ...names: string[]): string | null {
+	for (const name of names) {
+		const raw = q.get(name);
+		if (raw !== null && raw.trim() !== '') return raw;
+	}
+	return null;
+}
+
 /** "30.24,120.14" → [30.24, 120.14], in the order written. */
 function pair(value: string | null | undefined): [number, number] | null {
 	if (!value) return null;
@@ -77,7 +92,7 @@ function chinaAware(lat: number, lng: number): CoordSystem {
 function readAmap(url: URL): ParsedPoint | null {
 	const q = url.searchParams;
 
-	const position = pair(q.get('position') ?? q.get('to') ?? q.get('from'));
+	const position = pair(firstParam(q, 'position', 'to', 'from'));
 	if (position) return point(position[1], position[0], 'gcj02', 'amap');
 
 	const lat = numParam(q, 'lat');
@@ -107,7 +122,7 @@ function readBaidu(url: URL): ParsedPoint | null {
 			: 'bd09';
 
 	// location / latlng are lat,lng. `destination=latlng:39.9,116.4|name:x` too.
-	const raw = q.get('location') ?? q.get('latlng') ?? q.get('center') ?? q.get('destination') ?? q.get('origin');
+	const raw = firstParam(q, 'location', 'latlng', 'center', 'destination', 'origin');
 	const cleaned = raw?.replace(/^latlng:/, '').split('|')[0];
 	const latlng = pair(cleaned);
 	if (latlng) return point(latlng[0], latlng[1], system, 'baidu');
@@ -119,12 +134,12 @@ function readBaidu(url: URL): ParsedPoint | null {
 function readTencent(url: URL): ParsedPoint | null {
 	const q = url.searchParams;
 
-	const marker = q.get('marker') ?? q.get('to') ?? q.get('from');
+	const marker = firstParam(q, 'marker', 'to', 'from');
 	const coord = marker?.match(/coord:\s*([-\d.]+\s*,\s*[-\d.]+)/i)?.[1];
 	const fromMarker = pair(coord);
 	if (fromMarker) return point(fromMarker[0], fromMarker[1], 'gcj02', 'tencent');
 
-	const plain = pair(q.get('coord') ?? q.get('center') ?? q.get('latlng'));
+	const plain = pair(firstParam(q, 'coord', 'center', 'latlng'));
 	if (plain) return point(plain[0], plain[1], 'gcj02', 'tencent');
 
 	const lat = numParam(q, 'lat');
@@ -167,7 +182,7 @@ function readGoogle(url: URL): ParsedPoint | null {
 /** Apple Maps: `?ll=lat,lng`, sometimes `coordinate=`. GCJ-02 in China, as Google. */
 function readApple(url: URL): ParsedPoint | null {
 	const q = url.searchParams;
-	const latlng = pair(q.get('ll') ?? q.get('coordinate') ?? q.get('sll') ?? q.get('daddr'));
+	const latlng = pair(firstParam(q, 'll', 'coordinate', 'sll', 'daddr'));
 	if (!latlng) return null;
 	return point(latlng[0], latlng[1], chinaAware(latlng[0], latlng[1]), 'apple');
 }

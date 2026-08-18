@@ -13,6 +13,8 @@ import {
 	type OfflineBasemap,
 } from './basemap';
 import {
+	ADOPTION_RETRY_MS,
+	ADOPTION_TRIES,
 	AREA_LAYER,
 	ARROW_LAYER,
 	ENDPOINT_LAYER,
@@ -23,6 +25,7 @@ import {
 	POINT_LAYER,
 	READ_CONCURRENCY,
 	SRC,
+	USER_GESTURE_EVENTS,
 	type TrackKnob,
 } from './constants';
 import {
@@ -37,10 +40,11 @@ import {
 } from './coords';
 import { boundsOf, styleReady, trackFeatures, trackKnob, type TrackFeatureProps } from './geometry';
 import { getLocale, t } from './i18n';
-import { MapEventBindings } from './map-events';
+import { MapEventBindings, override } from './map-events';
 import {
 	applyTrackPaint,
 	cancelPhotoImages,
+	applyPhotoIcons,
 	disposePhotoImages,
 	drawTracks,
 	ensurePhotoImages,
@@ -111,7 +115,13 @@ export interface FocusTarget {
 }
 
 type TrackFeature = Feature<Geometry, TrackFeatureProps>;
-type CameraProvenance = CoordSystem | 'current' | 'adopted';
+/**
+ * Where the camera this map opens with came from: built fresh by the native
+ * view, or inherited from one that was already on screen. Nothing passes a
+ * system directly — an adopted camera states its own through
+ * `recordedCameraSystem`.
+ */
+type CameraProvenance = 'current' | 'adopted';
 
 function recordedCameraSystem(map: MapLibreMap): CoordSystem | null {
 	const value = map.__advancedMapsCameraSystem;
@@ -132,23 +142,6 @@ function canNestMenus(): boolean {
 		}
 	}
 	return nestedMenus;
-}
-
-/**
- * Replace one method on an *instance*; the returned function puts it back.
- *
- * An own property shadows the prototype, so the wrapper dies with the object
- * and `delete` restores the untouched method. Where the native code assigned
- * the method as an own property itself, the saved value goes back instead.
- */
-function override<T extends object, K extends keyof T>(obj: T, key: K, make: (orig: T[K]) => T[K]): () => void {
-	const orig = obj[key];
-	const hadOwn = Object.prototype.hasOwnProperty.call(obj, key);
-	obj[key] = make(orig);
-	return () => {
-		if (hadOwn) obj[key] = orig;
-		else delete (obj as unknown as Record<string, unknown>)[key as string];
-	};
 }
 
 export class TrackLayer {
@@ -371,10 +364,14 @@ export class TrackLayer {
 				} finally {
 					restore();
 				}
-				// Both read native tile space after the temporary wrapper is restored,
-				// through the one helper that converts a click exactly once.
-				this.addStampNoteItem(ev, map, system);
-				this.addExternalMapItems(ev, map, system);
+				// Read after the temporary wrapper is restored, so this is native tile
+				// space — and read once for both items, which is what "the one place a
+				// click becomes a coordinate" below is supposed to mean.
+				const point = this.clickedCoordinate(ev, map, system);
+				if (point) {
+					this.addStampNoteItem(ev, point);
+					this.addExternalMapItems(ev, point);
+				}
 				// Not one of them: this is about the whole map rather than the
 				// clicked pixel, and reads no coordinate off the event at all.
 				this.addExportPlacesItem(ev);
@@ -471,9 +468,7 @@ export class TrackLayer {
 	 * time the item is chosen, the event and its pixel are gone and the map may
 	 * have moved.
 	 */
-	private addStampNoteItem(ev: MouseEvent, map: NonNullable<BasesMapView['map']>, system: CoordSystem): void {
-		const point = this.clickedCoordinate(ev, map, system);
-		if (!point) return;
+	private addStampNoteItem(ev: MouseEvent, point: [number, number]): void {
 		const [lng, lat] = point;
 		// 'action' is the section the native items use — measured on a live menu,
 		// where New note, Copy coordinates and the two defaults all carry it. This
@@ -489,9 +484,7 @@ export class TrackLayer {
 	}
 
 	/** Append to the event-keyed native menu, falling back to flat items without `setSubmenu`. */
-	private addExternalMapItems(ev: MouseEvent, map: NonNullable<BasesMapView['map']>, system: CoordSystem): void {
-		const point = this.clickedCoordinate(ev, map, system);
-		if (!point) return;
+	private addExternalMapItems(ev: MouseEvent, point: [number, number]): void {
 		const [lng, lat] = point;
 
 		const items = this.externalMapItems(lat, lng);
@@ -701,12 +694,7 @@ export class TrackLayer {
 		// can be told which way it is pointing.
 		this.followControl.setActive(this.following);
 		this.locate ??= guardLocateControl(map, () => this.system());
-		this.appliedSystem =
-			initialSystem === 'current'
-				? this.system()
-				: initialSystem === 'adopted'
-					? (recordedCameraSystem(map) ?? 'wgs84')
-					: initialSystem;
+		this.appliedSystem = initialSystem === 'current' ? this.system() : (recordedCameraSystem(map) ?? 'wgs84');
 		this.realignCamera();
 
 		// The style the MapLibre constructor was handed loads after this runs, so
@@ -742,7 +730,7 @@ export class TrackLayer {
 		const mark = (ev?: { originalEvent?: unknown }) => {
 			if (ev && ev.originalEvent) this.userMoved = true;
 		};
-		for (const name of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) {
+		for (const name of USER_GESTURE_EVENTS) {
 			this.mapEvents.on(map, name, mark);
 		}
 		// Fit, pan and zoom all end here. Re-run the screen-space collision pass;
@@ -761,9 +749,10 @@ export class TrackLayer {
 	/** Wait sparingly for an already-open view's original native initialization. */
 	watchAdoptedMap(): void {
 		if (!this.adoptingInitialMap || this.detached || this.view.map || this.adoptionWatcher !== null) return;
+		let tries = 0;
 		this.adoptionWatcher = window.setInterval(() => {
 			const map = this.view.map;
-			if (this.detached) {
+			if (this.detached || ++tries > ADOPTION_TRIES) {
 				this.stopAdoptionWatcher();
 				return;
 			}
@@ -771,7 +760,10 @@ export class TrackLayer {
 			if (this.onMapCreated(map, 'adopted') && !this.detached && this.view.map === map) {
 				this.reproject().catch((e) => console.error('Advanced Maps: could not draw tracks', e));
 			}
-		}, 250);
+		}, ADOPTION_RETRY_MS);
+		// Also the plugin's, so an unload path this class does not anticipate still
+		// clears it; clearing an already-cleared interval is a no-op.
+		this.plugin.registerInterval(this.adoptionWatcher);
 	}
 
 	private stopAdoptionWatcher(): void {
@@ -852,18 +844,29 @@ export class TrackLayer {
 	/* ---- a basemap already on disk ---- */
 
 	/**
+	 * One value off the view's own options, or undefined.
+	 *
+	 * The `try` is the point: an inline embed runs against a hand-built stub
+	 * config, and a host that changes what `get` accepts must leave the caller
+	 * standing down on the plugin setting rather than throwing out of a paint or
+	 * a fit. Stated once so no reader of a view option can be written without it.
+	 */
+	private option(key: string): unknown {
+		try {
+			return this.view.config ? this.view.config.get(key) : undefined;
+		} catch {
+			/* stub config */
+			return undefined;
+		}
+	}
+
+	/**
 	 * The pack this view draws, or null. The view option wins: a map that has
 	 * declined the offline basemap keeps whatever background it was configured
 	 * with, and every other map on the vault stays on the pack.
 	 */
 	private basemap(): OfflineBasemap | null {
-		let option: unknown;
-		try {
-			option = this.view.config ? this.view.config.get('offlineTiles') : undefined;
-		} catch {
-			/* stub config */
-		}
-		return usesOfflineTiles(option) ? this.plugin.offlineBasemap() : null;
+		return usesOfflineTiles(this.option('offlineTiles')) ? this.plugin.offlineBasemap() : null;
 	}
 
 	/** Stop the map asking for levels the pack does not hold. A no-op without one. */
@@ -914,8 +917,7 @@ export class TrackLayer {
 	 * an empty string falls through rather than clamping to the knob's minimum.
 	 */
 	private knob(key: TrackKnob): number {
-		const view = this.view;
-		const raw = view.config ? view.config.get(key) : undefined;
+		const raw = this.option(key);
 		if (raw === undefined || raw === null || raw === '') return this.plugin.settings[key];
 		return trackKnob(key, raw);
 	}
@@ -950,15 +952,9 @@ export class TrackLayer {
 	 * mapConfig has not been assigned yet but the fresh one is in hand.
 	 */
 	private system(config?: MapConfig): CoordSystem {
-		const view = this.view;
-		let raw: unknown;
-		try {
-			raw = view.config ? view.config.get('coordSystem') : undefined;
-		} catch {
-			/* stub config */
-		}
+		const raw = this.option('coordSystem');
 		const mode = knownMode(raw) ?? knownMode(this.plugin.settings.coordSystem) ?? 'auto';
-		return resolveSystem(mode, config ?? view.mapConfig);
+		return resolveSystem(mode, config ?? this.view.mapConfig);
 	}
 
 	private resolve(color: string): string {
@@ -1221,20 +1217,15 @@ export class TrackLayer {
 		// Kept whether or not they are drawn, so switching thumbnails back on
 		// selects from these rather than waiting for the next base query.
 		this.photoIcons = records;
-		const map = this.view.map;
-		if (!map) return;
-		// Hiding the layer is not enough: decoding is what costs the memory, and
-		// an album can hold tens of megabytes of it for a layer drawing nothing.
-		if (!this.plugin.settings.photoThumbnails) {
-			disposePhotoImages(map);
-			return;
-		}
-		ensurePhotoImages(map, records);
+		applyPhotoIcons(this.view.map, records, this.plugin.settings.photoThumbnails);
 	}
 
 	/** Camera movement reselects from cached candidates without walking base rows again. */
 	private reselectPhotoIcons(): void {
 		const map = this.view.map;
+		// Deliberately not `applyPhotoIcons`: with thumbnails off, the pass that
+		// built these candidates already released the images, so every camera move
+		// would re-release nothing.
 		if (!map || this.photoIcons.length === 0) return;
 		if (!this.plugin.settings.photoThumbnails) return;
 		ensurePhotoImages(map, this.photoIcons);
@@ -1376,15 +1367,21 @@ export class TrackLayer {
 		}
 		// Two photos of one note are different popups, and so are two of its
 		// tracks now that a line names its own file; a thumbnail and the dot
-		// beneath it are the same one. Index, role and path say exactly that, and
-		// a space separates them unambiguously because only the trailing path can
-		// contain one.
+		// beneath it are the same one. Index, role, name and path say exactly that.
+		//
+		// The name has to be in here: only `start`, `end` and `photo` ever set a
+		// role, so a file's waypoints and the line they sit on all share the empty
+		// one, and without the name they collapse to a single popup — sliding from
+		// the line onto "Summit", or from "Summit" onto "Camp", would leave the
+		// previous card up. Separated by NUL rather than a space because both a
+		// waypoint name and a vault path may contain spaces, and neither may
+		// contain this.
 		const props = ev.features?.[0]?.properties;
 		const index = props && typeof props.amIndex === 'number' ? props.amIndex : -1;
 		const role = props && typeof props.amRole === 'string' ? props.amRole : '';
 		const path = props && typeof props.amPath === 'string' ? props.amPath : '';
 		const name = props && typeof props.amName === 'string' ? props.amName : '';
-		const key = `${index} ${role} ${path}`;
+		const key = `${index}\0${role}\0${name}\0${path}`;
 		if (key === this.shownPopup) return;
 		this.shownPopup = key;
 		const config = view.config;
@@ -1490,6 +1487,12 @@ export class TrackLayer {
 			const markers = this.markerFeatures.map((feature) => feature.geometry);
 			return boundsOf(map, [...markers, ...tracks]);
 		}
-		return boundsOf(map, tracks, this.view.markerManager.getBounds());
+		// Shape-checked for the same reason `attach` only wraps it when present:
+		// a host without this method would otherwise throw here, and the throw is
+		// swallowed by the caller's catch — aborting the whole sync, so no paint,
+		// no photo icons and no interactions, with the previous draw left on screen.
+		const manager = this.view.markerManager;
+		const seed = typeof manager.getBounds === 'function' ? manager.getBounds() : null;
+		return boundsOf(map, tracks, seed);
 	}
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TFile } from 'obsidian';
-import { READ_CONCURRENCY } from '../src/constants';
+import { ADOPTION_RETRY_MS, ADOPTION_TRIES, READ_CONCURRENCY } from '../src/constants';
 import { wgs2gcj } from '../src/coords';
 import { TrackLayer } from '../src/track-layer';
 import type AdvancedMapsPlugin from '../src/main';
@@ -83,6 +83,9 @@ function plugin(pack: ReturnType<AdvancedMapsPlugin['offlineBasemap']> = null): 
 		layers: new Set(),
 		resolveTracks: () => [],
 		offlineBasemap: () => pack,
+		// The real Plugin clears this on unload; the layer registers its adoption
+		// poll with it as a second line of defence.
+		registerInterval: (id: number) => id,
 	} as unknown as AdvancedMapsPlugin;
 }
 
@@ -137,13 +140,36 @@ describe('native map lifecycle', () => {
 		expect(map.controls).toHaveLength(2);
 	});
 
+	it('gives up watching a view that never builds a map', async () => {
+		// A Bases map leaf in a collapsed sidebar may never construct one. Without a
+		// bound this polled four times a second for the rest of the session; the
+		// wrapper on initializeMap is the durable path if it ever does build one.
+		vi.useFakeTimers();
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const deferred = view(null);
+		const layer = new TrackLayer(plugin(), deferred, true).attach();
+		const cleared = vi.spyOn(window, 'clearInterval');
+		layer.watchAdoptedMap();
+
+		await vi.advanceTimersByTimeAsync(ADOPTION_RETRY_MS * (ADOPTION_TRIES + 1));
+		expect(cleared).toHaveBeenCalled();
+
+		// And having given up, it stays given up: a map appearing afterwards is
+		// adopted through the wrapper, not by this timer waking again.
+		cleared.mockClear();
+		const late = mapAt();
+		deferred.map = late;
+		await vi.advanceTimersByTimeAsync(ADOPTION_RETRY_MS * 4);
+		expect(late.controls).toHaveLength(0);
+	});
+
 	it('treats a later wrapped map recreation as already being in tile space', async () => {
 		vi.stubGlobal('createDiv', () => document.createElement('div'));
 		const first = mapAt();
 		const adopted = view(first);
 		const layer = new TrackLayer(plugin(), adopted, true).attach();
 		vi.spyOn(layer, 'reproject').mockResolvedValue();
-		layer.onMapCreated(first, 'wgs84');
+		layer.onMapCreated(first, 'current');
 		adopted.destroyMap();
 
 		const recreated = mapAt();

@@ -1,12 +1,12 @@
 /* Pure track statistics over raw WGS-84 features, never tile-projected geometry. */
 
 import type { Feature, Geometry } from 'geojson';
+import { linesOf, pointsOf } from './geometry';
 
 type Features = Array<Feature<Geometry, Record<string, unknown> | null>>;
 
 export interface TrackStats {
-	distance: number; // metres, summed over all LineStrings
-	points: number; // positions considered
+	distance: number; // metres, summed along every path, never across the gap between two
 	ascent: number | null; // metres; null when no elevation anywhere
 	descent: number | null;
 	minEle: number | null;
@@ -74,7 +74,6 @@ function alignedTimes(feature: Features[number], length: number): Array<number |
 
 export function trackStats(features: Features): TrackStats {
 	let distance = 0;
-	let points = 0;
 	let ascent = 0;
 	let descent = 0;
 	let minEle = Infinity;
@@ -94,83 +93,91 @@ export function trackStats(features: Features): TrackStats {
 	for (const feature of features) {
 		const geometry = feature.geometry;
 
-		if (geometry.type === 'Point') {
-			// A waypoint is one position with nothing before or after it in the
-			// track, so it has no distance and no ascent/descent of its own — but
-			// it is still a position, and its elevation (a summit marker, say) is
-			// still a real extreme worth reflecting in minEle/maxEle.
-			points++;
-			const ele = geometry.coordinates[2];
-			if (typeof ele === 'number' && isFinite(ele)) noteElevation(ele);
-			continue;
-		}
-
-		// parse.ts only ever hands this module LineStrings and Points; anything
-		// else (a Polygon dragged in from a hand-edited GeoJSON file, say) is not
-		// a track segment and contributes nothing rather than being guessed at.
-		if (geometry.type !== 'LineString') continue;
-
-		const coords = geometry.coordinates;
-		points += coords.length;
-		const times = alignedTimes(feature, coords.length);
-
-		const lineEles: number[] = [];
-		let lastCoord: number[] | null = null;
-		let lastTime: number | null = null;
-		// Distance walked since the last point whose time is known — reset every
-		// time a known time is seen, so the implied speed for an interval counts
-		// the ground actually covered even when a point or two inside it lacks a
-		// timestamp of its own.
-		let distSinceLastTime = 0;
-
-		for (let i = 0; i < coords.length; i++) {
-			const pos = coords[i];
-
+		// A waypoint is one position with nothing before or after it in the track,
+		// so it has no distance and no ascent/descent of its own — but it is still a
+		// position, and its elevation (a summit marker, say) is still a real extreme
+		// worth reflecting in minEle/maxEle.
+		for (const pos of pointsOf(geometry)) {
 			const ele = pos[2];
-			if (typeof ele === 'number' && isFinite(ele)) {
-				noteElevation(ele);
-				lineEles.push(ele);
-			}
-
-			if (lastCoord) {
-				const seg = haversine(lastCoord, pos);
-				distance += seg;
-				distSinceLastTime += seg;
-			}
-			lastCoord = pos;
-
-			const t =
-				times && typeof times[i] === 'number' && isFinite(times[i] as number) ? (times[i] as number) : null;
-			if (t !== null) {
-				anyTime = true;
-				if (start === null || t < start) start = t;
-				if (end === null || t > end) end = t;
-
-				const dt = lastTime === null ? null : t - lastTime;
-				if (dt !== null) {
-					// A merged export can carry a point or two whose timestamp runs
-					// backwards relative to the last one. dt <= 0 makes "implied
-					// speed" meaningless (division by zero or a negative duration),
-					// so the interval is simply not counted as moving time rather
-					// than clamped to some guessed value — the ground it covered is
-					// still in `distance` and folds into the next valid interval's
-					// distSinceLastTime.
-					if (dt > 0) {
-						const impliedSpeed = distSinceLastTime / (dt / 1000);
-						if (impliedSpeed >= MOVING_SPEED_MPS) movingTime += dt;
-					}
-				}
-				lastTime = t;
-				// Only an interval that counted consumes the distance behind it.
-				// Zeroing this unconditionally is what used to discard the ground
-				// covered before a backwards timestamp, against the promise above.
-				if (dt === null || dt > 0) distSinceLastTime = 0;
-			}
+			if (typeof ele === 'number' && isFinite(ele)) noteElevation(ele);
 		}
 
-		const climb = hysteresisClimb(lineEles);
-		ascent += climb.ascent;
-		descent += climb.descent;
+		// Every path this geometry holds, not just a bare LineString: a merged
+		// export is one MultiLineString, and measuring it as nothing was the whole
+		// bug. Timestamps are position-aligned across the feature's paths in order,
+		// which is the only reading a flat `times` array on a multi-path feature
+		// can have.
+		const lines = linesOf(geometry);
+		if (lines.length === 0) continue;
+		const times = alignedTimes(
+			feature,
+			lines.reduce((n, line) => n + line.length, 0)
+		);
+		let offset = 0;
+
+		for (const coords of lines) {
+			const lineEles: number[] = [];
+			// Per path, never across the gap between two: that gap is not ground
+			// travelled, and a climb spanning it was never walked.
+			let lastCoord: number[] | null = null;
+			let lastTime: number | null = null;
+			// Distance walked since the last point whose time is known — reset every
+			// time a known time is seen, so the implied speed for an interval counts
+			// the ground actually covered even when a point or two inside it lacks a
+			// timestamp of its own.
+			let distSinceLastTime = 0;
+
+			for (let i = 0; i < coords.length; i++) {
+				const pos = coords[i];
+				const at = offset + i;
+
+				const ele = pos[2];
+				if (typeof ele === 'number' && isFinite(ele)) {
+					noteElevation(ele);
+					lineEles.push(ele);
+				}
+
+				if (lastCoord) {
+					const seg = haversine(lastCoord, pos);
+					distance += seg;
+					distSinceLastTime += seg;
+				}
+				lastCoord = pos;
+
+				const stamp = times?.[at];
+				const t = typeof stamp === 'number' && isFinite(stamp) ? stamp : null;
+				if (t !== null) {
+					anyTime = true;
+					if (start === null || t < start) start = t;
+					if (end === null || t > end) end = t;
+
+					const dt = lastTime === null ? null : t - lastTime;
+					if (dt !== null) {
+						// A merged export can carry a point or two whose timestamp runs
+						// backwards relative to the last one. dt <= 0 makes "implied
+						// speed" meaningless (division by zero or a negative duration),
+						// so the interval is simply not counted as moving time rather
+						// than clamped to some guessed value — the ground it covered is
+						// still in `distance` and folds into the next valid interval's
+						// distSinceLastTime.
+						if (dt > 0) {
+							const impliedSpeed = distSinceLastTime / (dt / 1000);
+							if (impliedSpeed >= MOVING_SPEED_MPS) movingTime += dt;
+						}
+					}
+					lastTime = t;
+					// Only an interval that counted consumes the distance behind it.
+					// Zeroing this unconditionally is what used to discard the ground
+					// covered before a backwards timestamp, against the promise above.
+					if (dt === null || dt > 0) distSinceLastTime = 0;
+				}
+			}
+
+			const climb = hysteresisClimb(lineEles);
+			ascent += climb.ascent;
+			descent += climb.descent;
+			offset += coords.length;
+		}
 	}
 
 	// start/end are the earliest and latest timestamp seen anywhere in the
@@ -183,7 +190,6 @@ export function trackStats(features: Features): TrackStats {
 
 	return {
 		distance,
-		points,
 		ascent: anyElevation ? ascent : null,
 		descent: anyElevation ? descent : null,
 		minEle: anyElevation ? minEle : null,
@@ -257,7 +263,7 @@ export function hasStats(stats: TrackStats): boolean {
  * default that followed the interface language would rename every reader's
  * columns the day they switched languages.
  */
-export const STATS_SUFFIXES = {
+const STATS_SUFFIXES = {
 	distance: 'distance-km',
 	ascent: 'ascent-m',
 	descent: 'descent-m',
@@ -410,17 +416,16 @@ export function elevationProfile(features: Features, samples = 160): ProfileSamp
 	let cumulative = 0;
 
 	for (const feature of features) {
-		const geometry = feature.geometry;
-		if (geometry.type !== 'LineString') continue;
+		for (const coords of linesOf(feature.geometry)) {
+			let lastCoord: number[] | null = null;
+			for (const pos of coords) {
+				if (lastCoord) cumulative += haversine(lastCoord, pos);
+				lastCoord = pos;
 
-		let lastCoord: number[] | null = null;
-		for (const pos of geometry.coordinates) {
-			if (lastCoord) cumulative += haversine(lastCoord, pos);
-			lastCoord = pos;
-
-			const ele = pos[2];
-			if (typeof ele === 'number' && isFinite(ele)) {
-				full.push({ d: cumulative, ele, lng: pos[0], lat: pos[1] });
+				const ele = pos[2];
+				if (typeof ele === 'number' && isFinite(ele)) {
+					full.push({ d: cumulative, ele, lng: pos[0], lat: pos[1] });
+				}
 			}
 		}
 	}

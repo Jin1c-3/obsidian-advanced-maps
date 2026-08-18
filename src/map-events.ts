@@ -38,3 +38,25 @@ export class MapEventBindings {
 		}
 	}
 }
+
+/**
+ * Replace one method on an *instance*; the returned function puts it back.
+ *
+ * An own property shadows the prototype, so the wrapper dies with the object
+ * and `delete` restores the untouched method. Where the native code assigned
+ * the method as an own property itself, the saved value goes back instead —
+ * deleting that one would take the host's own implementation with it and leave
+ * the object permanently broken, including after this plugin is uninstalled.
+ *
+ * Beside the listener bindings above because it answers the same question for
+ * the other kind of borrowed thing: what exactly is handed back, and when.
+ */
+export function override<T extends object, K extends keyof T>(obj: T, key: K, make: (orig: T[K]) => T[K]): () => void {
+	const orig = obj[key];
+	const hadOwn = Object.prototype.hasOwnProperty.call(obj, key);
+	obj[key] = make(orig);
+	return () => {
+		if (hadOwn) obj[key] = orig;
+		else delete (obj as unknown as Record<string, unknown>)[key as string];
+	};
+}

@@ -1,12 +1,15 @@
 /* The two dialogs a place passes through: into notes from a file, out of a map into one. */
 
-import { AbstractInputSuggest, Modal, Setting, TFolder, normalizePath } from 'obsidian';
-import type { App } from 'obsidian';
+import { AbstractInputSuggest, Modal, Setting, normalizePath } from 'obsidian';
+import type { App, TFolder } from 'obsidian';
 import { t } from './i18n';
 import { PLACE_FORMATS, writePlaces, type Place, type PlaceFormat } from './places';
 
 /** How many names the import dialog shows before saying "and N more". */
 const PREVIEW_NAMES = 5;
+
+/** Built from the format list itself: a fourth format must not need editing here too. */
+const FORMAT_EXT = new RegExp(`\\.(${PLACE_FORMATS.join('|')})$`, 'i');
 
 /** The vault's folders, matched on their path, for a text field that names one. */
 class FolderSuggest extends AbstractInputSuggest<TFolder> {
@@ -20,11 +23,10 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
 
 	getSuggestions(query: string): TFolder[] {
 		const needle = query.toLowerCase();
-		const out: TFolder[] = [];
-		for (const file of this.app.vault.getAllLoadedFiles()) {
-			if (file instanceof TFolder && file.path.toLowerCase().includes(needle)) out.push(file);
-		}
-		return out;
+		// The folders, not every file in the vault filtered down to them: this runs
+		// on each keystroke, and a large vault holds orders of magnitude more files
+		// than folders.
+		return this.app.vault.getAllFolders(true).filter((folder) => folder.path.toLowerCase().includes(needle));
 	}
 
 	renderSuggestion(folder: TFolder, el: HTMLElement): void {
@@ -205,7 +207,7 @@ export class ExportPlacesModal extends Modal {
 
 	/** Follow the format in the box, but only where the box still ends in one. */
 	private retarget(): void {
-		this.path = `${this.path.replace(/\.(gpx|kml|csv)$/i, '')}.${this.format}`;
+		this.path = `${this.path.replace(FORMAT_EXT, '')}.${this.format}`;
 		if (this.pathInput) this.pathInput.value = this.path;
 	}
 

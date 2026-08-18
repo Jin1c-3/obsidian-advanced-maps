@@ -180,7 +180,7 @@ export class PhotoIndex {
 		}
 	}
 
-	/** How many entries are held, for tests and for the settings description. */
+	/** How many entries are held. A test seam: nothing in the plugin reads it. */
 	get size(): number {
 		return this.entries.size;
 	}
@@ -320,7 +320,7 @@ interface IndexHost {
 }
 
 /** The file name inside the plugin's own data directory. */
-export const PHOTO_INDEX_FILE = 'photo-index.json';
+const PHOTO_INDEX_FILE = 'photo-index.json';
 
 /**
  * The index's own file beside `data.json`, never inside it.

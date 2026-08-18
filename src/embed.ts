@@ -13,6 +13,7 @@ import {
 	PHOTO_LAYER,
 	POINT_LAYER,
 	READ_CONCURRENCY,
+	USER_GESTURE_EVENTS,
 } from './constants';
 import { resolveSystem, toTileSpace, toWgs84, type CoordSystem } from './coords';
 import { boundsOf, styleReady, trackFeatures, trackKnob, type TrackFeatureProps } from './geometry';
@@ -20,7 +21,7 @@ import { t } from './i18n';
 import {
 	applyTrackPaint,
 	cancelPhotoImages,
-	disposePhotoImages,
+	applyPhotoIcons,
 	drawTracks,
 	ensurePhotoImages,
 	fitTo,
@@ -31,7 +32,6 @@ import {
 	type PhotoIconSource,
 } from './layers';
 import {
-	elevationProfile,
 	formatDistance,
 	formatDuration,
 	formatElevation,
@@ -39,12 +39,11 @@ import {
 	hasStats,
 	nearestByDistance,
 	nearestByPosition,
-	trackStats,
 	type ProfileSample,
 	type TrackStats,
 } from './stats';
 import { PhotoModal } from './photo-modal';
-import { pooled, projectedFeatures, type TrackRecord } from './track-cache';
+import { pooled, projectedFeatures, recordProfile, recordStats, type TrackRecord } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type { BasesMapView, MapLibreMap, MapMouseEvent } from './types/obsidian-internals';
 
@@ -73,9 +72,19 @@ export class TrackEmbed extends Component {
 	private operationRevision = 0;
 	/** A settings/file refresh requested while initializeMap still owns the map. */
 	private refreshPending = false;
-	/** A build or refresh is reading its files and has not committed them yet;
-	 *  read by the style.load handler, which must not draw across that read. */
-	private reading = false;
+	/**
+	 * How many builds/refreshes are reading their files without having committed
+	 * them yet; read by the style.load handler, which must not draw across a read.
+	 *
+	 * A count rather than a flag because two of them genuinely overlap — a
+	 * settings change and a file change can each call `refresh()` — and the first
+	 * to settle would otherwise declare the embed idle while the second is still
+	 * reading. A style reload landing in that window drew the *previous* record
+	 * and claimed a revision, which then made the live read stand down without
+	 * ever assigning its own: the embed sat on pre-edit data until something
+	 * unrelated refreshed it.
+	 */
+	private reading = 0;
 	/** A style reload happened during a read and is owed a draw if that read
 	 *  turns out to have nothing to draw. */
 	private styleDrawPending = false;
@@ -85,6 +94,10 @@ export class TrackEmbed extends Component {
 	/** The last DOM event `openPhoto()` acted on — one click over two photo
 	 *  layers dispatches twice; see bindInteractions(). */
 	private handledClick: MouseEvent | null = null;
+	/** The pointer sample already served, so the two photo layers answer it once. */
+	private handledHover: MouseEvent | null = null;
+	/** What the tooltip currently holds, so an unchanged feature only repositions it. */
+	private shownTooltip: string | null = null;
 	/** Shared inline waypoint-name/photo-preview tooltip. */
 	private tooltipEl: HTMLElement | null = null;
 	/** The elevation profile's own hover state, set by renderProfile() and read
@@ -120,7 +133,7 @@ export class TrackEmbed extends Component {
 	 * the companion fan-out below, which is as wide as the host note's album.
 	 */
 	private async loadAll(alive: () => boolean): Promise<{ rec: TrackRecord; photos: PhotoEntry[] }> {
-		this.reading = true;
+		this.reading++;
 		try {
 			const [rec, photos] = await Promise.all([
 				this.plugin.tracks.load(this.file, this.plugin.settings.photoDatum),
@@ -128,7 +141,7 @@ export class TrackEmbed extends Component {
 			]);
 			return { rec, photos };
 		} finally {
-			this.reading = false;
+			this.reading--;
 		}
 	}
 
@@ -321,7 +334,7 @@ export class TrackEmbed extends Component {
 			// A fresh style has a fresh raster source with the default zoom bounds
 			// back, whether or not the track is redrawn below.
 			this.boundBasemap(map);
-			if (this.reading) {
+			if (this.reading > 0) {
 				// Noted rather than drawn, so the one path that ends a read without
 				// drawing — an unreadable file — can still put the last good track
 				// back onto the style that just replaced it.
@@ -502,18 +515,12 @@ export class TrackEmbed extends Component {
 		// Kept whether or not they are drawn, so switching thumbnails back on
 		// selects from these rather than waiting for the next full redraw.
 		this.photoIcons = icons;
-		if (!this.map) return;
-		// Hiding the layer is not enough: decoding is what costs the memory, and
-		// an album can hold tens of megabytes of it for a layer drawing nothing.
-		if (!this.plugin.settings.photoThumbnails) {
-			disposePhotoImages(this.map);
-			return;
-		}
-		ensurePhotoImages(this.map, icons);
+		applyPhotoIcons(this.map, icons, this.plugin.settings.photoThumbnails);
 	}
 
 	/** Reselect cached icon candidates after camera movement. */
 	private reselectPhotoIcons(): void {
+		// Deliberately not `applyPhotoIcons`; see the twin in track-layer.ts.
 		if (!this.map || this.photoIcons.length === 0) return;
 		if (!this.plugin.settings.photoThumbnails) return;
 		ensurePhotoImages(this.map, this.photoIcons);
@@ -533,7 +540,7 @@ export class TrackEmbed extends Component {
 		const mark = (ev?: { originalEvent?: unknown }) => {
 			if (ev && ev.originalEvent) this.userMoved = true;
 		};
-		for (const name of ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart']) {
+		for (const name of USER_GESTURE_EVENTS) {
 			map.on(name, mark);
 		}
 		map.on('moveend', () => this.reselectPhotoIcons());
@@ -561,13 +568,18 @@ export class TrackEmbed extends Component {
 			this.hideTooltip();
 			return;
 		}
-		this.tooltipEl ??= this.rootEl.createDiv('advanced-maps-waypoint-tooltip');
-		// setText() replaces every child, so a tooltip left over from a photo
-		// hover (an <img> plus a caption div, see hoverPhoto()) is cleared back
-		// to plain text here without a separate empty() call — and the class it
-		// added is dropped explicitly, since removeClass has no such side effect.
-		this.tooltipEl.removeClass('advanced-maps-photo-tooltip');
-		this.tooltipEl.setText(name);
+		const key = `w\0${name}`;
+		if (this.shownTooltip !== key) {
+			this.tooltipEl ??= this.rootEl.createDiv('advanced-maps-waypoint-tooltip');
+			// setText() replaces every child, so a tooltip left over from a photo
+			// hover (an <img> plus a caption div, see hoverPhoto()) is cleared back
+			// to plain text here without a separate empty() call — and the class it
+			// added is dropped explicitly, since removeClass has no such side effect.
+			this.tooltipEl.removeClass('advanced-maps-photo-tooltip');
+			this.tooltipEl.setText(name);
+			this.shownTooltip = key;
+		}
+		// Outside the guard: the box follows the cursor, only its contents are kept.
 		this.positionTooltip(point);
 	}
 
@@ -590,10 +602,23 @@ export class TrackEmbed extends Component {
 
 	/** Show a photo preview, resolving its stored vault path again at hover time. */
 	private hoverPhoto(ev: MapMouseEvent): void {
+		// The thumbnail layer and the dot beneath it both dispatch this sample; one
+		// answer is enough, exactly as for the click above.
+		if (ev.originalEvent) {
+			if (this.handledHover === ev.originalEvent) return;
+			this.handledHover = ev.originalEvent;
+		}
 		const path = ev.features?.[0]?.properties?.amPath;
 		const point = ev.point;
 		if (typeof path !== 'string' || path === '' || !point || !this.rootEl) {
 			this.hideTooltip();
+			return;
+		}
+		// Rebuilding the box means resolving the file, minting a fresh <img> at the
+		// photo's full resolution and hanging a load listener on it. At 60–120
+		// pointer samples a second on one unchanged photo, that was all waste.
+		if (this.shownTooltip === `p\0${path}`) {
+			this.positionTooltip(point);
 			return;
 		}
 		const abstract = this.plugin.app.vault.getAbstractFileByPath(path);
@@ -628,6 +653,7 @@ export class TrackEmbed extends Component {
 			}
 		}
 		this.tooltipEl.createDiv({ cls: 'advanced-maps-photo-tooltip-name', text: name });
+		this.shownTooltip = `p\0${path}`;
 		this.positionTooltip(point);
 	}
 
@@ -642,6 +668,8 @@ export class TrackEmbed extends Component {
 
 	private hideTooltip(): void {
 		this.tooltipEl?.removeClass('is-visible');
+		// Hidden is not "still showing that photo": the next hover must rebuild.
+		this.shownTooltip = null;
 	}
 
 	/** Convert map tile space back to profile WGS-84 before nearest-point lookup. */
@@ -692,9 +720,11 @@ export class TrackEmbed extends Component {
 		// to measure regardless: track-cache.ts's projectedFeatures() sets
 		// `properties: null` on every feature it produces, and `properties.times`
 		// is where the timestamps ascent/duration/speed need actually live.
-		const stats = trackStats(this.rec.features);
-		const fields = statsFields(stats);
-		if (!fields) return;
+		// Through the record, so a re-render or a settings change does not walk
+		// every position again for figures this file has already been measured for.
+		const stats = recordStats(this.rec);
+		const fields = stats ? statsFields(stats) : null;
+		if (!stats || !fields) return;
 
 		this.panelEl = this.containerEl.createDiv('advanced-maps-panel');
 		const bar = this.panelEl.createDiv('advanced-maps-stats-bar');
@@ -707,7 +737,7 @@ export class TrackEmbed extends Component {
 		}
 
 		if (!this.plugin.settings.elevationProfile || stats.minEle === null || stats.maxEle === null) return;
-		const samples = elevationProfile(this.rec.features);
+		const samples = recordProfile(this.rec);
 		// A waypoints-only file can carry an elevation (a summit marker, say) with
 		// no LineString to plot it against; elevationProfile() only walks
 		// LineStrings, so it comes back empty (or a single point) and there is

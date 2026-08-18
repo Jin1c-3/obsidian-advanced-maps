@@ -103,6 +103,28 @@ export const CURSOR_SRC = 'advanced-maps-cursor-src';
 export const CURSOR_LAYER = 'advanced-maps-cursor';
 
 /** Bounded retry window for a lazily-created map targeted by a pop-up. */
+/**
+ * The gestures that mean the reader has taken the wheel, so auto-framing stops
+ * moving the map underneath them.
+ *
+ * Shared by both map owners: a gesture missing from one of two copies makes
+ * exactly one kind of map keep re-framing, which is invisible until somebody
+ * drags that kind of map.
+ */
+export const USER_GESTURE_EVENTS = ['dragstart', 'zoomstart', 'rotatestart', 'pitchstart'] as const;
+
+/**
+ * How long to wait for an already-open view to build its map before giving up.
+ *
+ * Bounded because the wrapper on `initializeMap` is the durable path: a view
+ * that constructs its map later is adopted there. This poll only covers the
+ * window where a view was open before the plugin attached, and a view that
+ * never builds one — a Bases map leaf in a collapsed sidebar — must not leave a
+ * timer waking four times a second for the rest of the session.
+ */
+export const ADOPTION_RETRY_MS = 250;
+export const ADOPTION_TRIES = 40;
+
 export const FOCUS_RETRY_MS = 100;
 export const FOCUS_TRIES = 30;
 

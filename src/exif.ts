@@ -11,9 +11,6 @@ import type { Position } from 'geojson';
 export interface ExifThumbnail {
 	/** Raw JPEG bytes, ready to hand to a Blob. */
 	bytes: Uint8Array;
-	/** 0 when the tags did not state one. */
-	width: number;
-	height: number;
 }
 
 export interface PhotoExif {
@@ -514,8 +511,6 @@ const TAG_GPS_IFD = 0x8825;
 const TAG_THUMB_COMPRESSION = 0x0103;
 const TAG_THUMB_OFFSET = 0x0201;
 const TAG_THUMB_LENGTH = 0x0202;
-const TAG_THUMB_WIDTH = 0x0100;
-const TAG_THUMB_HEIGHT = 0x0101;
 
 /** Everything above, out of a TIFF block whose offset 0 is the byte order mark. */
 export function readTiffExif(tiff: Uint8Array): PhotoExif | null {
@@ -634,15 +629,10 @@ export function readTiffExif(tiff: Uint8Array): PhotoExif | null {
 				const len = lenE && getLongAt(tiff, lenE, 0, little);
 				if (off != null && len != null && len > 0 && off >= 0 && off + len <= tiff.length) {
 					if (tiff[off] === 0xff && tiff[off + 1] === 0xd8) {
-						const wE = ifd1.entries.get(TAG_THUMB_WIDTH);
-						const hE = ifd1.entries.get(TAG_THUMB_HEIGHT);
-						const width = wE
-							? (getShortAt(tiff, wE, 0, little) ?? getLongAt(tiff, wE, 0, little))
-							: undefined;
-						const height = hE
-							? (getShortAt(tiff, hE, 0, little) ?? getLongAt(tiff, hE, 0, little))
-							: undefined;
-						thumbnail = { bytes: tiff.slice(off, off + len), width: width ?? 0, height: height ?? 0 };
+						// The bytes alone: IFD1's declared width/height are advisory and
+						// often absent, and the only consumer draws from the decoded
+						// bitmap's real dimensions instead.
+						thumbnail = { bytes: tiff.slice(off, off + len) };
 					}
 				}
 			}

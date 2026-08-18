@@ -182,7 +182,7 @@ const PROPERTY_MENTION = 'advanced-maps-property-name';
  * the name is the reader's to change afterwards — this is only what an
  * unattended move has to call it.
  */
-export const AMAP_SECRET_ID = 'advanced-maps-amap';
+const AMAP_SECRET_ID = 'advanced-maps-amap';
 
 /** The three literals `photoDatum` may hold. `exif.ts` exports the type but
  *  not this array — it has no reason of its own to iterate its options — so
@@ -290,6 +290,22 @@ function knownDatum(value: unknown): CustomDatum {
 	return (CUSTOM_DATUMS as readonly unknown[]).includes(value) ? (value as CustomDatum) : 'wgs84';
 }
 
+/**
+ * The settings whose value must be one of a fixed list, and the list.
+ *
+ * A table rather than a clause per key for the same reason `TRACK_REFRESH_KEYS`
+ * is one: a newly added dropdown that is missed here is not a compile error,
+ * it is a setting that silently accepts anything a stored file happens to hold.
+ * `coordSystem` is absent on purpose — `knownMode` trims before matching, which
+ * a plain `includes` would not.
+ */
+const ENUM_VALUES: Partial<Record<keyof AdvancedMapsSettings, readonly unknown[]>> = {
+	geocodeProvider: GEOCODE_PROVIDERS,
+	amapKeyStore: KEY_STORES,
+	openIn: OPEN_TARGETS,
+	photoDatum: PHOTO_DATUMS,
+};
+
 /** Declarative Obsidian 1.13 settings, indexed by settings search. */
 export class AdvancedMapsSettingTab extends PluginSettingTab {
 	/**
@@ -305,6 +321,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 * typing to stop rather than rebuilding a style per character.
 	 */
 	private readonly refreshBasemaps = debounce(() => this.plugin.refreshBasemaps(), 500, true);
+
+	/**
+	 * Debounced for the same reason, and it matters more: four of the keys on the
+	 * track-refresh list are sliders, and each call redraws every open base map
+	 * *and* re-tiles the whole collection in every open inline embed. Undebounced,
+	 * one drag of the line-width slider paid for that per step.
+	 */
+	private readonly refreshTracks = debounce(() => this.plugin.refreshTracks(), 250, true);
 
 	constructor(
 		app: App,
@@ -1044,18 +1068,11 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		// gets checked on its way in: what reaches here is a string, and a stored
 		// setting outlives the version of the plugin that wrote it.
 		if (key === 'coordSystem') next = knownMode(next) ?? DEFAULT_SETTINGS.coordSystem;
-		if (key === 'geocodeProvider' && !(GEOCODE_PROVIDERS as readonly unknown[]).includes(next)) {
-			next = DEFAULT_SETTINGS.geocodeProvider;
-		}
-		if (key === 'amapKeyStore' && !(KEY_STORES as readonly unknown[]).includes(next)) {
-			next = DEFAULT_SETTINGS.amapKeyStore;
-		}
-		if (key === 'openIn' && !(OPEN_TARGETS as readonly unknown[]).includes(next)) {
-			next = DEFAULT_SETTINGS.openIn;
-		}
-		if (key === 'photoDatum' && !(PHOTO_DATUMS as readonly unknown[]).includes(next)) {
-			next = DEFAULT_SETTINGS.photoDatum;
-		}
+		// `key` arrives as a bare string from the host; the table is what decides
+		// whether it names a settings key with a fixed list behind it.
+		const enumKey = key as keyof AdvancedMapsSettings;
+		const allowed = ENUM_VALUES[enumKey];
+		if (allowed && !allowed.includes(next)) next = DEFAULT_SETTINGS[enumKey];
 		// Both lists go back through the same readers that made them whole on the
 		// way out, so what lands in data.json is what the next version will read —
 		// an unknown provider or datum cannot be stored by going through here.
@@ -1114,6 +1131,6 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		// visual setting must reach maps that are already open, because Bases does
 		// not necessarily sync after plugin data.json changes and an inline embed
 		// has no Bases result set to prompt it at all.
-		if (refreshesTracks(key)) this.plugin.refreshTracks();
+		if (refreshesTracks(key)) this.refreshTracks();
 	}
 }

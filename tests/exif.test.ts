@@ -866,8 +866,6 @@ describe('readTiffExif — thumbnail', () => {
 		expect(exif.thumbnail!.bytes.length).toBe(jpegLike.length);
 		expect(exif.thumbnail!.bytes[0]).toBe(0xff);
 		expect(exif.thumbnail!.bytes[1]).toBe(0xd8);
-		expect(exif.thumbnail!.width).toBe(4);
-		expect(exif.thumbnail!.height).toBe(3);
 	});
 
 	it('defaults orientation to 1 when the tag is absent', () => {
@@ -1320,14 +1318,14 @@ describe('readTiffExif — remaining defensive branches', () => {
 		expect(readTiffExif(bytes)!.thumbnail).toBeUndefined();
 	});
 
-	it('a thumbnail with no width/height tags reports 0/0 rather than throwing', () => {
+	it('reads a thumbnail whose IFD1 states no width/height tags', () => {
 		const { bytes } = buildTiff({
 			little: false,
 			gps: { lat: 10, latRef: 'N', lng: 20, lngRef: 'E' },
 			thumbnail: { bytes: [0xff, 0xd8, 1, 2, 0xff, 0xd9] }, // no width/height
 		});
 		const thumb = readTiffExif(bytes)!.thumbnail!;
-		expect(thumb.width).toBe(0);
-		expect(thumb.height).toBe(0);
+		// Only the bytes are wanted; the dimension tags are advisory and skipped.
+		expect(Array.from(thumb.bytes)).toEqual([0xff, 0xd8, 1, 2, 0xff, 0xd9]);
 	});
 });
