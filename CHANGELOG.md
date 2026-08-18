@@ -4,7 +4,18 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
-## [Unreleased]
+## [1.17.1]
+
+### Added
+
+- **The settings pane now opens with the guide and the repository.** Its first
+  row is two links: the user guide, in the language the pane is already in, and
+  the repository this plugin is built from. The guide became a website in this
+  same release, and the place you are most likely to want it is the place you
+  were standing when a setting stopped explaining itself.
+
+  Neither line is a setting, so neither answers the settings search — a row that
+  changes nothing has no business among the results for one that does.
 
 ### Changed
 
@@ -875,7 +886,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.1...HEAD
+[1.17.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.0...1.17.1
 [1.17.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.16.0...1.17.0
 [1.16.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.15.0...1.16.0
 [1.15.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.14.0...1.15.0
