@@ -4,6 +4,63 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [1.17.2]
+
+### Fixed
+
+- **A route written as one multi-part path is now measured.** A file whose track
+  is a single multi-line geometry — which is what a merged export usually is —
+  drew its line, its direction arrows and its start and end markers, framed the
+  map on it correctly, and then reported nothing at all: no distance, no ascent,
+  no elapsed time, so no statistics strip, no elevation profile, no figures on
+  hover, and **Write track statistics** answering that there was nothing to
+  measure. Every path a file holds is now walked, including paths inside a
+  geometry collection. The gap between one path and the next is still not
+  counted as ground travelled, and an area still contributes nothing — a ring is
+  a boundary, not a route.
+
+- **Places import from a multi-point placemark.** A placemark holding several
+  points is several places sharing one name; it used to import as none.
+
+- **A GPX or TCX file whose tags carry a namespace prefix now reads.** Both
+  spellings are equally valid XML, and the prefixed one is what you get when a
+  track is pulled out of a larger document — it was reported as a file that
+  could not be read. KML already handled this; the other two readers now do too.
+
+- **Pointing at a waypoint shows that waypoint.** Because a waypoint carries no
+  role of its own, a file's route line and all of its waypoints looked like one
+  and the same thing to the popup: whichever you pointed at first kept the card,
+  and moving from the line onto a waypoint, or between two waypoints, changed
+  nothing on screen until the pointer left the route altogether.
+
+- **A map link whose first coordinate parameter is empty is no longer read as
+  having no coordinate.** `?location=&latlng=39.9,116.4` names a place perfectly
+  clearly; the reader stopped at the blank parameter and reported that the link
+  held nothing.
+
+- **The built-in locate button is handed back exactly as it was found.** The
+  method this plugin wraps to keep the blue dot aligned with a Chinese basemap
+  was removed rather than restored on the way out. Where the built-in view
+  defines it in the shape this now covers, the button would have stopped
+  working — and stayed broken after Advanced Maps was disabled or uninstalled.
+
+- **An inline map no longer keeps showing the previous version of a track you
+  have just edited.** Two refreshes arriving together — a settings change and a
+  file change, say — could leave the map redrawing the older of the two, with
+  the older statistics under it, until something unrelated refreshed it again.
+
+- **Dragging a track slider no longer redraws every open map on every step.**
+  Line width, line opacity, maximum fit zoom and inline height each rebuilt the
+  full collection in every open base map and inline map per step of the drag;
+  they now wait for the drag to settle, as the offline-basemap fields already
+  did.
+
+- **Pointing at a photo on an inline map no longer reloads it.** The preview
+  rebuilt itself — resolving the file and fetching the photo again at full size
+  — on every pointer sample, dozens of times a second, for a photo that had not
+  changed. Building thumbnails also asked the theme for its colours once per
+  photo rather than once per pass.
+
 ## [1.17.1]
 
 ### Added
@@ -887,6 +944,7 @@ one vault; the behaviour is unchanged, everything around it is new.
   base's first map view, and the menu label falls back to the localized default.
 
 [Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.1...HEAD
+[1.17.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.1...1.17.2
 [1.17.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.0...1.17.1
 [1.17.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.16.0...1.17.0
 [1.16.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.15.0...1.16.0
