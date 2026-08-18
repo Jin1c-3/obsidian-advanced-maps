@@ -73,7 +73,7 @@ export class PlaceSearchModal extends SuggestModal<Place> {
 			if (revision !== this.revision) return [];
 			// The list going quiet says nothing about why. A notice does, and a
 			// failed key or a blocked host is exactly what people need told.
-			const reason = e instanceof GeocodeError ? e.message : e instanceof Error ? e.message : String(e);
+			const reason = e instanceof Error ? e.message : String(e);
 			new Notice(t('notice.search.failed', { reason }));
 			return [];
 		}

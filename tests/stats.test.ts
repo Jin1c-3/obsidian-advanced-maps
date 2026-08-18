@@ -58,12 +58,118 @@ describe('haversine', () => {
 	});
 });
 
+describe('trackStats — geometries that hold more than one path', () => {
+	// A merged export arrives as one MultiLineString, and a hand-written GeoJSON
+	// can wrap either shape in a GeometryCollection. Both used to measure as zero:
+	// they drew, framed and stamped endpoints, and then reported nothing at all.
+	const MULTI: Features[number] = {
+		type: 'Feature',
+		properties: { times: [1000, 2000, 4000, 5000] },
+		geometry: {
+			type: 'MultiLineString',
+			coordinates: [
+				[
+					[0, 0, 10],
+					[0, 1, 60],
+				],
+				[
+					[0, 2, 60],
+					[0, 3, 20],
+				],
+			],
+		},
+	};
+
+	it('measures a MultiLineString exactly as the same paths spelled separately', () => {
+		const separate = trackStats([
+			line(
+				[
+					[0, 0, 10],
+					[0, 1, 60],
+				],
+				[1000, 2000]
+			),
+			line(
+				[
+					[0, 2, 60],
+					[0, 3, 20],
+				],
+				[4000, 5000]
+			),
+		]);
+		expect(trackStats([MULTI])).toEqual(separate);
+	});
+
+	it('reports real figures for a MultiLineString rather than nothing', () => {
+		const s = trackStats([MULTI]);
+		expect(hasStats(s)).toBe(true);
+		expect(s.distance).toBeCloseTo(2 * haversine([0, 0], [0, 1]), 6);
+		expect(s.minEle).toBe(10);
+		expect(s.maxEle).toBe(60);
+		expect(s.start).toBe(1000);
+		expect(s.end).toBe(5000);
+	});
+
+	it('never sums the gap between one path and the next as distance travelled', () => {
+		// The 1° jump from the first path's end to the second path's start is not
+		// ground covered, so it must not appear in `distance`.
+		expect(trackStats([MULTI]).distance).toBeCloseTo(2 * haversine([0, 0], [0, 1]), 6);
+	});
+
+	it('walks the paths and points inside a GeometryCollection', () => {
+		const collection: Features[number] = {
+			type: 'Feature',
+			properties: null,
+			geometry: {
+				type: 'GeometryCollection',
+				geometries: [
+					{
+						type: 'LineString',
+						coordinates: [
+							[0, 0],
+							[0, 1],
+						],
+					},
+					{ type: 'Point', coordinates: [0, 5, 900] },
+				],
+			},
+		};
+		const s = trackStats([collection]);
+		expect(s.distance).toBeCloseTo(haversine([0, 0], [0, 1]), 6);
+		expect(s.maxEle).toBe(900);
+	});
+
+	it('counts a MultiPoint waypoint elevation without giving it distance', () => {
+		const multi: Features[number] = {
+			type: 'Feature',
+			properties: null,
+			geometry: {
+				type: 'MultiPoint',
+				coordinates: [
+					[0, 0, 100],
+					[0, 1, 300],
+				],
+			},
+		};
+		const s = trackStats([multi]);
+		expect(s.distance).toBe(0);
+		expect(s.minEle).toBe(100);
+		expect(s.maxEle).toBe(300);
+	});
+
+	it('plots an elevation profile across every path of a MultiLineString', () => {
+		const samples = elevationProfile([MULTI]);
+		expect(samples.map((s) => s.ele)).toEqual([10, 60, 60, 20]);
+		// `d` accumulates within a path and holds across the gap to the next.
+		expect(samples[2].d).toBeCloseTo(samples[1].d, 6);
+	});
+});
+
 describe('trackStats — empty and degenerate input', () => {
 	it('is all zero/null for an empty feature list', () => {
 		const s = trackStats([]);
 		expect(s).toEqual({
 			distance: 0,
-			points: 0,
 			ascent: null,
 			descent: null,
 			minEle: null,
@@ -78,7 +184,6 @@ describe('trackStats — empty and degenerate input', () => {
 
 	it('handles a LineString with a single point: counted, no distance, no crash', () => {
 		const s = trackStats([line([[0, 0]])]);
-		expect(s.points).toBe(1);
 		expect(s.distance).toBe(0);
 	});
 
@@ -98,15 +203,23 @@ describe('trackStats — empty and degenerate input', () => {
 				],
 			},
 		};
-		const s = trackStats([
+		const withArea = trackStats([
 			polygon,
 			line([
 				[0, 0],
 				[0, 1],
 			]),
 		]);
-		// Only the LineString's two points are considered.
-		expect(s.points).toBe(2);
+		// A ring is a boundary, not a route: its perimeter is not ground travelled,
+		// so the area has to leave every figure exactly where the line alone puts it.
+		expect(withArea).toEqual(
+			trackStats([
+				line([
+					[0, 0],
+					[0, 1],
+				]),
+			])
+		);
 	});
 
 	it('reports nothing at all for a file whose only geometry is an area', () => {
@@ -130,7 +243,6 @@ describe('trackStats — empty and degenerate input', () => {
 		// This exact shape — zero distance with no extra to show — is what makes
 		// the inline embed drop its statistics bar and profile rather than
 		// reporting a zero-length route under an area it just drew.
-		expect(s.points).toBe(0);
 		expect(s.distance).toBe(0);
 		expect([s.ascent, s.descent, s.minEle, s.maxEle, s.duration, s.movingTime, s.speed]).toEqual([
 			null,
@@ -151,7 +263,6 @@ describe('trackStats — empty and degenerate input', () => {
 				[0, 1],
 			]),
 		]);
-		expect(s.points).toBe(3); // 1 waypoint + 2 line points
 		// Distance is only what the LineString itself covers.
 		expect(s.distance).toBeCloseTo(haversine([0, 0], [0, 1]), 6);
 	});
@@ -553,7 +664,6 @@ describe('formatElevation', () => {
 /** Every figure absent — what `trackStats` answers for a file it could measure nothing in. */
 const NOTHING_MEASURED: TrackStats = {
 	distance: 0,
-	points: 0,
 	ascent: null,
 	descent: null,
 	minEle: null,
@@ -617,7 +727,6 @@ describe('hasStats', () => {
 describe('statsProperties', () => {
 	const watch = measured({
 		distance: 13618.4,
-		points: 2201,
 		ascent: 512.4,
 		descent: 498.6,
 		minEle: 12.2,

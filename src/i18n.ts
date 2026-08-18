@@ -825,7 +825,7 @@ export function getLocale(): Locale {
 }
 
 export function t(key: TranslationKey, vars?: Record<string, string | number>): string {
-	const template = LOCALES[getLocale()][key] ?? en[key];
+	const template = LOCALES[getLocale()][key];
 	if (!vars) return template;
 	return template.replace(/\{(\w+)\}/g, (whole, name: string) =>
 		Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : whole

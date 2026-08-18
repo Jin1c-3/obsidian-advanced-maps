@@ -19,6 +19,7 @@ import {
 import { toTileSpace, type CoordSystem } from './coords';
 import type { ExifThumbnail } from './exif';
 import { t } from './i18n';
+import { override } from './map-events';
 import { photoImageId, projectedFeatures, type TrackRecord } from './track-cache';
 import type { LngLatBounds, LocateControl, MapControl, MapLibreMap } from './types/obsidian-internals';
 
@@ -100,23 +101,26 @@ export function guardLocateControl(map: MapLibreMap, system: () => CoordSystem):
 	);
 	if (!control) return null;
 
-	// Preserve the native receiver while replacing the instance method.
-	const native = control.updatePosition.bind(control);
 	let lastFix: [number, number] | null = null;
-	control.updatePosition = (lat: number, lng: number) => {
-		lastFix = [lat, lng];
-		const [tileLng, tileLat] = toTileSpace(system(), lng, lat);
-		native(tileLat, tileLng);
-	};
+	// Through `override` so the method is *restored* rather than deleted: if the
+	// host declared it as a class field it is an own property with no prototype
+	// behind it, and deleting it would break the native locate button for good.
+	const restore = override(control, 'updatePosition', (orig) => {
+		// Preserve the native receiver while replacing the instance method.
+		const native = orig.bind(control);
+		return (lat: number, lng: number) => {
+			lastFix = [lat, lng];
+			const [tileLng, tileLat] = toTileSpace(system(), lng, lat);
+			native(tileLat, tileLng);
+		};
+	});
 
 	return {
 		// Reapply the last fix after a tile-system switch without waiting for GPS.
 		replaceDot: () => {
 			if (lastFix) control.updatePosition(lastFix[0], lastFix[1]);
 		},
-		restore: () => {
-			delete (control as Partial<LocateControl>).updatePosition;
-		},
+		restore,
 	};
 }
 
@@ -346,7 +350,7 @@ function ensureTrackIcons(map: MapLibreMap): void {
 }
 
 /** Add owned layers in visual order, all beneath the native marker layer when present. */
-export function addTrackLayers(map: MapLibreMap): void {
+function addTrackLayers(map: MapLibreMap): void {
 	ensureTrackIcons(map);
 	const before = map.getLayer(MARKER_LAYER) ? MARKER_LAYER : undefined;
 	// Areas first: one can cover the whole viewport, so everything else draws over it.
@@ -510,6 +514,18 @@ interface PhotoDecodeState {
 	wanted: Set<string>;
 	/** Oldest-to-newest LRU; `map.hasImage` remains authoritative after style replacement. */
 	order: Map<string, true>;
+	/**
+	 * The theme's halo colour, resolved on the first decode of an admission pass
+	 * and reused by the rest of it; empty means "read it again".
+	 *
+	 * `resolveCssColor` puts a probe in the document and reads its computed
+	 * style, which flushes a document-wide style recalculation — twice, counting
+	 * the removal. Doing that per decoded thumbnail meant hundreds of forced
+	 * recalcs for one pan across a photo-dense map. Cleared by every
+	 * `ensurePhotoImages` call, so a theme change still reaches the next batch,
+	 * and never read at all by a pass that decodes nothing.
+	 */
+	halo: string;
 }
 
 /**
@@ -523,7 +539,7 @@ const photoDecodeStates = new WeakMap<MapLibreMap, PhotoDecodeState>();
 function photoDecodeState(map: MapLibreMap): PhotoDecodeState {
 	let state = photoDecodeStates.get(map);
 	if (!state) {
-		state = { active: 0, pending: new Set(), queued: new Map(), wanted: new Set(), order: new Map() };
+		state = { active: 0, pending: new Set(), queued: new Map(), wanted: new Set(), order: new Map(), halo: '' };
 		photoDecodeStates.set(map, state);
 	}
 	return state;
@@ -673,8 +689,7 @@ function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w:
 }
 
 /** Orient first, then cover-fit into a rounded square with a theme halo. */
-function drawPhotoIcon(bitmap: ImageBitmap, orientation: number): ImageData {
-	const halo = resolveCssColor('var(--background-primary)');
+function drawPhotoIcon(bitmap: ImageBitmap, orientation: number, halo: string): ImageData {
 	const swapped = orientation >= 5 && orientation <= 8;
 	const srcW = bitmap.width;
 	const srcH = bitmap.height;
@@ -739,13 +754,18 @@ async function decodePhotoIcon(map: MapLibreMap, record: PhotoIconSource): Promi
 		// Terminal disposal deletes the map state before image removal. Check before
 		// canvas work as well as before registration, so a late decode is released
 		// immediately and cannot recreate a thumbnail after detach.
-		if (!photoDecodeStates.get(map)?.wanted.has(id)) {
+		const state = photoDecodeStates.get(map);
+		if (!state?.wanted.has(id)) {
 			bitmap.close();
 			return;
 		}
 		let imageData: ImageData;
 		try {
-			imageData = drawPhotoIcon(bitmap, orientation);
+			imageData = drawPhotoIcon(
+				bitmap,
+				orientation,
+				(state.halo ||= resolveCssColor('var(--background-primary)'))
+			);
 		} finally {
 			bitmap.close();
 		}
@@ -782,10 +802,35 @@ function pumpPhotoDecodes(map: MapLibreMap, state: PhotoDecodeState): void {
 	}
 }
 
+/**
+ * A map's thumbnails as the setting currently has them: admitted, or released.
+ *
+ * The decision rather than just the call, because hiding the layer is not
+ * enough — decoding is what costs the memory, and an album can hold tens of
+ * megabytes of it for a layer drawing nothing. Stated here, beside the two
+ * functions it chooses between, so a base map and an inline embed cannot answer
+ * it differently. A null map is a map that has not been built yet, or has
+ * already gone: nothing to hold and nothing to release.
+ */
+export function applyPhotoIcons(
+	map: MapLibreMap | null | undefined,
+	records: readonly PhotoIconSource[],
+	enabled: boolean
+): void {
+	if (!map) return;
+	if (!enabled) {
+		disposePhotoImages(map);
+		return;
+	}
+	ensurePhotoImages(map, records);
+}
+
 /** Admit all selected icons, bound concurrent decode and off-screen LRU, and return synchronously. */
 export function ensurePhotoImages(map: MapLibreMap, records: readonly PhotoIconSource[]): void {
 	if (!mapAlive(map)) return;
 	const state = photoDecodeState(map);
+	// Stale until the first decode of this pass asks for it; see `halo`.
+	state.halo = '';
 	const order = state.order;
 	const selected = selectPhotoIconIds(map, records);
 

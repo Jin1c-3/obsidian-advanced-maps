@@ -33,6 +33,25 @@ describe('placesFrom', () => {
 		expect(places[0]).toMatchObject({ lat: 31.2304, lng: 121.4737 });
 	});
 
+	it('reads every member of a MultiPoint placemark, not just a bare Point', () => {
+		// A KML MultiGeometry of points is several places sharing one name — they
+		// used to import as none at all.
+		const kml = `<?xml version="1.0"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+  <Placemark><name>Stops</name><MultiGeometry>
+    <Point><coordinates>121.1,31.1</coordinates></Point>
+    <Point><coordinates>121.2,31.2</coordinates></Point>
+  </MultiGeometry></Placemark>
+</Document></kml>`;
+		const places = placesFrom(parseKml(kml).features, 'x');
+
+		expect(places.map((p) => [p.lng, p.lat])).toEqual([
+			[121.1, 31.1],
+			[121.2, 31.2],
+		]);
+		expect(places.every((p) => p.name === 'Stops')).toBe(true);
+	});
+
 	it('names a nameless place after the file and its position among the points', () => {
 		const gpx = `<?xml version="1.0"?>
 <gpx version="1.1">

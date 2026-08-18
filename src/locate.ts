@@ -63,7 +63,7 @@ export function shouldGiveUp(error: Pick<GeolocationPositionError, 'code'>, ever
  * stamping three notes in a row from costing three cold GPS acquisitions. The
  * timeout is generous because a cold fix on a phone genuinely takes that long.
  */
-export const GEOLOCATION_OPTIONS: PositionOptions = {
+const GEOLOCATION_OPTIONS: PositionOptions = {
 	enableHighAccuracy: true,
 	timeout: 15000,
 	maximumAge: 30000,

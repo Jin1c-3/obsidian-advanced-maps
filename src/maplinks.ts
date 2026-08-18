@@ -1,6 +1,6 @@
 /* Pure WGS-84-to-provider URL builders with provider-specific datum and axis order. */
 
-import { COORD_DIGITS, gcj2bd, outOfChina, wgs2gcj } from './coords';
+import { COORD_DIGITS, toTileSpace, wgs2gcj, type CoordSystem } from './coords';
 
 export const EXTERNAL_MAPS = ['amap', 'baidu', 'tencent', 'google', 'apple', 'osm'] as const;
 export type ExternalMap = (typeof EXTERNAL_MAPS)[number];
@@ -24,7 +24,8 @@ export interface CustomMap {
 
 /** No `auto` here: there is no tile URL to read the answer off. */
 export const CUSTOM_DATUMS = ['wgs84', 'gcj02', 'bd09'] as const;
-export type CustomDatum = (typeof CUSTOM_DATUMS)[number];
+/** Spelled as the shared system rather than a parallel union, so the two cannot drift. */
+export type CustomDatum = CoordSystem;
 
 /** The same rounding every other coordinate this plugin writes gets. */
 const fmt = (n: number): string => n.toFixed(COORD_DIGITS);
@@ -86,19 +87,14 @@ export function enabledBuiltins(list: BuiltinMap[]): ExternalMap[] {
  * GCJ-02 inside China, WGS-84 everywhere else — the write-side twin of
  * `chinaAware()` in geolink.ts. Google's and Apple's URI endpoints take
  * whatever datum the map itself draws in and offer no parameter to state one
- * over the other, so the coordinate has to answer for itself via `outOfChina`,
- * exactly as it does when one of their links is read instead of written.
+ * over the other, so the coordinate has to answer for itself, exactly as it
+ * does when one of their links is read instead of written.
+ *
+ * Named rather than inlined because the name is the whole point: `wgs2gcj` is
+ * already the identity outside China — that check lives inside it — and
+ * without this the two endpoints look like they are being wrongly shifted.
  */
-function chinaAwareOut(lat: number, lng: number): [number, number] {
-	if (outOfChina(lng, lat)) return [lng, lat];
-	return wgs2gcj(lng, lat);
-}
-
-/** WGS-84 → BD-09. There is no direct transform; BD-09 is defined on top of GCJ-02. */
-function wgs2bd(lng: number, lat: number): [number, number] {
-	const gcj = wgs2gcj(lng, lat);
-	return gcj2bd(gcj[0], gcj[1]);
-}
+const chinaAwareOut = wgs2gcj;
 
 /**
  * A WGS-84 coordinate as a URL opening that spot in that provider's web map.
@@ -119,29 +115,29 @@ export function externalMapUrl(app: ExternalMap, lat: number, lng: number): stri
 		case 'amap': {
 			// position is longitude-first, matching what readAmap() expects to find
 			// on the way back in.
-			const [gLng, gLat] = wgs2gcj(lng, lat);
+			const [gLng, gLat] = toTileSpace('gcj02', lng, lat);
 			return `https://uri.amap.com/marker?position=${fmt(gLng)},${fmt(gLat)}&src=obsidian&coordinate=gaode`;
 		}
 
 		case 'baidu': {
 			// location is latitude-first, matching readBaidu().
-			const [bLng, bLat] = wgs2bd(lng, lat);
+			const [bLng, bLat] = toTileSpace('bd09', lng, lat);
 			return `https://api.map.baidu.com/marker?location=${fmt(bLat)},${fmt(bLng)}&output=html&coord_type=bd09ll`;
 		}
 
 		case 'tencent': {
 			// coord: is latitude-first, matching readTencent().
-			const [tLng, tLat] = wgs2gcj(lng, lat);
+			const [tLng, tLat] = toTileSpace('gcj02', lng, lat);
 			return `https://apis.map.qq.com/uri/v1/marker?marker=coord:${fmt(tLat)},${fmt(tLng)}`;
 		}
 
 		case 'google': {
-			const [oLng, oLat] = chinaAwareOut(lat, lng);
+			const [oLng, oLat] = chinaAwareOut(lng, lat);
 			return `https://www.google.com/maps/search/?api=1&query=${fmt(oLat)},${fmt(oLng)}`;
 		}
 
 		case 'apple': {
-			const [oLng, oLat] = chinaAwareOut(lat, lng);
+			const [oLng, oLat] = chinaAwareOut(lng, lat);
 			return `https://maps.apple.com/?ll=${fmt(oLat)},${fmt(oLng)}`;
 		}
 
@@ -205,19 +201,8 @@ export function customUrlProblem(url: string): UrlProblem | null {
 export function customMapUrl(entry: CustomMap, lat: number, lng: number): string | null {
 	const url = entry.url.trim();
 	if (customUrlProblem(url) !== null) return null;
-	const [outLng, outLat] = shiftTo(entry.datum, lng, lat);
+	const [outLng, outLat] = toTileSpace(entry.datum, lng, lat);
 	return url.split('{lat}').join(fmt(outLat)).split('{lng}').join(fmt(outLng));
-}
-
-function shiftTo(datum: CustomDatum, lng: number, lat: number): [number, number] {
-	switch (datum) {
-		case 'gcj02':
-			return wgs2gcj(lng, lat);
-		case 'bd09':
-			return wgs2bd(lng, lat);
-		default:
-			return [lng, lat];
-	}
 }
 
 /** What to call an entry in the menu: its name, or the host it points at. */

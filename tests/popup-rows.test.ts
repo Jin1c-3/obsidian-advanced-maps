@@ -127,7 +127,6 @@ describe('statsSummary', () => {
 			duration: null,
 			movingTime: null,
 			speed: null,
-			points: 0,
 			...over,
 		};
 	}

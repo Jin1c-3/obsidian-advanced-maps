@@ -12,6 +12,40 @@ export function walkCoords(coords: unknown, fn: (lng: number, lat: number) => vo
 	for (const child of coords) walkCoords(child, fn);
 }
 
+/**
+ * Every path a geometry contributes, in file order.
+ *
+ * A track is measured along its lines, and a line is not always spelled
+ * `LineString`: a merged export arrives as one `MultiLineString`, and a
+ * hand-written GeoJSON may wrap either in a `GeometryCollection`. Stated once
+ * here because four modules need the same walk — bounds, drawing, statistics
+ * and the elevation profile — and each one that re-derived it got a different
+ * subset of the answer.
+ *
+ * Polygons are deliberately absent. A ring is a boundary, not a route, and
+ * summing its perimeter as distance travelled would be a guess.
+ */
+export function linesOf(geometry: Geometry | null | undefined): Position[][] {
+	if (!geometry) return [];
+	if (geometry.type === 'LineString') return [geometry.coordinates];
+	if (geometry.type === 'MultiLineString') return geometry.coordinates;
+	if (geometry.type === 'GeometryCollection') return (geometry.geometries ?? []).flatMap(linesOf);
+	return [];
+}
+
+/**
+ * Every standalone position a geometry contributes — a waypoint, a photo, a
+ * placemark. Never a vertex of a path: those belong to `linesOf`, and counting
+ * them here would measure the same ground twice.
+ */
+export function pointsOf(geometry: Geometry | null | undefined): Position[] {
+	if (!geometry) return [];
+	if (geometry.type === 'Point') return [geometry.coordinates];
+	if (geometry.type === 'MultiPoint') return geometry.coordinates;
+	if (geometry.type === 'GeometryCollection') return (geometry.geometries ?? []).flatMap(pointsOf);
+	return [];
+}
+
 /** An empty bounds of the map's own kind — MapLibre exports no constructor to import. */
 export function emptyBounds(map: MapLibreMap): LngLatBounds {
 	const Ctor = map.getBounds().constructor as new () => LngLatBounds;

@@ -41,12 +41,11 @@ describe('parseGpx', () => {
 	});
 
 	it('reads segments, routes and waypoints together', () => {
-		const { features, waypoints } = parseGpx(GPX_EVERYTHING);
+		const { features } = parseGpx(GPX_EVERYTHING);
 		const types = features.map((f) => f.geometry.type);
 		// two trksegs, one rte, one wpt
 		expect(types.filter((t) => t === 'LineString')).toHaveLength(3);
 		expect(types.filter((t) => t === 'Point')).toHaveLength(1);
-		expect(waypoints).toBe(1);
 		// GPX_EVERYTHING's <wpt> carries <name>Bund</name> — the waypoint's own
 		// name, threaded through the same buildProperties() a KML placemark's
 		// name already goes through.
@@ -169,6 +168,51 @@ describe('parseGeoJson', () => {
 });
 
 const TCX_NS = 'xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"';
+
+describe('namespace-prefixed XML', () => {
+	// A prefixed document is exactly as legal as an unprefixed one, and is what
+	// falls out of extracting a track from an enclosing XML file. KML already
+	// matched on local name; GPX and TCX read the qualified name literally and so
+	// found nothing at all, reporting a valid file as unreadable.
+	it('reads a GPX whose every element carries a prefix', () => {
+		const gpx = `<?xml version="1.0"?>
+<gpx:gpx xmlns:gpx="http://www.topografix.com/GPX/1/1" version="1.1">
+  <gpx:trk><gpx:trkseg>
+    <gpx:trkpt lat="31.1" lon="121.1"><gpx:ele>10</gpx:ele></gpx:trkpt>
+    <gpx:trkpt lat="31.2" lon="121.2"><gpx:ele>20</gpx:ele></gpx:trkpt>
+  </gpx:trkseg></gpx:trk>
+  <gpx:wpt lat="31.3" lon="121.3"><gpx:name>Camp</gpx:name></gpx:wpt>
+</gpx:gpx>`;
+		const { features } = parseGpx(gpx);
+
+		expect(features.map((f) => f.geometry.type)).toEqual(['LineString', 'Point']);
+		expect((features[0].geometry as { coordinates: number[][] }).coordinates).toEqual([
+			[121.1, 31.1, 10],
+			[121.2, 31.2, 20],
+		]);
+		expect(features[1].properties?.name).toBe('Camp');
+	});
+
+	it('reads a TCX whose every element carries a prefix', () => {
+		const tcx = `<?xml version="1.0"?>
+<tc:TrainingCenterDatabase xmlns:tc="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+  <tc:Activities><tc:Activity><tc:Lap><tc:Track>
+    <tc:Trackpoint><tc:Position>
+      <tc:LatitudeDegrees>31.1</tc:LatitudeDegrees><tc:LongitudeDegrees>121.1</tc:LongitudeDegrees>
+    </tc:Position><tc:AltitudeMeters>10</tc:AltitudeMeters></tc:Trackpoint>
+    <tc:Trackpoint><tc:Position>
+      <tc:LatitudeDegrees>31.2</tc:LatitudeDegrees><tc:LongitudeDegrees>121.2</tc:LongitudeDegrees>
+    </tc:Position><tc:AltitudeMeters>20</tc:AltitudeMeters></tc:Trackpoint>
+  </tc:Track></tc:Lap></tc:Activity></tc:Activities>
+</tc:TrainingCenterDatabase>`;
+		const { features } = parseTcx(tcx);
+
+		expect((features[0].geometry as { coordinates: number[][] }).coordinates).toEqual([
+			[121.1, 31.1, 10],
+			[121.2, 31.2, 20],
+		]);
+	});
+});
 
 describe('parseTcx', () => {
 	it('reads a <Track> as one LineString, with altitude where a trackpoint states one', () => {

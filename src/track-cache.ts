@@ -2,7 +2,7 @@ import type { App, TFile } from 'obsidian';
 import { parseTrack, type ParsedTrack } from './parse';
 import { parseExif, photoTrack, type ExifThumbnail, type PhotoDatum, type PhotoExif } from './exif';
 import { projectGeometry, type CoordSystem } from './coords';
-import { trackStats, type TrackStats } from './stats';
+import { elevationProfile, trackStats, type ProfileSample, type TrackStats } from './stats';
 import { PHOTO_EXTS, PHOTO_HEAD_BYTES, PHOTO_ICON_PREFIX } from './constants';
 import { indexEntry, storedExif, type PhotoIndex } from './photo-index';
 
@@ -34,6 +34,8 @@ export interface TrackRecord extends ParsedTrack {
 	projected?: Map<CoordSystem, ParsedTrack['features']>;
 	/** Measurements memoized on first ask; see `recordStats`. */
 	stats?: TrackStats;
+	/** Elevation series memoized on first ask; see `recordProfile`. */
+	profile?: ProfileSample[];
 	/** EXIF thumbnail data, present only when a photo supplied a usable coordinate. */
 	photo?: PhotoThumbnailState;
 	/** Coordinate setting used for this photo; part of cache freshness. */
@@ -374,13 +376,23 @@ export async function readHead(app: App, file: TFile, bytes: number): Promise<Ui
  * takes this with it.
  */
 export function recordStats(rec: TrackRecord | undefined): TrackStats | null {
-	if (!rec || rec.error || !rec.features) return null;
+	if (!rec || rec.error) return null;
 	return (rec.stats ??= trackStats(rec.features));
+}
+
+/**
+ * The elevation series for a track, memoized beside `stats` and for the same
+ * reasons: raw WGS-84 only, walked at most once per revision, and carried away
+ * with the record when the file changes.
+ */
+export function recordProfile(rec: TrackRecord | undefined): ProfileSample[] {
+	if (!rec || rec.error) return [];
+	return (rec.profile ??= elevationProfile(rec.features));
 }
 
 /** Project once per tile system, preserving only properties used by map layers. */
 export function projectedFeatures(rec: TrackRecord | undefined, system: CoordSystem): ParsedTrack['features'] {
-	if (!rec || !rec.features) return [];
+	if (!rec) return [];
 	if (system === 'wgs84') return rec.features;
 	const memo = (rec.projected ??= new Map<CoordSystem, ParsedTrack['features']>());
 	const hit = memo.get(system);

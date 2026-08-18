@@ -20,6 +20,30 @@ const near = (actual: number, expected: number, tolerance = 1e-6): void => {
 	expect(Math.abs(actual - expected)).toBeLessThan(tolerance);
 };
 
+describe('parseGeoLink: a blank parameter is not a present one', () => {
+	// `URLSearchParams.get` answers '' for `?location=`, not null, so a `??`
+	// chain used to stop at the blank one and report no coordinate at all for a
+	// link that plainly carries one further along.
+	it('skips an empty 百度 location and reads the latlng behind it', () => {
+		const p = parseGeoLink(`https://api.map.baidu.com/marker?location=&latlng=${BD[1]},${BD[0]}`);
+		expect(p?.provider).toBe('baidu');
+		near(p!.lat, BD[1]);
+		near(p!.lng, BD[0]);
+	});
+
+	it('skips an empty 高德 position and reads `to` behind it', () => {
+		const p = parseGeoLink(`https://uri.amap.com/marker?position=&to=${GCJ[0]},${GCJ[1]}`);
+		expect(p?.provider).toBe('amap');
+		near(p!.lng, GCJ[0]);
+	});
+
+	it('skips an empty Apple ll and reads the coordinate behind it', () => {
+		const p = parseGeoLink(`https://maps.apple.com/?ll=&coordinate=${WGS[0]},${WGS[1]}`);
+		expect(p?.provider).toBe('apple');
+		near(p!.lat, WGS[0]);
+	});
+});
+
 describe('parseGeoLink: 高德', () => {
 	it('reads uri.amap.com, which writes longitude first', () => {
 		const p = parseGeoLink(`https://uri.amap.com/marker?position=${GCJ[0]},${GCJ[1]}&name=断桥`);
