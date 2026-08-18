@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { errorKey, formatFix, isBlank, Locator, shouldGiveUp, type Fix } from '../src/locate';
 import { excludedFragments, isExcluded } from '../src/settings';
 
@@ -97,7 +97,7 @@ describe('shouldGiveUp', () => {
 
 describe('Locator', () => {
 	// Every failure path logs, which is wanted in Obsidian and only noise here.
-	let warn: ReturnType<typeof vi.spyOn>;
+	let warn: MockInstance<typeof console.warn>;
 	beforeAll(() => {
 		warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 	});

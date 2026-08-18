@@ -55,7 +55,7 @@
   "devDependencies": {
     "@eslint/js": "^9.18.0",
     "@types/geojson": "^7946.0.16",
-    "@types/node": "^22.10.5",
+    "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^4.1.10",
     "esbuild": "^0.28.2",
     "eslint": "^9.18.0",
@@ -69,7 +69,6 @@
     "vitest": "^4.1.10"
   },
   "allowScripts": {
-    "esbuild@0.25.12": true,
-    "esbuild@0.28.1": true
+    "esbuild@0.28.2": true
   }
 }
