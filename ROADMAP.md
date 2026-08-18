@@ -9,27 +9,6 @@ first-party Maps view rather than replacing it, and owns no map library of its
 own. That makes some features nearly free — anything reachable from a wrapper
 already installed on the view — and others disproportionately expensive.
 
-## Next
-
-### "Convert to coordinates" in the editor's menu
-
-Promoted once the offline basemap that stood here shipped, and picked for the
-same reason that one was: there is no unknown left in it. `geolink.ts` already
-reads a coordinate out of pasted text, behind a modal opened from the command
-palette. A link sitting in a note could go through the same reader from the
-editor's own right-click menu, with no box to open — `editor-menu` is a
-documented workspace event, the selection is in hand, and the write is the
-`processFrontMatter` seam every other coordinate command already uses.
-
-Cheap, and it is where somebody who has just pasted a share link actually is.
-
-The neighbouring entry, _Dropping a note onto the map to place it_, stays under
-_Worth doing_ deliberately: its one open question — whether a real drag from the
-file explorer reaches the map container, or is taken by the workspace's own
-drag-over pipeline first — cannot be answered by a synthetic `DragEvent`. It
-needs a human hand on a real drag, and until somebody does that the work cannot
-be scoped.
-
 ## Worth doing
 
 ### Dropping a note onto the map to place it
@@ -140,6 +119,21 @@ getting reopened.
   the native pin already is: two markers land on one coordinate, and the answer
   is either an offset that lies about the position or hiding a marker this
   plugin does not own.
+- **Lines between the pins, drawn in a property's order.** Asked for as a
+  chronological trip line. Cheap, and measured rather than assumed:
+  `markerManager.markers` is already the rows the base matched _and_ placed,
+  `valueText()` in `places.ts` already reads a Bases value off one of them — a
+  date comes back as `2025-04-05T16:27:00`, which sorts as it stands —
+  `type: 'property'` is a native view-option type, and both the line layer and
+  its direction arrows are in `layers.ts`. Cheap is not the question. A Bases
+  formula returning `RGB(...)` from a note's date already answers _when_ through
+  the native marker colour — forum.obsidian.md/t/107998 — and it scales where a
+  line does not: a gradient over eight hundred daily notes reads at a glance,
+  and a line through them is spaghetti. The line wins only across the dozen
+  points of one trip, which is not enough to own a layer for. _Edges between
+  linked notes_ stays under _Worth doing_ for the reason this one does not: no
+  formula can colour "these two notes link to each other", so there a line is
+  the only way to show it at all.
 - **Presets, and URLs that reopen a saved map.** A saved query, position and
   basemap is what a **view in a base** already is, and it is one the reader can
   name, share and edit without this plugin. Storing a second copy of that in
