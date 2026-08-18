@@ -31,6 +31,36 @@ links to. 63 results._
 These compose. One map can show place notes, a multi-day route, and every
 geotagged photo taken along it.
 
+## Advanced Maps and Map View
+
+[Map View](https://github.com/esm7/obsidian-map-view) is the other map plugin for
+Obsidian, and it is a whole GIS: its own map view, its own query language,
+display rules, an edit mode, routing, and a Bases view of its own. Advanced Maps
+is a different shape. It has no map view of its own at all — it adds to the one
+the Obsidian developers ship with Bases, and it bundles no renderer.
+
+Map View's own [comparison with the native Maps view](https://esm7.github.io/obsidian-map-view/vs-obsidian-maps/)
+is a fair one, and the column it marks unsupported is the clearest description of
+what this plugin is for:
+
+| Native Maps on its own | With Advanced Maps                                                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| No paths               | GPX, GeoJSON, KML and TCX, linked from a note or mapped as files, with areas, direction arrows, elevation profiles and statistics |
+| No geocoding           | Place search and reverse geocoding, through OpenStreetMap or Amap                                                                 |
+| Display only           | Coordinates entered from the map, a pasted map link, a photo's EXIF, a search result, or the device's own position                |
+| No offline usage       | A folder of tiles already on disk as the background of every map, with no request leaving the machine                             |
+
+Markers stay native throughout, which is the whole point of extending rather than
+replacing: Bases formulas still decide their icon and colour, filters still work,
+and every built-in view option is still there.
+
+**Map View is the better choice** if you want several locations in one note,
+inline geolocations in the body text, marker display rules, built-in routing, or
+a map that does not need Bases at all. Advanced Maps does none of those, and
+[ROADMAP.md](ROADMAP.md) records which of them are deliberate non-goals and why.
+Both read a `lat,lng` coordinate from front matter, so one property can feed
+either.
+
 ## Requirements and install
 
 Advanced Maps requires Obsidian 1.13.1 or newer with **Bases** enabled and the
