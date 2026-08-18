@@ -317,6 +317,51 @@
 	margin: 0;
 }
 
+/* The pane's first row, above every page entry: the same cleared row shape as an
+ * introduction, with each line led by a badge. The badge is the link and the
+ * text beside it the reason, so the two lines read as one block of chrome
+ * rather than as two settings. */
+.advanced-maps-about {
+	display: block;
+	padding-top: 0;
+	border-top: none;
+}
+
+.advanced-maps-about-line {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-1);
+	margin: 0;
+}
+
+.advanced-maps-about-line + .advanced-maps-about-line {
+	margin-top: var(--size-4-1);
+}
+
+/* Its own emoji plus two or three words: kept on one line, while the sentence
+ * beside it takes what is left and wraps under the badge on a narrow pane. */
+.advanced-maps-about-badge {
+	flex: 0 0 auto;
+	padding: var(--size-2-1) var(--size-2-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+	color: var(--text-accent);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+	text-decoration: none;
+}
+
+.advanced-maps-about-badge:hover {
+	background: var(--background-modifier-hover);
+	text-decoration: none;
+}
+
+.advanced-maps-about-line .setting-item-description {
+	flex: 1 1 12em;
+}
+
 /* One custom map app: a name, a URL and a datum sharing one row, because the
  * list counts rows — one row is one entry, which is what makes its ✕ and its
  * drag handle mean what they say. Three boxes plus two affordances is more than

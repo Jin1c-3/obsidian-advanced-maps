@@ -287,6 +287,14 @@ const en = {
 	'settings.state.unset': 'Not set',
 	'settings.external.enabled': '{count} switched on',
 
+	/* ---- settings: the pane's first row ----
+	 * Where the guide is, and the one thing the plugin asks for back. Each badge
+	 * is a link and carries its own emoji, so a locale can replace both. */
+	'settings.about.guide.link': '📖 User guide',
+	'settings.about.guide': 'Every feature, with pictures and worked examples.',
+	'settings.about.star.link': '⭐ Star on GitHub',
+	'settings.about.star': 'Advanced Maps is free; a star is all it asks.',
+
 	/* ---- settings: coordinate system ---- */
 	'settings.coord.heading': 'Coordinate system',
 	'settings.coord.intro':
@@ -667,6 +675,11 @@ const zh: Record<TranslationKey, string> = {
 	'settings.state.off': '已关闭',
 	'settings.state.unset': '未设置',
 	'settings.external.enabled': '已启用 {count} 个',
+
+	'settings.about.guide.link': '📖 用户指南',
+	'settings.about.guide': '每项功能都配了截图和实例。',
+	'settings.about.star.link': '⭐ 去 GitHub 点个 star',
+	'settings.about.star': 'Advanced Maps 免费，只求这一颗星。',
 
 	'settings.coord.heading': '坐标系',
 	'settings.coord.intro':

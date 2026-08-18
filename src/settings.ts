@@ -9,7 +9,7 @@ import {
 	type SettingDefinitionItem,
 } from 'obsidian';
 import { TILE_ZOOM_MAX, tilesProblem } from './basemap';
-import { SPREAD, TRACK_KNOBS, type TrackKnob } from './constants';
+import { GUIDE_URL, REPO_URL, SPREAD, TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
 import type { PhotoDatum } from './exif';
 import { GEOCODE_PROVIDERS, KEY_STORES, type GeocodeProvider, type KeyStore } from './geocode';
@@ -375,6 +375,45 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		return options;
 	}
 
+	/**
+	 * The pane's first row: where the guide is, and the one thing this plugin
+	 * asks for in return.
+	 *
+	 * Not searchable, because it is not a setting — a row that changes nothing
+	 * has no business among the results for one that does. Both addresses are
+	 * links the reader may follow; neither is opened or fetched from here.
+	 */
+	private aboutItem(): SettingDefinition<ControlKey> {
+		return {
+			name: '',
+			searchable: false,
+			render: (setting: Setting) => {
+				setting.settingEl.empty();
+				setting.settingEl.addClass('advanced-maps-about');
+				this.badgeLine(
+					setting.settingEl,
+					'settings.about.guide.link',
+					'settings.about.guide',
+					GUIDE_URL[getLocale()]
+				);
+				this.badgeLine(setting.settingEl, 'settings.about.star.link', 'settings.about.star', REPO_URL);
+			},
+		};
+	}
+
+	/**
+	 * A badge and the line it heads: the badge carries the emoji and is the link,
+	 * the sentence beside it says what is behind it.
+	 *
+	 * The emoji lives in the label rather than in the markup, so a locale is free
+	 * to move or replace it along with the words.
+	 */
+	private badgeLine(parent: HTMLElement, label: TranslationKey, desc: TranslationKey, href: string): void {
+		const line = parent.createEl('p', { cls: 'advanced-maps-about-line' });
+		line.createEl('a', { cls: 'advanced-maps-about-badge', href, text: t(label) });
+		line.createSpan({ cls: 'setting-item-description', text: t(desc) });
+	}
+
 	/** Render non-searchable group prose; a control-less declarative row is otherwise dropped. */
 	private introItem(intro: string): SettingDefinition<ControlKey> {
 		return {
@@ -656,6 +695,8 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		for (const datum of PHOTO_DATUMS) photoDatums[datum] = t(`setting.photoDatum.${datum}`);
 
 		return [
+			this.aboutItem(),
+
 			this.page(
 				'coord',
 				[
