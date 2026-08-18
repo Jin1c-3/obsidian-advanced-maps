@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { GUIDE_URL } from '../src/constants';
 import { detectLocale, getLocale, setLocale, t, translations } from '../src/i18n';
 
 /* Obsidian runs in Electron, where localStorage is always there. The test DOM
@@ -78,5 +79,30 @@ describe('detectLocale', () => {
 		expect(getLocale()).toBe('zh');
 		window.localStorage.setItem('language', 'en');
 		expect(getLocale()).toBe('zh');
+	});
+});
+
+describe("the settings pane's first row", () => {
+	// The badge is the whole affordance: its emoji and its words are the link, so
+	// a locale that drops the emoji quietly changes what the row looks like.
+	// Nothing else would notice — the row is not searchable and has no control to
+	// read back.
+	it('leads each badge with an emoji', () => {
+		for (const [locale, table] of Object.entries(translations)) {
+			for (const key of ['settings.about.guide.link', 'settings.about.star.link'] as const) {
+				expect(table[key], `${locale}.${key}`).toMatch(/^\p{Extended_Pictographic}\s/u);
+			}
+		}
+	});
+
+	it('sends each locale to its own guide', () => {
+		const locales = Object.keys(translations) as Array<keyof typeof translations>;
+		expect(Object.keys(GUIDE_URL).sort()).toEqual(locales.sort());
+		// Trailing slash included: the published site is built with
+		// `trailingSlash: 'always'`, and the address without one is a redirect.
+		for (const [locale, url] of Object.entries(GUIDE_URL)) {
+			expect(url, locale).toMatch(/^https:\/\/jin1c-3\.github\.io\/obsidian-advanced-maps\/[a-z-]+\/$/);
+		}
+		expect(new Set(Object.values(GUIDE_URL)).size).toBe(locales.length);
 	});
 });

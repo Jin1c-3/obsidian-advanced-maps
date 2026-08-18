@@ -1,3 +1,19 @@
+import type { Locale } from './i18n';
+
+/**
+ * Where the guide is published, per locale, and where the plugin itself lives.
+ *
+ * The site's locale directories are its own and not this plugin's: `zh` here is
+ * `zh-cn` there. Both addresses are only ever handed to a link the reader may
+ * choose to follow; nothing is fetched from either.
+ */
+export const GUIDE_URL: Record<Locale, string> = {
+	en: 'https://jin1c-3.github.io/obsidian-advanced-maps/en/',
+	zh: 'https://jin1c-3.github.io/obsidian-advanced-maps/zh-cn/',
+};
+
+export const REPO_URL = 'https://github.com/Jin1c-3/obsidian-advanced-maps';
+
 /** File extensions this plugin knows how to draw. */
 export const TRACK_EXTS = new Set(['gpx', 'geojson', 'kml', 'tcx']);
 
