@@ -3,7 +3,7 @@
 [![CI](https://github.com/Jin1c-3/obsidian-advanced-maps/actions/workflows/ci.yml/badge.svg)](https://github.com/Jin1c-3/obsidian-advanced-maps/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**English** · [简体中文](README.zh-CN.md) · [User guide](docs/guide/README.md)
+**English** · [简体中文](README.zh-CN.md) · [User guide](https://jin1c-3.github.io/obsidian-advanced-maps/en/) ([in this repository](docs/guide/en/README.md))
 
 Turn Obsidian's native **Maps** view into a photo atlas, a route viewer, and a
 map of the notes connected to the one you are reading.
@@ -14,10 +14,11 @@ extends the first-party Maps view instead of replacing it: MapLibre,
 backgrounds, markers, popups, and every built-in map option remain native. No
 Leaflet, no bundled renderer, no runtime dependencies.
 
-![One Base holding a photo folder and a note folder: 16,273 results — red pins for the notes, photo thumbnails at their EXIF locations, a walked GPX track between them, and a dot for every photo the zoom leaves no room for](docs/photo-album.png)
+![One Base holding a photo folder and a note folder: 63 results — coloured pins for the notes, photo thumbnails at their EXIF locations, a walked GPX track between them, and a dot for every photo the zoom leaves no room for](docs/images/photo-album.png)
 
-_One Base, one map: red pins are place notes, thumbnails are photos placed by
-their own EXIF, and the line is a `.gpx` a note links to. 16,273 results._
+_One Base, one map: the pins are place notes coloured by a Base formula,
+thumbnails are photos placed by their own EXIF, and the line is a `.gpx` a note
+links to. 63 results._
 
 ## Three workflows
 
@@ -36,10 +37,15 @@ Advanced Maps requires Obsidian 1.13.1 or newer with **Bases** enabled and the
 first-party **Maps** plugin installed. Without that native view, it reports or
 skips the unavailable enhancement and leaves Obsidian usable.
 
-- **Release:** copy `main.js`, `manifest.json`, and `styles.css` from
-  [Releases](https://github.com/Jin1c-3/obsidian-advanced-maps/releases) into
-  `<vault>/.obsidian/plugins/advanced-maps/`, then enable the plugin.
-- **BRAT:** add `Jin1c-3/obsidian-advanced-maps`.
+Install it from inside Obsidian: open **Settings → Community plugins**, turn off
+**Restricted mode** if it is on, select **Browse**, search for `Advanced Maps`,
+then **Install** and **Enable**. The store listing is
+[community.obsidian.md/plugins/advanced-maps](https://community.obsidian.md/plugins/advanced-maps).
+
+For a build the store does not have yet, copy `main.js`, `manifest.json`, and
+`styles.css` from [Releases](https://github.com/Jin1c-3/obsidian-advanced-maps/releases) into
+`<vault>/.obsidian/plugins/advanced-maps/`, or add
+`Jin1c-3/obsidian-advanced-maps` in BRAT.
 
 ## Quick start
 
@@ -62,25 +68,25 @@ views:
 
 The first branch maps notes whose `coords` property holds a coordinate. The
 second maps supported photos directly from their GPS metadata. See
-[Getting started](docs/guide/getting-started.md) for the Base boundary, view
+[Getting started](docs/guide/en/getting-started.md) for the Base boundary, view
 keys, supported photos, and the next recipes.
 
 ## User guide
 
-| Topic                                                              | Covers                                                                            |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [Getting started](docs/guide/getting-started.md)                   | Installation, Base boundaries, first map, view keys                               |
-| [Photo maps](docs/guide/photo-maps.md)                             | Photo folders, OneDrive, linked photos, thumbnails, index                         |
-| [Tracks and areas](docs/guide/tracks-and-areas.md)                 | Route links, inline maps, GPX/GeoJSON/KML/TCX, polygons, statistics as properties |
-| [Around and navigation](docs/guide/around-and-navigation.md)       | Around views, reusable Base, Open in map, follow, shared pins                     |
-| [Places in and out](docs/guide/places-in-and-out.md)               | Importing a file of placemarks as notes, exporting a Base as GPX/KML/CSV          |
-| [Offline basemap](docs/guide/offline-basemap.md)                   | Tiles already on disk as the background, zoom bounds, per-view opt-out            |
-| [Coordinates and services](docs/guide/coordinates-and-services.md) | WGS-84/GCJ-02/BD-09, external maps, search, geocoding, location                   |
-| [Reference and privacy](docs/guide/reference-and-privacy.md)       | Supported inputs, option ownership, operational limits, network disclosure        |
+| Topic                                                                 | Covers                                                                            |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [Getting started](docs/guide/en/getting-started.md)                   | Installation, Base boundaries, first map, view keys                               |
+| [Photo maps](docs/guide/en/photo-maps.md)                             | Photo folders, OneDrive, linked photos, thumbnails, index                         |
+| [Tracks and areas](docs/guide/en/tracks-and-areas.md)                 | Route links, inline maps, GPX/GeoJSON/KML/TCX, polygons, statistics as properties |
+| [Around and navigation](docs/guide/en/around-and-navigation.md)       | Around views, reusable Base, Open in map, follow, shared pins                     |
+| [Places in and out](docs/guide/en/places-in-and-out.md)               | Importing a file of placemarks as notes, exporting a Base as GPX/KML/CSV          |
+| [Offline basemap](docs/guide/en/offline-basemap.md)                   | Tiles already on disk as the background, zoom bounds, per-view opt-out            |
+| [Coordinates and services](docs/guide/en/coordinates-and-services.md) | WGS-84/GCJ-02/BD-09, external maps, search, geocoding, location                   |
+| [Reference and privacy](docs/guide/en/reference-and-privacy.md)       | Supported inputs, option ownership, operational limits, network disclosure        |
 
 Notes, tracks, and photo contents do not leave on their own. The plugin has no
 telemetry, update ping, or server; the
-[privacy reference](docs/guide/reference-and-privacy.md#what-leaves-your-vault)
+[privacy reference](docs/guide/en/reference-and-privacy.md#what-leaves-your-vault)
 lists the requests made when you use maps or external services.
 
 ## Project documentation

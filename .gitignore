@@ -2,6 +2,12 @@ node_modules/
 coverage/
 dist/
 
+# The documentation site: build output, Astro cache, and the guide copy that
+# website/scripts/sync-docs.mjs regenerates from docs/guide and docs/images.
+.astro/
+website/src/content/docs/
+website/src/content/images/
+
 # esbuild writes the bundle next to manifest.json; it is a release artifact,
 # not source. Releases attach it from CI.
 main.js

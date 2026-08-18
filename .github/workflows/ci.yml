@@ -30,6 +30,9 @@ jobs:
       - name: Invisible bytes
         run: node .github/scripts/check-source-bytes.mjs
 
+      - name: Documentation references
+        run: node .github/scripts/check-docs-links.mjs
+
       - name: Prettier
         run: npm run format:check
 
@@ -50,6 +53,13 @@ jobs:
 
       - name: Bundle loads the way Obsidian loads it
         run: node .github/scripts/smoke-bundle.mjs
+
+      # The guide is published from these same files, so a change that the site
+      # cannot build fails here rather than on the deploy.
+      - name: Documentation site
+        run: |
+          npm ci --prefix website
+          npm run docs:build
 
       # What a reviewer would otherwise have to build themselves to try a PR.
       - uses: actions/upload-artifact@v7

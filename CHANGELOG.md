@@ -4,6 +4,31 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [Unreleased]
+
+### Changed
+
+- **The user guide is now a website**, at
+  <https://jin1c-3.github.io/obsidian-advanced-maps/>, in English and Simplified
+  Chinese with a language switcher, a sidebar, and a search that runs in the
+  browser rather than on a server. It is built from the same Markdown that lives
+  in this repository, so the guide has not moved somewhere you cannot read it —
+  `docs/guide/` is still the source, and the site is a second rendering of it.
+
+  The guide's files did move within the repository: `docs/guide/en/` and
+  `docs/guide/zh-cn/` replace the `page.md` / `page.zh-CN.md` pairs, and the
+  figures now live in `docs/images/`. A link to an old path no longer resolves.
+
+- **Install instructions now describe installing from inside Obsidian** —
+  Settings → Community plugins, turn off Restricted mode, Browse, search
+  _Advanced Maps_, Install, Enable — and link the plugin's page in the community
+  store. Copying release files by hand and installing through BRAT are still
+  documented, as the way to run a build the store does not have yet.
+
+- **Every figure was recaptured against an English interface**, from a demo
+  vault built out of OpenStreetMap landmarks, routed paths, and real elevation,
+  so one set of pictures serves both locales.
+
 ## [1.17.0]
 
 ### Added

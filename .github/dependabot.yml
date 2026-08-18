@@ -15,6 +15,21 @@ updates:
         update-types:
           - minor
           - patch
+
+  # The documentation site is its own npm project, on purpose: Astro must not
+  # enter the plugin's dependency graph, lockfile, or release build.
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      site-dependencies:
+        patterns: ['*']
+        update-types:
+          - minor
+          - patch
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -2,7 +2,7 @@
 
 Technical entry point for Advanced Maps. The [README](README.md) is the concise
 project landing page; user-facing behavior belongs in the
-[user guide](docs/guide/README.md); setup and contribution workflow belong in
+[user guide](docs/guide/en/README.md); setup and contribution workflow belong in
 [CONTRIBUTING.md](CONTRIBUTING.md); stable technical contracts belong in the
 [OpenSpec capabilities](#capability-specs).
 
@@ -28,6 +28,8 @@ npm run typecheck   # tsc --noEmit
 npm run lint        # ESLint (lint:fix applies fixes)
 npm run format      # Prettier (format:check verifies)
 npm run check       # CI-equivalent format, lint, types, tests, build, smoke
+npm run docs:dev    # serve the documentation site from docs/guide
+npm run docs:build  # build the documentation site into website/dist
 ```
 
 Copy `.env.example` to the ignored `.env` and point `OBSIDIAN_PLUGIN_DIR` at a
@@ -58,7 +60,19 @@ src/
   constants.ts                   extensions, ids, limits, and visual knobs
   types/obsidian-internals.d.ts  undocumented host shapes and provenance
 tests/                            Vitest suites; no vault required
+docs/
+  guide/en, guide/zh-cn          the user guide, one directory per locale
+  images/                        every published figure, shared by all surfaces
+website/
+  astro.config.mjs               Starlight, both locales, sidebar, base path
+  scripts/sync-docs.mjs          copies docs/guide into the content collection
+  src/styles/obsidian.css        Starlight tuned to look like Obsidian
 ```
+
+The guide is written in `docs/` and only rendered by `website/`. Add a page under
+both `docs/guide/en/` and `docs/guide/zh-cn/`, link it from each locale's
+`README.md`, and add its slug to the sidebar in `website/astro.config.mjs`;
+`node .github/scripts/check-docs-links.mjs` fails if any of the three is missed.
 
 ## Non-negotiable rules
 

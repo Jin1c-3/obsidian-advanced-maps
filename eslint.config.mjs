@@ -15,7 +15,7 @@ import globals from 'globals';
 
 export default tseslint.config(
 	{
-		ignores: ['node_modules/', 'coverage/', 'main.js', 'main.js.map', 'dist/'],
+		ignores: ['node_modules/', 'coverage/', 'main.js', 'main.js.map', 'dist/', 'website/'],
 	},
 	js.configs.recommended,
 	...tseslint.configs.recommendedTypeChecked,

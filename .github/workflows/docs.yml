@@ -1,0 +1,65 @@
+name: Docs
+
+# The user guide lives in docs/ and is rendered by website/. This workflow is
+# the only thing that publishes it: a pull request builds the site inside CI
+# instead, so a broken guide fails review rather than the deploy.
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - website/**
+      - .github/workflows/docs.yml
+      - .github/scripts/check-docs-links.mjs
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build the guide
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Documentation references
+        run: node .github/scripts/check-docs-links.mjs
+
+      - run: npm ci --prefix website
+
+      - name: Build
+        run: npm --prefix website run build
+
+      - name: Published links resolve
+        run: node .github/scripts/check-docs-links.mjs
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: website/dist
+
+  deploy:
+    name: publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
