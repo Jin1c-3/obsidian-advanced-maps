@@ -8,7 +8,7 @@
  * this plugin's own — only the right string in the config the native view builds.
  */
 
-import type { BasesMapView, MapConfig, MapLibreMap, RasterTileSource } from './types/obsidian-internals';
+import type { BasesMapView, MapConfig, MapLibreMap, RasterTileSource, VaultPaths } from './types/obsidian-internals';
 
 /**
  * What a tile template must carry for MapLibre to fill it in, each entry being
@@ -67,12 +67,96 @@ function encodePath(path: string): string {
 }
 
 /**
+ * A vault-relative name to ask both path questions about. Nothing is read and
+ * the file need not exist: both answers are string arithmetic on the vault's own
+ * location. Plain ASCII deliberately — a name carrying a space or a CJK
+ * character comes back percent-encoded from one answer and literal from the
+ * other, and the two would no longer share a tail.
+ */
+const PREFIX_PROBE = 'x';
+
+/**
+ * The prefix this host puts in front of a local file it serves to its own web
+ * view, or null when it cannot be derived.
+ *
+ * Asked for rather than assumed, because it is not the same string everywhere.
+ * `Platform.resourcePathPrefix` is `app://<token>/` on the desktop and
+ * `file:///` on Android, where the web view runs on origin `http://localhost`
+ * and refuses a `file://` subresource — measured: a tile that is on disk and
+ * readable fails both `fetch()` and `new Image()`. The prefix that host uses for
+ * its own local resources is `http://localhost/_capacitor_file_/`, and that one
+ * loads, for a file inside the vault and for one outside it.
+ *
+ * Derived by subtraction: `getResourcePath(p)` is `getFullPath(p)` behind the
+ * prefix, so what the first answer carries and the second does not is the prefix
+ * itself. Deriving it rather than naming a platform is what lets a host this was
+ * never measured against be right without a second code path here. Where the
+ * subtraction does not hold, nothing is derived and the caller keeps whatever
+ * prefix it already had — which is what happens on the desktop, where the
+ * resource path ends in a cache-busting `?<mtime>` and the constant is right
+ * anyway. Measured there: `app://<token>/…/x?1787148608857`.
+ */
+export function localResourcePrefix(adapter: VaultPaths | null | undefined): string | null {
+	if (!adapter || typeof adapter.getResourcePath !== 'function' || typeof adapter.getFullPath !== 'function') {
+		return null;
+	}
+	let resource: unknown;
+	let full: unknown;
+	try {
+		resource = adapter.getResourcePath(PREFIX_PROBE);
+		full = adapter.getFullPath(PREFIX_PROBE);
+	} catch {
+		// An adapter that throws on a path naming nothing says nothing useful.
+		return null;
+	}
+	if (typeof resource !== 'string' || typeof full !== 'string' || full === '') return null;
+	// Both forms of the tail, because a host may or may not have encoded it: a
+	// vault directory holding a space or a CJK character is the only case that
+	// tells them apart, and a plain-ASCII vault answers the same either way.
+	for (const tail of [encodePath(full), full.replace(/^\/+/, '')]) {
+		if (tail === '' || !resource.endsWith(tail)) continue;
+		const prefix = resource.slice(0, resource.length - tail.length);
+		// A prefix names a scheme. Without one, the two answers were the same path
+		// and what is left is a bare separator, which would build an origin-relative
+		// URL — a request back to the host rather than a file on disk.
+		if (!prefix.includes('://')) continue;
+		// Both tails dropped the path's own leading separator, exactly as
+		// `encodePath` does for a real template, so the prefix carries it instead —
+		// which is how `Platform.resourcePathPrefix` already ends.
+		return prefix.endsWith('/') ? prefix : `${prefix}/`;
+	}
+	return null;
+}
+
+/**
+ * Where this vault starts, or '' when the adapter will not say.
+ *
+ * `getFullPath('')` rather than `getBasePath()`: the latter is a
+ * `FileSystemAdapter` method — measured absent on Android — so testing for that
+ * class was really a test for the desktop wearing the name of a capability, and
+ * a vault-relative pack resolved to nothing on a phone. Both shipped adapters
+ * answer `getFullPath`, and both were measured to answer the same directory the
+ * desktop's `getBasePath()` does — Android with a trailing separator, the desktop
+ * without one, and `offlineTileUrl` strips either.
+ */
+export function vaultBasePath(adapter: VaultPaths | null | undefined): string {
+	if (!adapter || typeof adapter.getFullPath !== 'function') return '';
+	let full: unknown;
+	try {
+		full = adapter.getFullPath('');
+	} catch {
+		return '';
+	}
+	return typeof full === 'string' ? full : '';
+}
+
+/**
  * A path template as a URL the renderer can fetch, or null when it is unusable.
  *
- * `prefix` is `Platform.resourcePathPrefix`, which on desktop is
- * `app://<random>/` — rebuilt at every application launch and persisted nowhere.
- * That is why this is resolved when a map is built and the result is never
- * stored: a URL written into a base file would stop working at the next restart.
+ * `prefix` is the one this host serves local files behind — `app://<random>/` on
+ * the desktop, rebuilt at every application launch and persisted nowhere. That
+ * is why this is resolved when a map is built and the result is never stored: a
+ * URL written into a base file would stop working at the next restart.
  *
  * A relative template is taken as vault-relative. A pack inside the vault is a
  * bad idea — six figures of files for Obsidian to index — but a reader who does

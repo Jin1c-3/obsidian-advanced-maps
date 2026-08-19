@@ -1,7 +1,6 @@
 /* Plugin orchestration: wrap the native Maps registration and coordinate features. */
 
 import {
-	FileSystemAdapter,
 	FileView,
 	getLanguage,
 	Notice,
@@ -14,7 +13,7 @@ import {
 	TFile,
 } from 'obsidian';
 import type { CachedMetadata, Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
-import { offlineTileUrl, offlineZoomBounds, type OfflineBasemap } from './basemap';
+import { localResourcePrefix, offlineTileUrl, offlineZoomBounds, vaultBasePath, type OfflineBasemap } from './basemap';
 import { FOCUS_RETRY_MS, FOCUS_TRIES, PHOTO_EXTS, TRACK_EXTS } from './constants';
 import { formatLatLng, parseLatLng } from './coords';
 import { TrackEmbed } from './embed';
@@ -354,18 +353,21 @@ export default class AdvancedMapsPlugin extends Plugin {
 	/**
 	 * The basemap on disk, resolved for right now, or null when there is none.
 	 *
-	 * Resolved per call rather than cached: `Platform.resourcePathPrefix` carries
-	 * a token the main process rebuilds at every launch, so a cached URL would
-	 * survive a window reload and fail after a restart — the failure that is
-	 * hardest to connect back to its cause.
+	 * Resolved per call rather than cached: the desktop prefix carries a token the
+	 * main process rebuilds at every launch, so a cached URL would survive a
+	 * window reload and fail after a restart — the failure that is hardest to
+	 * connect back to its cause.
 	 */
 	offlineBasemap(): OfflineBasemap | null {
 		const { offlineTiles, offlineTilesMinZoom, offlineTilesMaxZoom } = this.settings;
 		const adapter = this.app.vault.adapter;
-		// Only a filesystem vault can say where a vault-relative template starts;
-		// an absolute one does not need it.
-		const base = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : '';
-		const url = offlineTileUrl(offlineTiles, Platform.resourcePathPrefix, base);
+		// The prefix this host serves its own local files behind, which is not the
+		// same string on every platform: `Platform.resourcePathPrefix` is fetchable
+		// on the desktop and is `file:///` on Android, where the web view refuses
+		// it. So the host is asked first, and the constant is what is left when
+		// there is nothing to derive from.
+		const prefix = localResourcePrefix(adapter) ?? Platform.resourcePathPrefix;
+		const url = offlineTileUrl(offlineTiles, prefix, vaultBasePath(adapter));
 		if (url === null) return null;
 		return { url, ...offlineZoomBounds(offlineTilesMinZoom, offlineTilesMaxZoom) };
 	}

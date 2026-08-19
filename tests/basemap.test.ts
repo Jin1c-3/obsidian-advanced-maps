@@ -2,17 +2,41 @@ import { describe, expect, it, vi } from 'vitest';
 import {
 	applyOfflineTiles,
 	boundOfflineSource,
+	localResourcePrefix,
 	offlineTileUrl,
 	offlineZoomBounds,
 	restyleForBasemap,
 	tilesProblem,
 	usesOfflineTiles,
+	vaultBasePath,
 	type OfflineBasemap,
 } from '../src/basemap';
-import type { BasesMapView, MapConfig, MapLibreMap } from '../src/types/obsidian-internals';
+import type { BasesMapView, MapConfig, MapLibreMap, VaultPaths } from '../src/types/obsidian-internals';
 
 const PREFIX = 'app://d8f7f8c48a5edbe498d0f343debc07325525/';
 const VAULT = '/home/ethan/Documents/Obsidian/jot';
+
+/** What Android answered, measured through the running application's web view. */
+const MOBILE_PREFIX = 'http://localhost/_capacitor_file_/';
+const MOBILE_VAULT = '/storage/emulated/0/Documents/advanced-maps-demo';
+
+/**
+ * An adapter shaped like the one a phone has: the resource path is the full path
+ * behind the prefix, percent-encoded per segment, with no query on the end.
+ */
+function mobileAdapter(base = MOBILE_VAULT): VaultPaths {
+	const full = (path: string) => (path === '' ? `${base}/` : `${base}/${path}`);
+	return {
+		getFullPath: full,
+		getResourcePath: (path) =>
+			'http://localhost/_capacitor_file_' +
+			full(path)
+				.split('/')
+				.map((segment) => encodeURIComponent(segment))
+				.join('/')
+				.replace(/\/$/, ''),
+	};
+}
 
 function pack(over: Partial<OfflineBasemap> = {}): OfflineBasemap {
 	return { url: `${PREFIX}tiles/{z}/{x}/{y}.png`, sourceMaxZoom: 16, cameraMinZoom: 0, ...over };
@@ -42,6 +66,90 @@ describe('tilesProblem', () => {
 	});
 });
 
+describe('localResourcePrefix', () => {
+	it('derives the prefix a phone serves its own local files behind', () => {
+		// Measured on Android: `getResourcePath('x')` is `getFullPath('x')` behind
+		// `http://localhost/_capacitor_file_`, which is the one form that loads.
+		expect(localResourcePrefix(mobileAdapter())).toBe(MOBILE_PREFIX);
+	});
+
+	it('derives it through a vault directory that had to be encoded', () => {
+		expect(localResourcePrefix(mobileAdapter('/storage/emulated/0/我的 库'))).toBe(MOBILE_PREFIX);
+	});
+
+	it('derives it when the host left that directory unencoded instead', () => {
+		const base = '/storage/emulated/0/My Vault';
+		expect(
+			localResourcePrefix({
+				getFullPath: (path) => `${base}/${path}`,
+				getResourcePath: (path) => `http://localhost/_capacitor_file_${base}/${path}`,
+			})
+		).toBe(MOBILE_PREFIX);
+	});
+
+	it('derives nothing from answers that do not share a tail', () => {
+		// A query on the end, which is one shape a resource path comes in.
+		expect(
+			localResourcePrefix({
+				getFullPath: (path) => `${VAULT}/${path}`,
+				getResourcePath: (path) => `${PREFIX}home/ethan/Documents/Obsidian/jot/${path}?1755600000000`,
+			})
+		).toBeNull();
+		// Separators written the other way, which is a Windows vault.
+		expect(
+			localResourcePrefix({
+				getFullPath: (path) => `C:\\Vault\\${path}`,
+				getResourcePath: (path) => `${PREFIX}C:/Vault/${path}`,
+			})
+		).toBeNull();
+		// A host that answers with the path and no prefix at all.
+		expect(
+			localResourcePrefix({
+				getFullPath: (path) => `${VAULT}/${path}`,
+				getResourcePath: (path) => `${VAULT}/${path}`,
+			})
+		).toBeNull();
+	});
+
+	it('derives nothing from an adapter that will not answer', () => {
+		expect(localResourcePrefix(null)).toBeNull();
+		expect(localResourcePrefix(undefined)).toBeNull();
+		expect(localResourcePrefix({})).toBeNull();
+		expect(localResourcePrefix({ getFullPath: (path) => `${VAULT}/${path}` })).toBeNull();
+		expect(
+			localResourcePrefix({
+				getFullPath: (path) => `${VAULT}/${path}`,
+				getResourcePath: () => {
+					throw new Error('no such file');
+				},
+			})
+		).toBeNull();
+		// An answer that is not a string is not a path to subtract from.
+		expect(localResourcePrefix({ getFullPath: () => 42, getResourcePath: () => 42 })).toBeNull();
+	});
+});
+
+describe('vaultBasePath', () => {
+	it('asks the adapter where the vault starts, trailing separator and all', () => {
+		expect(vaultBasePath(mobileAdapter())).toBe(`${MOBILE_VAULT}/`);
+		expect(vaultBasePath({ getFullPath: () => VAULT })).toBe(VAULT);
+	});
+
+	it('answers empty for an adapter that will not say', () => {
+		expect(vaultBasePath(null)).toBe('');
+		expect(vaultBasePath(undefined)).toBe('');
+		expect(vaultBasePath({})).toBe('');
+		expect(vaultBasePath({ getFullPath: () => 42 })).toBe('');
+		expect(
+			vaultBasePath({
+				getFullPath: () => {
+					throw new Error('no vault');
+				},
+			})
+		).toBe('');
+	});
+});
+
 describe('offlineTileUrl', () => {
 	it('puts the live prefix in front of an absolute path', () => {
 		expect(offlineTileUrl('/mnt/maps/{z}/{x}/{y}.png', PREFIX, VAULT)).toBe(`${PREFIX}mnt/maps/{z}/{x}/{y}.png`);
@@ -53,6 +161,17 @@ describe('offlineTileUrl', () => {
 		);
 		expect(offlineTileUrl('./tiles/{z}/{x}/{y}.png', PREFIX, `${VAULT}/`)).toBe(
 			`${PREFIX}home/ethan/Documents/Obsidian/jot/tiles/{z}/{x}/{y}.png`
+		);
+	});
+
+	it('keeps a dot-folder, which is how a pack hides from the vault index', () => {
+		// `.tiles` is not `./tiles`: only the second is a "start here" prefix to
+		// strip, and eating the dot would point the map one level too high.
+		expect(offlineTileUrl('.tiles/{z}/{x}/{y}.png', PREFIX, VAULT)).toBe(
+			`${PREFIX}home/ethan/Documents/Obsidian/jot/.tiles/{z}/{x}/{y}.png`
+		);
+		expect(offlineTileUrl('.tiles/{z}/{x}/{y}.png', MOBILE_PREFIX, vaultBasePath(mobileAdapter()))).toBe(
+			`${MOBILE_PREFIX}storage/emulated/0/Documents/advanced-maps-demo/.tiles/{z}/{x}/{y}.png`
 		);
 	});
 
@@ -78,6 +197,16 @@ describe('offlineTileUrl', () => {
 		expect(offlineTileUrl('/mnt/maps/{z}/{x}/{y}.png', PREFIX, VAULT)).not.toContain('%7B');
 	});
 
+	it('builds the same two shapes from a phone prefix', () => {
+		const base = vaultBasePath(mobileAdapter());
+		expect(offlineTileUrl('/sdcard/tiles/{z}/{x}/{y}.png', MOBILE_PREFIX, base)).toBe(
+			`${MOBILE_PREFIX}sdcard/tiles/{z}/{x}/{y}.png`
+		);
+		expect(offlineTileUrl('tiles/{z}/{x}/{y}.png', MOBILE_PREFIX, base)).toBe(
+			`${MOBILE_PREFIX}storage/emulated/0/Documents/advanced-maps-demo/tiles/{z}/{x}/{y}.png`
+		);
+	});
+
 	it('answers null for anything it cannot resolve', () => {
 		expect(offlineTileUrl('', PREFIX, VAULT)).toBeNull();
 		expect(offlineTileUrl('/mnt/maps/{x}/{y}.png', PREFIX, VAULT)).toBeNull();
@@ -86,6 +215,10 @@ describe('offlineTileUrl', () => {
 		// A relative template with nowhere to start from; the filesystem root is
 		// not a reasonable guess.
 		expect(offlineTileUrl('tiles/{z}/{x}/{y}.png', PREFIX, '')).toBeNull();
+		// Nothing derivable and no constant either: no pack, rather than a URL the
+		// web view would refuse a tile at a time.
+		expect(offlineTileUrl('/sdcard/tiles/{z}/{x}/{y}.png', localResourcePrefix({}) ?? '', '')).toBeNull();
+		expect(offlineTileUrl('tiles/{z}/{x}/{y}.png', MOBILE_PREFIX, vaultBasePath({}))).toBeNull();
 	});
 });
 

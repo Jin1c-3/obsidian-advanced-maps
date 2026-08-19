@@ -84,6 +84,32 @@ export interface EmbedRegistry {
 	isExtensionRegistered(extension: string): boolean;
 }
 
+/* ---- the vault adapter ---- */
+
+/**
+ * The two path answers this plugin asks the vault's own adapter for: where a
+ * vault starts, and how this host addresses a file inside it.
+ *
+ * `getResourcePath` is published on `DataAdapter`. `getFullPath` is published on
+ * `FileSystemAdapter` and on `CapacitorAdapter`, but not on the `DataAdapter`
+ * interface `vault.adapter` is typed as, so it is declared here rather than
+ * reached through a cast. Both are optional and answer `unknown`, because the
+ * caller is deciding what platform it is on: an adapter that answers differently
+ * — or not at all — has to leave the offline basemap unresolved rather than
+ * build a URL out of a surprise.
+ *
+ * Measured on Android (Obsidian 1.13, Capacitor adapter): `getFullPath('x')` is
+ * `/storage/emulated/0/Documents/<vault>/x`, `getResourcePath('x')` is that same
+ * path behind `http://localhost/_capacitor_file_`, and `getFullPath('')` is the
+ * vault's own directory with a trailing separator. A `basePath` property is
+ * there too, and `getBasePath()` — the `FileSystemAdapter` method — is not,
+ * which is why neither of those is what this reads.
+ */
+export interface VaultPaths {
+	getResourcePath?(normalizedPath: string): unknown;
+	getFullPath?(normalizedPath: string): unknown;
+}
+
 /* ---- Bases view registry ---- */
 
 export interface ViewOption {
