@@ -136,10 +136,14 @@ const en = {
 	'options.fitMaxZoom': 'Max zoom when fitting',
 	'options.coordSystem': 'Coordinate system',
 	'options.tileCoordSystem': 'Tile coordinate system',
-	'options.offlineTiles': 'Offline basemap',
-	'options.offlineTilesUse': 'Use it on this map',
-	'options.offlineTiles.on': 'Yes, when one is configured',
-	'options.offlineTiles.off': "No — keep this view's own background",
+	'options.basemap': 'Basemap',
+	'options.basemapPick': 'This map opens on',
+	'options.basemap.followPlugin': 'Follow the plugin default',
+	'options.basemap.none': "None — this view's own background",
+	'options.basemap.missing': '{name} — no longer configured',
+	/* The entry this plugin adds to the map's own layers menu when the host has
+	 * no backgrounds of its own, so choosing a pack is always reversible. */
+	'background.default': 'Default background',
 
 	/* ---- commands ---- */
 	'command.openInMap': 'Open in map',
@@ -314,10 +318,15 @@ const en = {
 	/* ---- settings: offline basemap ---- */
 	'settings.tiles.heading': 'Offline basemap',
 	'settings.tiles.intro':
-		'A folder of tiles already on your disk becomes the background of every map, with nothing asked of the network. The tiles are only ever read.',
+		'Folders of tiles already on your disk become backgrounds every map can be put on, with nothing asked of the network. The tiles are only ever read.',
+	'settings.tiles.packs.heading': 'Tile packs',
+	'settings.tiles.packs.empty': 'Add a folder of tiles already on your disk.',
+	'settings.tiles.packs.add': 'Add tile pack',
+	'settings.tiles.pack.name': 'Name',
+	'settings.tiles.pack.unnamed': 'Tiles',
 	'settings.tiles.path.name': 'Tile path',
 	'settings.tiles.path.desc':
-		'The path your tiles are addressed by, holding {z}, {x} and {y}. Absolute, or relative to the vault. Empty leaves every map the background it has.',
+		'The path your tiles are addressed by, holding {z}, {x} and {y}. Absolute, or relative to the vault.',
 	'settings.tiles.error.placeholders': 'Needs {z}, {x} and {y} in it.',
 	'settings.tiles.minZoom.name': 'Lowest zoom level',
 	'settings.tiles.minZoom.desc':
@@ -325,6 +334,10 @@ const en = {
 	'settings.tiles.maxZoom.name': 'Highest zoom level',
 	'settings.tiles.maxZoom.desc':
 		'The highest-numbered folder your pack goes up to. Past it the map magnifies what it has instead of asking for tiles you do not have.',
+	'settings.tiles.default.name': 'Default background',
+	'settings.tiles.default.desc':
+		'The pack every map opens on unless it names another. Each map can pick a different one from its own options, or from the layers button on the map itself.',
+	'settings.tiles.default.none': 'None — leave every map its own background',
 
 	/* ---- settings: open in map ---- */
 	'settings.open.heading': 'Open in map',
@@ -566,10 +579,12 @@ const zh: Record<TranslationKey, string> = {
 	'options.fitMaxZoom': '自动缩放上限',
 	'options.coordSystem': '坐标系',
 	'options.tileCoordSystem': '瓦片坐标系',
-	'options.offlineTiles': '离线底图',
-	'options.offlineTilesUse': '这张地图用不用',
-	'options.offlineTiles.on': '用（设置里配了就用）',
-	'options.offlineTiles.off': '不用，保留这个视图自己的底图',
+	'options.basemap': '底图',
+	'options.basemapPick': '这张地图打开时用',
+	'options.basemap.followPlugin': '跟随插件默认设置',
+	'options.basemap.none': '不用，保留这个视图自己的底图',
+	'options.basemap.missing': '{name} —— 已不存在',
+	'background.default': '默认底图',
 
 	'command.openInMap': '在地图中打开',
 	'command.insertMap': '插入本篇相关笔记的地图',
@@ -699,16 +714,25 @@ const zh: Record<TranslationKey, string> = {
 	'settings.coord.default.desc': '内联地图，以及没有单独设置的地图视图都用它。',
 
 	'settings.tiles.heading': '离线底图',
-	'settings.tiles.intro': '磁盘上现成的一整套瓦片可以当所有地图的底图，直接从文件系统读，不走网络。瓦片只读不写。',
+	'settings.tiles.intro':
+		'磁盘上现成的瓦片可以当地图底图，直接从文件系统读，不走网络。可以配多套，每套一个名字。瓦片只读不写。',
+	'settings.tiles.packs.heading': '瓦片包',
+	'settings.tiles.packs.empty': '添加一套磁盘上现成的瓦片。',
+	'settings.tiles.packs.add': '添加瓦片包',
+	'settings.tiles.pack.name': '名称',
+	'settings.tiles.pack.unnamed': '瓦片',
 	'settings.tiles.path.name': '瓦片路径',
-	'settings.tiles.path.desc':
-		'瓦片的寻址路径，要含 {z}、{x}、{y}。可以是绝对路径，也可以相对于仓库。留空则各地图保持原有底图。',
+	'settings.tiles.path.desc': '瓦片的寻址路径，要含 {z}、{x}、{y}。可以是绝对路径，也可以相对于仓库。',
 	'settings.tiles.error.placeholders': '需要同时包含 {z}、{x} 和 {y} 。',
 	'settings.tiles.minZoom.name': '最低层级',
 	'settings.tiles.minZoom.desc': '这套瓦片里编号最小的那层。地图缩小到这里就停住，而不是变成空白。',
 	'settings.tiles.maxZoom.name': '最高层级',
 	'settings.tiles.maxZoom.desc':
 		'这套瓦片里编号最大的那层。再放大时地图会把已有瓦片放大接着画，而不是去要没有的瓦片。',
+	'settings.tiles.default.name': '默认底图',
+	'settings.tiles.default.desc':
+		'所有地图默认用哪一套。单张地图可以在自己的视图设置里另选，也可以直接点地图上的图层按钮切换。',
+	'settings.tiles.default.none': '不用 —— 各地图保持原有底图',
 
 	'settings.open.heading': '在地图中打开',
 	'settings.open.intro':

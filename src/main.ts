@@ -13,8 +13,21 @@ import {
 	TFile,
 } from 'obsidian';
 import type { CachedMetadata, Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
-import { localResourcePrefix, offlineTileUrl, offlineZoomBounds, vaultBasePath, type OfflineBasemap } from './basemap';
-import { FOCUS_RETRY_MS, FOCUS_TRIES, PHOTO_EXTS, TRACK_EXTS } from './constants';
+import {
+	DEFAULT_BACKGROUND,
+	findPack,
+	localResourcePrefix,
+	nativeTileSets,
+	packBackgroundId,
+	packBackgroundName,
+	packBasemap,
+	tilePacks,
+	tileSetLabel,
+	vaultBasePath,
+	type OfflineBasemap,
+	type TilePack,
+} from './basemap';
+import { FOCUS_RETRY_MS, FOCUS_TRIES, NATIVE_MAPS_ID, PHOTO_EXTS, TRACK_EXTS } from './constants';
 import { formatLatLng, parseLatLng } from './coords';
 import { TrackEmbed } from './embed';
 import { t } from './i18n';
@@ -37,17 +50,26 @@ import { noteName, placesFrom, type Place } from './places';
 import { ImportPlacesModal } from './places-modal';
 import { nativeBehind, ownedBy, stamp, type RegistrationOwner } from './registration';
 import { PlaceSearchModal } from './search-modal';
-import { AdvancedMapsSettingTab, DEFAULT_SETTINGS, isExcluded, type AdvancedMapsSettings } from './settings';
+import {
+	AdvancedMapsSettingTab,
+	DEFAULT_SETTINGS,
+	dropLegacyBasemap,
+	isExcluded,
+	migratedPack,
+	type AdvancedMapsSettings,
+	type LegacyBasemap,
+} from './settings';
 import { duplicateStatsName, formatDistance, hasStats, statsProperties, trackStats } from './stats';
 import { TrackCache, type TrackRecord } from './track-cache';
 import { TrackLayer, type FocusTarget } from './track-layer';
-import { appendTrackOptions } from './view-options';
+import { appendTrackOptions, type BackgroundChoice } from './view-options';
 import type {
 	BasesMapView,
 	BasesViewFactory,
 	BasesViewOptionsFn,
 	BasesViewRegistration,
 	ComponentNode,
+	NativeMapsPlugin,
 } from './types/obsidian-internals';
 
 export default class AdvancedMapsPlugin extends Plugin {
@@ -217,7 +239,9 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 		if (typeof nativeOptions === 'function') {
 			const options: BasesViewOptionsFn = () =>
-				owner.alive ? appendTrackOptions(nativeOptions()) : nativeOptions();
+				owner.alive
+					? appendTrackOptions(nativeOptions(), this.backgroundChoices(), this.namedButGone())
+					: nativeOptions();
 			stamp(options, nativeOptions, owner);
 			entry.options = options;
 		}
@@ -328,8 +352,8 @@ export default class AdvancedMapsPlugin extends Plugin {
 		const view = this.nativeFactory({ app: this.app }, parentEl);
 		view.__advancedMapsHeadless = true;
 		view.config = {
-			// An inline map has no view options to decline the offline basemap with,
-			// so it follows the plugin setting — answered here rather than by
+			// An inline map has no view options to name a background with, so it
+			// draws the plugin's own default — answered here rather than by
 			// rewriting the config afterwards, so the native `loadConfig` derives
 			// everything else from it exactly as it would from a real view's tiles.
 			get: (key) => this.headlessOption(key),
@@ -345,21 +369,94 @@ export default class AdvancedMapsPlugin extends Plugin {
 	/** What a headless view's stub config answers; undefined for everything native. */
 	private headlessOption(key: string): unknown {
 		if (key !== 'mapTiles' && key !== 'mapTilesDark' && key !== 'minZoom') return undefined;
-		const pack = this.offlineBasemap();
+		const pack = this.basemapFor(this.defaultBackground());
 		if (!pack) return undefined;
 		return key === 'minZoom' ? pack.cameraMinZoom : [pack.url];
 	}
 
+	/* ---- basemaps already on disk ---- */
+
+	/** Every pack the reader has configured, in the order they configured them. */
+	tilePacks(): TilePack[] {
+		return tilePacks(this.settings.tilePacks);
+	}
+
 	/**
-	 * The basemap on disk, resolved for right now, or null when there is none.
+	 * The background a map is on when neither it nor its reader has said
+	 * otherwise: the named default pack, or the one the native view resolves.
+	 */
+	defaultBackground(): string {
+		const name = this.settings.defaultBasemap;
+		// Checked against the packs that exist rather than taken on trust: a pack
+		// that has been removed since must leave the map on the native background,
+		// not on an id nothing answers to.
+		if (typeof name !== 'string' || findPack(this.tilePacks(), name) === null) return DEFAULT_BACKGROUND;
+		return packBackgroundId(name);
+	}
+
+	/**
+	 * The Maps plugin instance, or null when this host has none of it.
+	 *
+	 * Only that it is an object is checked here; every member of the shape is
+	 * optional and checked where it is read, so a Maps build that stops keeping
+	 * its backgrounds where this looks costs an empty list and nothing else.
+	 */
+	nativeMaps(): NativeMapsPlugin | null {
+		const maps = this.app.plugins?.getPlugin?.(NATIVE_MAPS_ID);
+		return maps && typeof maps === 'object' ? maps : null;
+	}
+
+	/**
+	 * Every background a view can be opened on, in the order a reader meets them:
+	 * the host's own first, since one of those is what a map draws with no pack
+	 * at all, then this plugin's packs.
+	 *
+	 * Read afresh on every call. The list is what a picker is built from, and a
+	 * pack added while a settings pane is open has to be in the next one.
+	 */
+	backgroundChoices(): BackgroundChoice[] {
+		const choices: BackgroundChoice[] = nativeTileSets(this.nativeMaps()).map((entry) => ({
+			id: String(entry.id),
+			name: tileSetLabel(entry),
+		}));
+		for (const pack of this.tilePacks()) choices.push({ id: packBackgroundId(pack.name), name: pack.name });
+		return choices;
+	}
+
+	/**
+	 * Background ids that maps on screen name but nothing answers to — a pack
+	 * since renamed or removed, or a base file written in another vault.
+	 *
+	 * Gathered from the open views because that is the only place the question can
+	 * be asked from: a view's own stored value is per view, and the option list
+	 * the host builds is per view *type*. A map whose named background is gone is
+	 * open by definition when its options are being looked at, so what it names
+	 * is in this list and the picker can say the name is gone rather than show an
+	 * empty box.
+	 */
+	namedButGone(): string[] {
+		const known = new Set(this.backgroundChoices().map((choice) => choice.id));
+		const gone = new Set<string>();
+		for (const layer of this.layers) {
+			const named = layer.namedBackground();
+			if (named === '' || named === DEFAULT_BACKGROUND || known.has(named)) continue;
+			gone.add(named);
+		}
+		return [...gone];
+	}
+
+	/**
+	 * The pack one background id names, resolved for right now, or null when that
+	 * id names no pack of ours — a host background, or the native default.
 	 *
 	 * Resolved per call rather than cached: the desktop prefix carries a token the
 	 * main process rebuilds at every launch, so a cached URL would survive a
 	 * window reload and fail after a restart — the failure that is hardest to
 	 * connect back to its cause.
 	 */
-	offlineBasemap(): OfflineBasemap | null {
-		const { offlineTiles, offlineTilesMinZoom, offlineTilesMaxZoom } = this.settings;
+	basemapFor(background: string): OfflineBasemap | null {
+		const name = packBackgroundName(background);
+		if (name === null) return null;
 		const adapter = this.app.vault.adapter;
 		// The prefix this host serves its own local files behind, which is not the
 		// same string on every platform: `Platform.resourcePathPrefix` is fetchable
@@ -367,9 +464,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// it. So the host is asked first, and the constant is what is left when
 		// there is nothing to derive from.
 		const prefix = localResourcePrefix(adapter) ?? Platform.resourcePathPrefix;
-		const url = offlineTileUrl(offlineTiles, prefix, vaultBasePath(adapter));
-		if (url === null) return null;
-		return { url, ...offlineZoomBounds(offlineTilesMinZoom, offlineTilesMaxZoom) };
+		return packBasemap(findPack(this.tilePacks(), name), prefix, vaultBasePath(adapter));
 	}
 
 	/**
@@ -1449,8 +1544,22 @@ export default class AdvancedMapsPlugin extends Plugin {
 	async loadSettings(): Promise<void> {
 		// loadData() is `any` — whatever the last version of this plugin wrote, on
 		// disk since. The defaults underneath it are what make the result whole.
-		const saved = (await this.loadData()) as Partial<AdvancedMapsSettings> | null;
+		const saved = (await this.loadData()) as (Partial<AdvancedMapsSettings> & LegacyBasemap) | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+
+		// One pack with no name became a list of named ones. The three old keys are
+		// read here and written nowhere: `Object.assign` copies them onto the live
+		// settings, so they are deleted before anything can save them back. A
+		// reader who never configured a pack has none of them and ends up with an
+		// empty list, which is the same nothing they had.
+		const migrated = migratedPack(saved);
+		if (migrated) {
+			this.settings.tilePacks = [migrated];
+			// The pack that was substituted into every map keeps being substituted
+			// into every map: it was the only one, so it is the default one.
+			this.settings.defaultBasemap = migrated.name;
+		}
+		if (dropLegacyBasemap(this.settings)) await this.saveSettings();
 
 		// A key written before there was anywhere else to put it stays where it is.
 		// The default for a fresh install is secret storage, which is the safer of

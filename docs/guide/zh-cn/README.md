@@ -27,7 +27,7 @@ Advanced Maps 在 Obsidian 原生 Maps 视图上增加照片相册、链接的�
 | 绘制 GPX、GeoJSON、KML、TCX、区域，或查看内联轨迹统计              | [轨迹与区域](tracks-and-areas.md)             |
 | 显示本篇相关笔记、在 Base 中打开笔记、跟随当前笔记，或在地图上测距 | [周围视图与导航](around-and-navigation.md)    |
 | 把存着地点的文件导入成笔记，或把 Base 的地点导出成文件             | [地点的进出](places-in-and-out.md)            |
-| 用磁盘上现成的一套瓦片当底图，完全不走网络                         | [离线底图](offline-basemap.md)                |
+| 用磁盘上现成的几套瓦片当底图，在地图上直接切换，完全不走网络       | [离线底图](offline-basemap.md)                |
 | 对齐国内底图、解析地图链接、搜索地点，或调用其他地图 App           | [坐标与地图服务](coordinates-and-services.md) |
 | 查看支持格式、选项职责、隐私、使用边界和致谢                       | [参考与隐私](reference-and-privacy.md)        |
 

@@ -33,7 +33,7 @@ pane answers the common questions without being opened.
 | Entry                | Holds                                                                                                                                                    |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Coordinate system    | The default datum for inline maps and for views that set none                                                                                            |
-| Offline basemap      | A folder of tiles on disk to draw as the background, and the zoom levels it holds                                                                        |
+| Offline basemap      | The tile packs on disk that maps can be drawn from, the zoom levels each holds, and which one is the default                                             |
 | Open in map          | Base file, view name, target, coordinate and place properties, zoom, Around view name, menu label                                                        |
 | Map buttons          | Whether a map carries the follow and measure buttons, and which way follow starts                                                                        |
 | Open in external map | The built-in map apps and your own                                                                                                                       |
@@ -55,7 +55,7 @@ search, which reaches rows inside these pages the same way it reaches any other.
 | Where is a note's coordinate?                           | The map view's **Marker coordinates** property                                                                   |
 | Which Base powers navigation and Around?                | Advanced Maps **Base file** and **View name** settings                                                           |
 | How a specific map draws tracks or converts its basemap | `trackWeight`, `trackOpacity`, `fitMaxZoom`, and `coordSystem` view keys when present; plugin settings otherwise |
-| Whether a map draws the offline basemap                 | The `offlineTiles` view key; the pack itself is a plugin setting                                                 |
+| Which background a map opens on                         | The `offlineTiles` view key; the packs themselves are a plugin setting                                           |
 
 ## Operational boundaries
 

@@ -21,6 +21,17 @@ declare module 'obsidian' {
 	interface App {
 		internalPlugins: InternalPlugins;
 		embedRegistry: EmbedRegistry;
+		/**
+		 * The community-plugin registry, which is where the first-party Maps
+		 * plugin lives — `manifest.json` gives it the id `maps`, and it ships as a
+		 * community plugin rather than a core one.
+		 *
+		 * Undeclared in `obsidian.d.ts`. Only ever asked for that one plugin, and
+		 * only to read the backgrounds it offers, so the accessor is declared
+		 * optional and every answer is shape-checked: a host without it leaves the
+		 * background picker listing this plugin's own packs and nothing else.
+		 */
+		plugins?: { getPlugin?(id: string): unknown };
 	}
 
 	interface MenuItem {
@@ -108,6 +119,48 @@ export interface EmbedRegistry {
 export interface VaultPaths {
 	getResourcePath?(normalizedPath: string): unknown;
 	getFullPath?(normalizedPath: string): unknown;
+}
+
+/* ---- the first-party Maps plugin ---- */
+
+/**
+ * One background as the first-party Maps plugin stores it, in
+ * `obsidian-maps/src/settings.ts` — `{id, name, lightTiles, darkTiles}`, where
+ * the id is a `Date.now()` string minted by its settings tab when the reader
+ * adds a background.
+ *
+ * Read for its `id` and `name` only, which are the two fields the background
+ * control itself reads: it builds one menu item per entry as
+ * `setTitle(entry.name).setChecked(current === entry.id)`. No tile URL of this
+ * plugin's is ever put in one — see `TrackLayer.offerPacks`.
+ *
+ * Deliberately no zoom bounds, because the host's own shape has none. A pack
+ * offered through this menu still needs this plugin's source-maxzoom and
+ * camera-minzoom handling applied when it is chosen.
+ */
+export interface NativeTileSet {
+	id?: unknown;
+	name?: unknown;
+	[key: string]: unknown;
+}
+
+/**
+ * The Maps plugin instance itself, as its own map view keeps it on `this.plugin`
+ * and reads `this.plugin.settings.tileSets` from — in `initializeMap` to decide
+ * whether to add the background control and what to hand it, in `loadConfig` to
+ * resolve a tile set id, and in `switchToTileSet` to resolve the id it is given.
+ *
+ * Reached through the view rather than through `app.plugins`, because the view
+ * is the object this plugin already has and the one whose `initializeMap` is
+ * being wrapped: the array swapped for the duration of that call has to be the
+ * one that same call is about to read.
+ *
+ * Everything is optional and `unknown`. The `tileSets` array belongs to another
+ * plugin and is saved whenever the reader edits anything in its settings tab, so
+ * it is read, briefly swapped, and put back — never appended to.
+ */
+export interface NativeMapsPlugin {
+	settings?: { tileSets?: unknown };
 }
 
 /* ---- Bases view registry ---- */
@@ -330,6 +383,8 @@ export interface BasesMapView {
 	markerManager: MarkerManager;
 	popupManager: PopupManager;
 	pendingMapState?: unknown;
+	/** The Maps plugin instance this view was built by; see `NativeMapsPlugin`. */
+	plugin?: NativeMapsPlugin;
 	loadConfig(tileSetId?: string): MapConfig;
 	switchToTileSet(tileSetId: string): Promise<void>;
 	initializeMap(): Promise<void>;

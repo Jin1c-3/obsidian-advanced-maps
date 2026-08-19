@@ -14,6 +14,13 @@ export const GUIDE_URL: Record<Locale, string> = {
 
 export const REPO_URL = 'https://github.com/Jin1c-3/obsidian-advanced-maps';
 
+/**
+ * The id the first-party Maps plugin is installed under. It ships as a
+ * community plugin — `manifest.json` says `"id": "maps"` — so it is reached
+ * through `app.plugins`, not through `app.internalPlugins` the way Bases is.
+ */
+export const NATIVE_MAPS_ID = 'maps';
+
 /** File extensions this plugin knows how to draw. */
 export const TRACK_EXTS = new Set(['gpx', 'geojson', 'kml', 'tcx']);
 

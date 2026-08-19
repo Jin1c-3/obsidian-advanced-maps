@@ -348,12 +348,12 @@ export class TrackEmbed extends Component {
 	/**
 	 * Stop this map asking for levels the pack does not hold.
 	 *
-	 * An inline map has no view options to decline the offline basemap with, so it
-	 * follows the plugin setting — the same answer its headless config gave the
-	 * native view when the style was built.
+	 * An inline map has no view options to name a background with, and no control
+	 * to pick one from, so it draws the plugin's own default — the same answer its
+	 * headless config gave the native view when the style was built.
 	 */
 	private boundBasemap(map: MapLibreMap): void {
-		const pack = this.plugin.offlineBasemap();
+		const pack = this.plugin.basemapFor(this.plugin.defaultBackground());
 		if (pack) boundOfflineSource(map, pack.url, pack.sourceMaxZoom);
 	}
 
