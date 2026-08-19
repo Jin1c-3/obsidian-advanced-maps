@@ -115,6 +115,10 @@ previewed inside that popup so a dot on a crowded map can be identified without
 opening it. Clicking opens the photo at full size without replacing the map, with
 an **Open note** row below. Ctrl/Cmd-click opens the image file in a new tab.
 
+On a phone a tap goes straight to that full-size view, so the preview popup is
+one step you do not get. Nothing is lost on the way to the note: **Open note**
+is inside the photo you just opened.
+
 ![A geotagged photo opened from its marker, with the image, filename, and an Open note action in a modal over the map](../../images/photo-popup.jpg)
 
 **Set coordinates from a photo** reads the same GPS tag into the current note's

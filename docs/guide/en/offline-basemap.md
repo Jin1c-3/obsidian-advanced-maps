@@ -114,9 +114,12 @@ in order:
    the camera; a highest level set to 0 leaves one tile for the whole world.
 4. **The view.** Its **Offline basemap** option may be set to _No_.
 
-Measured on desktop. Mobile reaches local files by a different route and is
-untested; nothing breaks there if it does not work, the map simply keeps its
-network background.
+This is a desktop feature. On a phone a pack is not read at all, whichever way
+you write the path: a vault-relative one has nothing to resolve against there,
+and an absolute one becomes a `file://` address the mobile app's web view
+refuses to load. Nothing breaks — the map keeps its network background, and
+every pin, route and photo is drawn over it as usual. Leave the setting empty on
+a phone and you lose nothing by it.
 
 ## What this touches
 

@@ -22,10 +22,10 @@ proxy URL hides the provider.
 
 ## Open a spot in another map app
 
-Right-click a map and choose **Open in external map**. Amap, Baidu, Tencent,
-Google, Apple Maps, and OpenStreetMap receive the datum each expects. Providers
-can be reordered or disabled, and custom URL templates can use `{lat}` and
-`{lng}`:
+Right-click a map — long press it on a phone — and choose **Open in external
+map**. Amap, Baidu, Tencent, Google, Apple Maps, and OpenStreetMap receive the
+datum each expects. Providers can be reordered or disabled, and custom URL
+templates can use `{lat}` and `{lng}`:
 
 ```text
 https://ul.waze.com/ul?ll={lat},{lng}&navigate=yes      WGS-84
@@ -42,15 +42,16 @@ streets away.
 
 ## Place a note you already wrote
 
-The map's right-click menu can create a note at the spot you clicked. **Set a
-note's coordinates here** is the other half: you wrote the note months ago
-without a coordinate, and you are looking straight at where it belongs.
+The map's own menu can create a note at the spot you clicked. **Set a note's
+coordinates here** is the other half: you wrote the note months ago without a
+coordinate, and you are looking straight at where it belongs.
 
-Right-click the spot, choose it, and pick the note. Each row shows its folder
-and, when the note already has a coordinate, the value it holds — so a fuzzy
-match is checked before it is taken, not after. Choosing a note with no
-coordinate writes immediately; choosing one that already has a coordinate names
-the old value and the new one first, because frontmatter has no undo.
+Right-click the spot — long press it on a phone — choose it, and pick the note.
+Each row shows its folder and, when the note already has a coordinate, the
+value it holds — so a fuzzy match is checked before it is taken, not after.
+Choosing a note with no coordinate writes immediately; choosing one that
+already has a coordinate names the old value and the new one first, because
+frontmatter has no undo.
 
 Your templates are left out of the list, read from the folder the core
 **Templates** plugin names. A template is not a place, and a coordinate written
@@ -61,6 +62,13 @@ query the pin will not appear, which is Bases filtering rather than a failure �
 the notice names the note and the value either way.
 
 ![The map's right-click menu with "set a note's coordinates here" beside New note and Copy coordinates; the note picker, where an already-placed note shows the coordinate it holds; and the confirmation naming the old value and the new one](../../images/stamp-note.png)
+
+On a phone the same menu opens on a long press, as a sheet from the bottom of
+the screen. Everything this guide asks you to right-click a map for is in it:
+**Set a note's coordinates here**, **Open in external map** with its list of
+providers, and **Export places…**.
+
+![The same map menu on a phone, opened by a long press as a sheet over the map: New note, Copy coordinates, Set default center point, Set default zoom, Set a note's coordinates here, then Open in external map and Export places…](../../images/mobile-context-menu.png)
 
 ## Set coordinates from a map link
 
