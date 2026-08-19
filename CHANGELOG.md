@@ -4,6 +4,58 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [1.18.0]
+
+### Added
+
+- **A map can now tell you how far one place is from another.** Route statistics
+  measured a file that already existed; there was nothing for a distance you want
+  to know once, between two places nobody has written down.
+
+  Press the ruler beside zoom-to-fit and follow, and the map becomes a measuring
+  surface. Click to drop a point; every point after the first carries the
+  distance from where you started, a dashed leg follows the pointer with the
+  running total, and the readout in the bottom-left corner shows what you have
+  actually placed. Take the last point back with ↺ or **Backspace**, and put the
+  tape away with ✕, **Escape**, or the ruler again.
+
+  What it measures is the ground between the places you clicked, not the offset
+  copies a mainland background draws them at — a few hundred metres per point, on
+  every map whose tiles are in GCJ-02 or BD-09. Switch the background under a
+  measurement and the points move to where the new tiles put them while the
+  figure stays the same. A measurement across the 180th meridian is the short way
+  round, and its labels stay on the segments they belong to.
+
+  While the tape is out, a click belongs to it: clicking a pin adds a point
+  rather than opening that note, no popup covers the ground you are measuring
+  across, and a double-click places two points instead of zooming. All of that
+  comes back the moment you stop. Nothing is written to a note, to your settings
+  or to the base file, and the measurement is gone as soon as you put it away.
+
+  Base map views only — an inline `![[route.gpx]]` map already has its own
+  distance under it. The figure is great-circle distance between your points,
+  which is not the distance along a road: for that, draw the route as a track and
+  read its statistics.
+
+- **A Plus Code pasted into "Set coordinates from a map link" now reads.** The
+  code Google Maps shows under every place, and the `plus.codes` links people
+  share, were the one common way of writing a location this plugin could not
+  take: `8FVC9G8F+6W` on its own, in the middle of a sentence, or as a link all
+  work now.
+
+  Decoded on your machine with no request to anyone, and read as WGS-84 —
+  including inside China, where a Google or Apple _link_ is deliberately treated
+  as GCJ-02 instead. That is not an oversight in either direction: a provider's
+  URL is one company's output, while an Open Location Code is a specification
+  whose maintainer states the datum. If a code you have came off a map that draws
+  China shifted, the dialog's coordinate-system dropdown still overrides it, as
+  it does for every other input.
+
+  Two kinds of code are legal and still refused, with the reason said out loud
+  rather than reported as unreadable text: a short code such as `9G8F+6W`, which
+  has dropped the digits saying where in the world it is, and a padded one such
+  as `8FVC0000+`, which names a region kilometres across rather than a place.
+
 ## [1.17.2]
 
 ### Fixed
@@ -944,6 +996,7 @@ one vault; the behaviour is unchanged, everything around it is new.
   base's first map view, and the menu label falls back to the localized default.
 
 [Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.1...HEAD
+[1.18.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.2...1.18.0
 [1.17.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.1...1.17.2
 [1.17.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.0...1.17.1
 [1.17.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.16.0...1.17.0
