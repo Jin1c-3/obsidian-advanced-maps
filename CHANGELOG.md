@@ -4,6 +4,58 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [1.18.2]
+
+### Fixed
+
+- **The measuring total is no longer hidden behind Obsidian's own buttons.** On
+  Android the app's navigation bar sits across the bottom of the map, over the
+  corner the readout used, so the one number the tape exists to produce was half
+  covered by a row of app buttons. It now opens from the ruler itself — space
+  this plugin already owns, on every platform, and where you were already
+  looking when you pressed it.
+
+### Changed
+
+- **The ruler folds the readout away and back.** Press it once to start
+  measuring, as before. Press it again and the readout folds away with the
+  measurement still running: the points, the line and the distances stay on the
+  map, and further clicks still place points. Press it once more and it returns,
+  showing what you have measured by then rather than what it said when it went
+  away. ✕ and **Escape** are what end a measurement now.
+
+- **You can switch the follow and measure buttons off.** Settings → **Map
+  buttons**, both on to begin with, so nothing changes until you turn one off.
+  A switch reaches every map, including the ones already open, and switching it
+  back on brings the button back. A map that was following stops when the button
+  that would have stopped it goes. Zoom-to-fit has no switch — it is the only
+  way back to the whole collection once the camera has wandered. **New maps
+  follow the active note** moves onto the same page, under the switch it
+  depends on, keeping its name and its value.
+
+- **The settings pane says less.** Every description and page introduction is
+  shorter, in both languages, and rows whose names had grown into sentences are
+  named plainly: **Base file path** → **Base file**, **Enable location** →
+  **Use device location**, **Skip paths containing** → **Skip these folders**,
+  **Shallowest / Deepest level in the pack** → **Lowest / Highest zoom level**,
+  **Track property prefix** → **Property prefix**, **Show photos on the map** →
+  **Show photos**, **Fan out pins that share a spot** → **Fan out overlapping
+  pins**, and each track figure from "Distance property" to "Distance". No
+  setting changed what it holds or what it does.
+
+- **Track properties is nine rows instead of eighteen.** Each figure's name box
+  and its switch now share one row, and the box greys out while the switch is
+  off instead of disappearing — so it still shows what that figure would be
+  called if you turned it back on.
+
+- **Skip these folders is a list you pick from.** Each row offers your vault's
+  own folders as you type, the way the core Templates plugin's folder row does,
+  with add and delete instead of one comma-separated box. Your existing list is
+  read unchanged and arrives as the rows it always was. One thing does change:
+  emptying the list now means nothing is skipped, where clearing the old box put
+  `templates` back. Delete every row only if you mean template notes to be
+  stamped along with everything else.
+
 ## [1.18.1]
 
 ### Changed
@@ -1041,7 +1093,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.1...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.2...HEAD
+[1.18.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.1...1.18.2
 [1.18.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.0...1.18.1
 [1.18.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.2...1.18.0
 [1.17.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.1...1.17.2
