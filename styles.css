@@ -471,6 +471,21 @@
  * drag handle mean what they say. Three boxes plus two affordances is more than
  * a settings row is built for, so the control side is allowed to wrap and the
  * URL takes whatever is left. */
+/* A figure's name and its switch share one row, and the name is the wider half:
+ * without this the box collapses to whatever the switch leaves it. */
+.advanced-maps-figure-row input[type='text'] {
+	flex: 1 1 12em;
+	min-width: 8em;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}
+
+/* Greyed rather than gone, so the row still says what the figure would be
+ * called if it were switched back on. */
+.advanced-maps-figure-row input[type='text']:disabled {
+	opacity: 0.5;
+}
+
 .advanced-maps-map-entry .setting-item-control {
 	flex-wrap: wrap;
 	justify-content: flex-end;

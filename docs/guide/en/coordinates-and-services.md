@@ -92,7 +92,8 @@ vault and where a provider key can be stored.
 ## Device location
 
 **Fill coordinates from current location** asks the operating system on desktop
-and mobile, so no API key is involved. With **Enable location**, a
+and mobile, so no API key is involved. With **Use device location**, a
 present-but-empty `coords:` property can be filled automatically without
-overwriting an existing value. **Skip paths containing** (default `templates`)
-keeps the blank in a template blank.
+overwriting an existing value. **Skip these folders** is a list of paths that are
+never stamped, `templates` to begin with, and each row suggests folders from your
+vault as you type. Empty the list and nothing is skipped.

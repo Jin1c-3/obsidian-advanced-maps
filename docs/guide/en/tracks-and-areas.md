@@ -168,22 +168,23 @@ Three things worth knowing:
 
 ### Choosing which figures are written
 
-Settings → **Tracks** → **Track properties** has a switch per figure, all on to
-begin with. Turn one off and the command stops reaching it: nothing is written
-for it, and a property already in a note under its name is left exactly where it
-is — turning a figure off is a decision about the next write, not permission to
-delete what you already have. So a walking log can keep distance and start time
-and leave the other seven out of every note it touches.
+Settings → **Tracks** → **Track properties** gives each figure one row: the name
+it is written under, and a switch beside it, all nine on to begin with. Turn one
+off and the command stops reaching it: nothing is written for it, and a property
+already in a note under its name is left exactly where it is — turning a figure
+off is a decision about the next write, not permission to delete what you already
+have. So a walking log can keep distance and start time and leave the other seven
+out of every note it touches.
 
 With every figure switched off there is nothing to write, and the command says
 so rather than reporting that it wrote nothing.
 
 ### Naming the columns yourself
 
-The same page holds the prefix and one box per figure that is switched on.
-**Track property prefix** decides all of them at once — `ride` gives
-`ride-distance-km` and its siblings. A box below it decides one, and what you
-type there is the whole property name, prefix left out entirely:
+Each figure's row carries its own name box, greyed out while its switch is off.
+**Property prefix**, at the top of the page, decides all of them at once — `ride`
+gives `ride-distance-km` and its siblings. A figure's own box decides one, and
+what you type there is the whole property name, prefix left out entirely:
 
 ```yaml
 距离: 13.62

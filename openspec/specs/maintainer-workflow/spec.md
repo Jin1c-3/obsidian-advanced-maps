@@ -62,7 +62,13 @@ Maintainer documentation and source comments SHALL NOT retain warnings, recovery
 
 Plugin settings SHALL be exposed through searchable setting definitions, route writes through one typed value-update seam, refresh affected live views explicitly, preserve meaningful defaults when placeholder-backed fields are cleared, and distinguish an unresolved asynchronous view list from a confirmed empty list. A setting description that names the current value of another setting SHALL state the current value while the pane stays open, without re-rendering the field being edited.
 
-The pane SHALL present its rows as topical pages reached from a root of navigable entries rather than as one continuous list, each page carrying its own introduction; an entry MAY state the current value of the setting that sums its page up. Every row SHALL remain reachable through settings search wherever it lives, and the arrangement SHALL change no setting's key, default, stored value, validation, or refresh behavior.
+The pane SHALL present its rows as topical pages reached from a root of navigable entries rather than as one continuous list, each page carrying its own introduction; an entry MAY state the current value of the setting that sums its page up. Every row SHALL remain reachable through settings search wherever it lives, including a row whose editor is a list of nameless entries, and the arrangement SHALL change no setting's key, default, stored value, validation, or refresh behavior.
+
+A row's name and description SHALL say what the setting does and what happens when it is off. Reasoning, worked examples, and the history of a decision belong in the user guide, and SHALL NOT be restated in the pane.
+
+A setting whose value is a list of vault paths SHALL be edited as a list, one path per row, each offering the vault's own folder suggestions; and a list the reader has emptied SHALL be stored as empty rather than restored to its default, while stating in place what an empty list means.
+
+Where one setting decides whether another is written at all, both SHALL sit on one row, and the row SHALL keep the dependent control visible but inert rather than removing it, so the row still states what the value would be.
 
 #### Scenario: Dynamic base-view options are not ready
 
@@ -98,6 +104,21 @@ The pane SHALL present its rows as topical pages reached from a root of navigabl
 
 - **WHEN** rows are moved from one part of the pane to another
 - **THEN** each row's stored key, default, placeholder fallback, validation, and view-refresh behavior are unchanged, and an upgrading reader keeps every configured value
+
+#### Scenario: A path list is edited
+
+- **WHEN** the reader adds a row to a setting holding a list of vault paths
+- **THEN** the row offers the vault's folders as it is typed into, and the stored value is the list the rows show
+
+#### Scenario: The reader empties a path list
+
+- **WHEN** every row of such a list is deleted
+- **THEN** the stored list is empty rather than restored to its default, and the pane states in place what that means
+
+#### Scenario: A dependent value is switched off
+
+- **WHEN** the setting that decides whether a value is used at all is switched off
+- **THEN** that value's own control stays on the same row, inert rather than removed, still stating what it holds
 
 ### Requirement: Pure logic retains gated test coverage
 
