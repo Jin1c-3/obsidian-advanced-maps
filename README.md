@@ -110,7 +110,7 @@ keys, supported photos, and the next recipes.
 | [Tracks and areas](docs/guide/en/tracks-and-areas.md)                 | Route links, inline maps, GPX/GeoJSON/KML/TCX, polygons, statistics as properties |
 | [Around and navigation](docs/guide/en/around-and-navigation.md)       | Around views, reusable Base, Open in map, follow, measuring, shared pins          |
 | [Places in and out](docs/guide/en/places-in-and-out.md)               | Importing a file of placemarks as notes, exporting a Base as GPX/KML/CSV          |
-| [Offline basemap](docs/guide/en/offline-basemap.md)                   | Tiles already on disk as the background, zoom bounds, per-view opt-out            |
+| [Offline basemap](docs/guide/en/offline-basemap.md)                   | Named tile packs already on disk, picked from the map, with their own zoom bounds |
 | [Coordinates and services](docs/guide/en/coordinates-and-services.md) | WGS-84/GCJ-02/BD-09, external maps, search, geocoding, location                   |
 | [Reference and privacy](docs/guide/en/reference-and-privacy.md)       | Supported inputs, option ownership, operational limits, network disclosure        |
 

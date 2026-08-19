@@ -1,6 +1,6 @@
 ---
 title: 'Offline basemap'
-description: 'Draw the basemap from a tile pack already on disk, with zoom bounds, per-view opt-out, and no network at all.'
+description: 'Draw the basemap from tile packs already on disk — several of them, picked from the map or named per view, with zoom bounds and no network at all.'
 ---
 
 # Offline basemap
@@ -11,10 +11,14 @@ description: 'Draw the basemap from a tile pack already on disk, with zoom bound
 
 <!-- nav:end -->
 
-Point every map at a folder of tiles already on your disk, and the ground under
-your notes stops needing a network. Everything else already worked offline — the
+Point a map at a folder of tiles already on your disk, and the ground under your
+notes stops needing a network. Everything else already worked offline — the
 notes, the routes, the photos and their thumbnails are files in your vault — so
 this is the last piece.
+
+You can keep more than one. A pack is regional, so someone who has one usually
+has two: the city they live in and the trail they walk. Each gets a name, and the
+name is how you pick between them.
 
 Advanced Maps **does not download tiles**. Fetching a provider's tiles in bulk is
 theirs to permit, not this plugin's to do on your behalf. What this does is point
@@ -41,7 +45,7 @@ single-file `.mbtiles` or `.pmtiles` archive — reading one needs a hook into t
 map library that this plugin does not bundle. Unpack it into a directory tree
 once and the result is a tile pack.
 
-Keep the pack **out of the vault's index** — a regional pack is easily a hundred
+Keep each pack **out of the vault's index** — a regional pack is easily a hundred
 thousand files, and an indexed one slows down search, links and every Base you
 have. Two layouts do that, and which one you want turns on a single question:
 do your plugin settings sync between devices?
@@ -51,9 +55,9 @@ do your plugin settings sync between devices?
 | Stay on one device   | anywhere on that device       | an absolute path         |
 | Sync between devices | a dot-folder inside the vault | `.tiles/{z}/{x}/{y}.png` |
 
-The tile path is a single string, so settings that sync hand every device the
-same one — and an absolute path can only be right on the machine it was typed on.
-A dot-folder is what gets round that: Obsidian skips a folder whose name begins
+A path is a single string, so settings that sync hand every device the same one —
+and an absolute path can only be right on the machine it was typed on. A
+dot-folder is what gets round that: Obsidian skips a folder whose name begins
 with a dot, the way it skips `.obsidian`, so the tiles are never indexed, never
 searched, never a Base result and never in the file explorer, while one relative
 path is resolved by each device against its own vault.
@@ -62,52 +66,92 @@ If your settings stay put, there is nothing to solve — give each device an
 absolute path of its own. See [On a phone](#on-a-phone) for what that looks like
 there.
 
-## Point at it
+## Add a pack
 
-**Settings → Community plugins → Advanced Maps → Offline basemap.**
+**Settings → Community plugins → Advanced Maps → Offline basemap → Tile packs.**
+**Add tile pack** gives you a row with four boxes:
 
-| Row                | What to put there                                                         |
+| Box                | What to put there                                                         |
 | ------------------ | ------------------------------------------------------------------------- |
+| Name               | What you want to call it — `City`, `Trail`. This is what you pick it by   |
 | Tile path          | `/home/you/tiles/{z}/{x}/{y}.png` — the shape your files are addressed by |
-| Lowest zoom level  | The lowest-numbered folder your `z` directories go down to                |
+| Lowest zoom level  | The lowest-numbered folder that pack's `z` directories go down to         |
 | Highest zoom level | The highest-numbered one                                                  |
 
 The path may be absolute, or relative to your vault. `{z}`, `{x}` and `{y}` are
-filled in per tile; `{-y}` works too, for packs laid out in TMS row order. Leave
-the path empty and every map keeps the background it already has.
+filled in per tile; `{-y}` works too, for packs laid out in TMS row order.
 
 Type a filesystem path, not a URL. The plugin turns it into one when it builds a
 map, because the prefix that URL needs is regenerated every time Obsidian starts
 — a URL written down by hand works until the next restart and then stops.
 
+**Default background** below the list is what every map opens on unless it says
+otherwise. Leave it at _None_ and your packs stay configured and stay pickable
+without changing any map until you ask for one.
+
+Give each pack a name of its own. Two packs sharing a name are one pack as far as
+everything that refers to one is concerned, and the second is left out.
+
 ### The two zoom levels
 
-They are the folder names at either end of your pack, and each stops a different
+They are the folder names at either end of that pack, and each stops a different
 kind of failure:
 
-- **Highest zoom level** bounds the tiles themselves. Zoom in past it and the map keeps
-  drawing, magnifying the deepest tiles you have, instead of asking for files
-  that are not there. Set it too low and you lose sharpness you had; too high and
-  the map quietly issues a failed read for every tile past the end.
+- **Highest zoom level** bounds the tiles themselves. Zoom in past it and the map
+  keeps drawing, magnifying the deepest tiles you have, instead of asking for
+  files that are not there. Set it too low and you lose sharpness you had; too
+  high and the map quietly issues a failed read for every tile past the end.
 - **Lowest zoom level** bounds the camera. Zoom out towards it and the map stops
   there rather than going blank, because there is nothing above your lowest level
   to magnify.
 
-If your pack covers `z0`–`z14`, put 0 and 14 in.
+If a pack covers `z0`–`z14`, put 0 and 14 in. Each pack carries its own pair, and
+the map is bounded by whichever pack it is currently drawing.
+
+## Pick one from the map
+
+Your packs appear in the map's own **layers** button — the stack of squares in
+the top-right corner, the same menu the Maps plugin lists its own backgrounds in.
+Each pack is there under the name you gave it, beside them.
+
+Choosing one draws it, with that pack's own zoom bounds. Choosing one of the
+Maps plugin's backgrounds puts the map on that instead, and it stays there: the
+choice is yours until you make another one, and nothing later puts the pack back
+underneath you.
+
+The layers button appears once there is more than one background to choose from.
+If you have no backgrounds configured in the Maps plugin, one pack is enough to
+make it appear, and the menu gains a **Default background** entry — the way back
+to what the map would draw with no pack at all.
+
+A choice made here lasts as long as the map is on screen, exactly as a background
+picked from that menu already did. Close the tab and reopen it and the map is
+back on the background its view names. Nothing is written to a file.
 
 ## Per map
 
-The **Background** section of a map view's options gains **Offline basemap**. It
-is on by default, so configuring a pack reaches every map; set it to _No_ on a
-view that should keep its own background — a satellite layer, a Chinese basemap,
-whatever that view is configured with.
+The **Basemap** section of a map view's options has one row, **This map opens
+on**, listing every background there is: the plugin default, each background the
+Maps plugin offers, and each of your packs. So one base file can hold a view on a
+city pack and another on the network.
 
-Your view's own **Map tiles** setting is never overwritten. The offline basemap
-is substituted as the map is built, so switching it off on a view brings back
-exactly what that view had configured, with nothing to undo.
+| Choice                            | What that view opens on                     |
+| --------------------------------- | ------------------------------------------- |
+| Follow the plugin default         | Whatever **Default background** names       |
+| None — this view's own background | What the map would draw with no pack at all |
+| A background, or a pack, by name  | That one                                    |
+
+Your view's own **Map tiles** setting is never overwritten. A pack is substituted
+as the map is built, so choosing _None_ on a view brings back exactly what that
+view had configured, with nothing to undo.
+
+If a view names a pack you have since renamed or removed — or a base file written
+in another vault names a background this one does not have — the map falls back
+to what it would draw with no pack, and the row says so: `Trail — no longer
+configured`. Nothing quietly becomes something else.
 
 Inline `![[route.gpx]]` maps have no view options of their own, so they follow
-the plugin setting.
+the plugin default.
 
 ## Coordinate systems
 
@@ -119,22 +163,22 @@ option. See [Coordinates and services](coordinates-and-services.md).
 
 ## On a phone
 
-The same setting draws the same pack in the Obsidian mobile app, and the same two
-layouts apply. There is no separate mobile row to fill in.
+The same settings draw the same packs in the Obsidian mobile app, the same two
+layouts apply, and the layers button offers them the same way. There is no
+separate mobile row to fill in.
 
-**Settings that stay on the device.** Give the phone an absolute path of its own
-— `/sdcard/Download/tiles/{z}/{x}/{y}.png` and the like, whatever your file
-manager shows you. This is the one to reach for on Android: the pack sits where
-the phone already keeps large downloads, and nothing about it comes near the
-vault.
+**Settings that stay on the device.** Give the phone absolute paths of its own —
+`/sdcard/Download/tiles/{z}/{x}/{y}.png` and the like, whatever your file manager
+shows you. This is the one to reach for on Android: the packs sit where the phone
+already keeps large downloads, and nothing about them comes near the vault.
 
 **Settings that sync.** Use `.tiles`, on every device including this one. A phone
 handed a desktop's absolute path draws nothing but your own pins over the
 background colour — the path resolves, the tiles are simply not there, and no
 error says so.
 
-Getting the pack onto the phone is the part this plugin has no hand in: a cable,
-or the sync that already carries your vault.
+Getting a pack onto the phone is the part this plugin has no hand in: a cable, or
+the sync that already carries your vault.
 
 Measured on Android. The address is asked of the running app rather than
 assembled from a platform name, so iOS is expected to follow, but it was not
@@ -152,11 +196,13 @@ in order:
    the one your files actually use.
 3. **The zoom levels.** A lowest level higher than where the map is sitting pins
    the camera; a highest level set to 0 leaves one tile for the whole world.
-4. **The view.** Its **Offline basemap** option may be set to _No_.
+4. **Which pack.** The map may be on a different one — open the layers button and
+   see what is checked, or read the view's **This map opens on** row.
 
 ## What this touches
 
-Nothing. The pack is opened for reading and never written to, moved or deleted,
-and no part of this fetches tiles from a provider. When a map is drawing a pack
-it makes no tile request to the network at all — see
+Nothing. A pack is opened for reading and never written to, moved or deleted, and
+no part of this fetches tiles from a provider. Your packs are offered in the Maps
+plugin's own menu without being written into its settings. When a map is drawing
+a pack it makes no tile request to the network at all — see
 [Reference and privacy](reference-and-privacy.md) for what does leave.

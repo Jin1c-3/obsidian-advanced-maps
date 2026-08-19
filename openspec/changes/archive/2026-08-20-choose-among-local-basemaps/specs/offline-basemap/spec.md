@@ -1,12 +1,94 @@
-# offline-basemap Specification
+## ADDED Requirements
 
-## Purpose
+### Requirement: A map view names the background it starts on
 
-A map's background can be a tile pack already on disk — one of several, named,
-and chosen from the map itself — so a vault's maps, the notes, the routes, the
-photos and the ground under them, work with no network at all.
+Which background a map opens on SHALL be a choice of that view, made where its
+background is configured, and stated by name rather than as a yes or no. The
+choice SHALL offer the background the native view would resolve on its own, every
+background the host offers, and every configured pack, so that one base file can
+hold a view on a pack and another on the network.
 
-## Requirements
+A view whose stated background no longer exists — a pack since renamed or removed
+— SHALL fall back to the background the native view resolves for it rather than
+draw nothing, and SHALL say so where the choice is made rather than silently
+change what it means.
+
+A map with no view options of its own — an inline track map — SHALL follow the
+plugin's own stated default, since that is the only statement of intent available
+to it.
+
+#### Scenario: Two views in one base file open on different backgrounds
+
+- **WHEN** one map view names a pack and another names the default background
+- **THEN** each opens on what it names, and neither changes the other
+
+#### Scenario: A view names a pack that is no longer configured
+
+- **WHEN** a map view naming a pack is opened after that pack has been removed
+- **THEN** the map draws the background the native view resolves for it, and the
+  view's own setting reports that what it named is gone
+
+#### Scenario: An inline map has no options of its own
+
+- **WHEN** an inline track map is drawn while a pack is the plugin's default
+- **THEN** it draws that pack, following the plugin setting
+
+### Requirement: A reader chooses a map's background from the map
+
+Every configured pack SHALL be offered to the reader wherever the host offers its
+own backgrounds, named as the reader named it, so that a local background is
+picked the way every other background is. Choosing one SHALL draw it with its own
+zoom bounds applied.
+
+A background the reader picks SHALL win over the plugin's own substitution for as
+long as that map is on screen, including across a configuration reload, so a map
+never returns to a background the reader did not ask for while still reporting
+the one they did. The choice SHALL NOT outlive the map, matching how a background
+picked from the host's own control already behaves, and SHALL NOT be written to
+any file.
+
+The reader SHALL always be able to reach the background they would have with no
+pack configured, so that choosing a pack is reversible from the map itself.
+
+Offering these entries depends on a host control this plugin does not own. Where
+that control is absent or is not the shape this expects, the plugin SHALL leave
+the host's own backgrounds exactly as they were and stand down, and every pack
+SHALL remain reachable through the view's own setting.
+
+#### Scenario: The reader picks a pack from the map
+
+- **WHEN** a reader chooses a configured pack where the host offers its
+  backgrounds
+- **THEN** the map draws that pack, bounded to the levels that pack holds
+
+#### Scenario: The configuration reloads after a pick
+
+- **WHEN** anything reloads a map's configuration after the reader has picked a
+  background
+- **THEN** the map still draws what the reader picked, and what is offered still
+  reports that same background as the current one
+
+#### Scenario: The reader picks their way back
+
+- **WHEN** a reader whose map is drawing a pack chooses the background they would
+  have with no pack configured
+- **THEN** the map draws that background and does not return to the pack until
+  they ask for it
+
+#### Scenario: The map is closed and opened again
+
+- **WHEN** a map whose background the reader picked is closed and opened again
+- **THEN** it opens on the background its view names, not on the picked one, and
+  nothing about the pick was written to a file
+
+#### Scenario: The host control is not the shape this expects
+
+- **WHEN** the host offers no background control, or one whose shape this plugin
+  cannot read
+- **THEN** the host's own backgrounds are left exactly as they were, no entry is
+  added, and each pack is still reachable from the view's own setting
+
+## MODIFIED Requirements
 
 ### Requirement: A tile pack on disk can be a map's background
 
@@ -120,94 +202,6 @@ bounding the source at that end empties it and leaves the map blank.
 - **THEN** the bound is applied again to the source the new style built, without
   discarding tiles already drawn
 
-### Requirement: A map view names the background it starts on
-
-Which background a map opens on SHALL be a choice of that view, made where its
-background is configured, and stated by name rather than as a yes or no. The
-choice SHALL offer the background the native view would resolve on its own, every
-background the host offers, and every configured pack, so that one base file can
-hold a view on a pack and another on the network.
-
-A view whose stated background no longer exists — a pack since renamed or removed
-— SHALL fall back to the background the native view resolves for it rather than
-draw nothing, and SHALL say so where the choice is made rather than silently
-change what it means.
-
-A map with no view options of its own — an inline track map — SHALL follow the
-plugin's own stated default, since that is the only statement of intent available
-to it.
-
-#### Scenario: Two views in one base file open on different backgrounds
-
-- **WHEN** one map view names a pack and another names the default background
-- **THEN** each opens on what it names, and neither changes the other
-
-#### Scenario: A view names a pack that is no longer configured
-
-- **WHEN** a map view naming a pack is opened after that pack has been removed
-- **THEN** the map draws the background the native view resolves for it, and the
-  view's own setting reports that what it named is gone
-
-#### Scenario: An inline map has no options of its own
-
-- **WHEN** an inline track map is drawn while a pack is the plugin's default
-- **THEN** it draws that pack, following the plugin setting
-
-### Requirement: A reader chooses a map's background from the map
-
-Every configured pack SHALL be offered to the reader wherever the host offers its
-own backgrounds, named as the reader named it, so that a local background is
-picked the way every other background is. Choosing one SHALL draw it with its own
-zoom bounds applied.
-
-A background the reader picks SHALL win over the plugin's own substitution for as
-long as that map is on screen, including across a configuration reload, so a map
-never returns to a background the reader did not ask for while still reporting
-the one they did. The choice SHALL NOT outlive the map, matching how a background
-picked from the host's own control already behaves, and SHALL NOT be written to
-any file.
-
-The reader SHALL always be able to reach the background they would have with no
-pack configured, so that choosing a pack is reversible from the map itself.
-
-Offering these entries depends on a host control this plugin does not own. Where
-that control is absent or is not the shape this expects, the plugin SHALL leave
-the host's own backgrounds exactly as they were and stand down, and every pack
-SHALL remain reachable through the view's own setting.
-
-#### Scenario: The reader picks a pack from the map
-
-- **WHEN** a reader chooses a configured pack where the host offers its
-  backgrounds
-- **THEN** the map draws that pack, bounded to the levels that pack holds
-
-#### Scenario: The configuration reloads after a pick
-
-- **WHEN** anything reloads a map's configuration after the reader has picked a
-  background
-- **THEN** the map still draws what the reader picked, and what is offered still
-  reports that same background as the current one
-
-#### Scenario: The reader picks their way back
-
-- **WHEN** a reader whose map is drawing a pack chooses the background they would
-  have with no pack configured
-- **THEN** the map draws that background and does not return to the pack until
-  they ask for it
-
-#### Scenario: The map is closed and opened again
-
-- **WHEN** a map whose background the reader picked is closed and opened again
-- **THEN** it opens on the background its view names, not on the picked one, and
-  nothing about the pick was written to a file
-
-#### Scenario: The host control is not the shape this expects
-
-- **WHEN** the host offers no background control, or one whose shape this plugin
-  cannot read
-- **THEN** the host's own backgrounds are left exactly as they were, no entry is
-  added, and each pack is still reachable from the view's own setting
-
 ### Requirement: Changing the pack reaches maps already open
 
 Adding, changing or removing a pack SHALL take effect on maps that are already on
@@ -235,15 +229,17 @@ offer and a pack just added is.
 - **THEN** that map keeps the background it is drawing, and the new pack is
   offered on it without reopening it
 
-### Requirement: The pack is only ever read
+## REMOVED Requirements
 
-This feature SHALL read tiles and SHALL NOT write, move, delete or fetch them. No
-part of it SHALL download tiles from a provider, since bulk-fetching a provider's
-tiles is that provider's terms to grant rather than this plugin's to assume on a
-reader's behalf.
+### Requirement: A map view can decline the offline basemap
 
-#### Scenario: A pack is in use
+**Reason**: Declining is now one choice among several rather than the only one a
+view can make. A view states which background it opens on by name, which covers
+declining — the default background is one of the names — and also covers picking
+one pack out of several, which the yes-or-no form could not express.
 
-- **WHEN** a map draws from a configured pack
-- **THEN** nothing under the pack's path is created, changed or removed, and no
-  tile is fetched from a provider
+**Migration**: A view already saying it declines keeps declining: the stored `off`
+value continues to name the background the native view resolves, and a view with
+nothing stored continues to follow the plugin's own default. No base file needs
+editing. The behavior this requirement described is carried by _A map view names
+the background it starts on_.

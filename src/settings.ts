@@ -8,7 +8,7 @@ import {
 	type SettingDefinition,
 	type SettingDefinitionItem,
 } from 'obsidian';
-import { TILE_ZOOM_MAX, tilesProblem } from './basemap';
+import { TILE_ZOOM_MAX, tilePacks, tilesProblem, type TilePack } from './basemap';
 import { GUIDE_URL, REPO_URL, SPREAD, TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
 import type { PhotoDatum } from './exif';
@@ -34,15 +34,16 @@ export type OpenTarget = (typeof OPEN_TARGETS)[number];
 export interface AdvancedMapsSettings {
 	/** Default coordinate mode; a view option can override it. */
 	coordSystem: CoordMode;
-	/** A basemap already on disk: the filesystem path its tiles are addressed by,
-	 *  holding `{z}`, `{x}` and `{y}`. Empty leaves every map its own background.
-	 *  Stored as a path and never as a URL — the `app://` prefix a URL needs is
-	 *  rebuilt at every launch, so a stored one would rot overnight. */
-	offlineTiles: string;
-	/** The shallowest and deepest levels that pack holds, which is what keeps the
-	 *  map from asking for tiles outside it. */
-	offlineTilesMinZoom: number;
-	offlineTilesMaxZoom: number;
+	/** Basemaps already on disk, each a named pack: the filesystem path its tiles
+	 *  are addressed by, holding `{z}`, `{x}` and `{y}`, and the shallowest and
+	 *  deepest levels it holds, which is what keeps a map from asking for tiles
+	 *  outside it. Stored as paths and never as URLs — the `app://` prefix a URL
+	 *  needs is rebuilt at every launch, so a stored one would rot overnight. */
+	tilePacks: TilePack[];
+	/** Which of them every map draws unless it says otherwise, by name. Empty is
+	 *  no default: the packs stay configured and stay pickable, and a map that
+	 *  names none of them keeps the background the native view resolves. */
+	defaultBasemap: string;
 	trackColor: string;
 	trackWeight: number;
 	trackOpacity: number;
@@ -113,15 +114,79 @@ export interface AdvancedMapsSettings {
 	autoFillExclude: string;
 }
 
+/**
+ * The three keys this plugin stored when a vault could hold one pack and a pack
+ * had no name. Read once on load and written never again — see `migratedPack`
+ * and `dropLegacyBasemap`.
+ */
+export interface LegacyBasemap {
+	offlineTiles?: unknown;
+	offlineTilesMinZoom?: unknown;
+	offlineTilesMaxZoom?: unknown;
+}
+
+const LEGACY_BASEMAP_KEYS = ['offlineTiles', 'offlineTilesMinZoom', 'offlineTilesMaxZoom'] as const;
+
+/**
+ * A name for the one pack that had none, from the last directory above its
+ * placeholders — `/home/you/tiles/{z}/{x}/{y}.png` is "tiles".
+ *
+ * The placeholders are where the path stops being a place: the segments after
+ * them name a tile rather than a pack, and `{y}.png` is nobody's idea of a name.
+ * A template that is nothing but placeholders leaves nothing to read, so it gets
+ * the feature's own word for itself and the reader renames it if they care.
+ */
+export function packNameFromPath(path: string): string {
+	const segments = path.replace(/\\/g, '/').split('/');
+	const placeholder = segments.findIndex((segment) => segment.includes('{'));
+	const above = placeholder === -1 ? segments : segments.slice(0, placeholder);
+	for (let at = above.length - 1; at >= 0; at--) {
+		const segment = above[at].trim();
+		if (segment !== '' && segment !== '.' && segment !== '..') return segment;
+	}
+	return t('settings.tiles.pack.unnamed');
+}
+
+/**
+ * The single configured pack as the first entry of the list that replaced it,
+ * or null when there was none — an empty path was "no pack", and stays nothing.
+ */
+export function migratedPack(saved: LegacyBasemap | null | undefined): TilePack | null {
+	const path = typeof saved?.offlineTiles === 'string' ? saved.offlineTiles.trim() : '';
+	if (path === '') return null;
+	const [pack] = tilePacks([
+		{
+			name: packNameFromPath(path),
+			path,
+			minZoom: saved?.offlineTilesMinZoom,
+			maxZoom: saved?.offlineTilesMaxZoom,
+		},
+	]);
+	return pack ?? null;
+}
+
+/**
+ * Take the old keys off the live settings, so the next write drops them from
+ * `data.json`. Answers whether anything was there to drop, which is what decides
+ * whether that write happens at all: a reader who never configured a pack must
+ * not have their settings file rewritten on every launch.
+ */
+export function dropLegacyBasemap(settings: AdvancedMapsSettings & LegacyBasemap): boolean {
+	let dropped = false;
+	for (const key of LEGACY_BASEMAP_KEYS) {
+		if (!(key in settings)) continue;
+		delete settings[key];
+		dropped = true;
+	}
+	return dropped;
+}
+
 /* Blank labels use localized fallbacks; blank viewName selects the first map.
  * Device location starts disabled because it prompts and writes physical position. */
 export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	coordSystem: 'auto',
-	offlineTiles: '',
-	// A common depth for a hand-unpacked pack, and safe either way: too low
-	// costs sharpness at the deepest levels, never correctness.
-	offlineTilesMinZoom: 0,
-	offlineTilesMaxZoom: 16,
+	tilePacks: [],
+	defaultBasemap: '',
 	trackColor: 'var(--bases-map-marker-background)',
 	trackWeight: TRACK_KNOBS.trackWeight.def,
 	trackOpacity: TRACK_KNOBS.trackOpacity.def,
@@ -196,6 +261,12 @@ const BASE_PATH_PLACEHOLDER = 'places.base';
 
 /** The shape of a tile template rather than a path anyone actually has. */
 const OFFLINE_TILES_PLACEHOLDER = '/path/to/tiles/{z}/{x}/{y}.png';
+
+/**
+ * What a pack row starts as. A common depth for a hand-unpacked pack, and safe
+ * either way: too low costs sharpness at the deepest levels, never correctness.
+ */
+const NEW_PACK: TilePack = { name: '', path: '', minZoom: 0, maxZoom: 16 };
 
 /** Marks a rendered description's mention of the coordinate property, so a
  *  rename can find it without re-rendering the pane; see `propertyDesc`. */
@@ -276,7 +347,10 @@ type PageKey =
 
 /** Indexed entry keys keep list rows on the declarative settings read/write seam. */
 type EntryKey =
-	`externalMaps.${number}.on` | `customMaps.${number}.${'name' | 'url' | 'datum'}` | `autoFillExclude.${number}`;
+	| `externalMaps.${number}.on`
+	| `customMaps.${number}.${'name' | 'url' | 'datum'}`
+	| `tilePacks.${number}.${PackField}`
+	| `autoFillExclude.${number}`;
 /** The same seam for a fixed key set rather than an index: one row per figure,
  *  in each of the two records a figure has an entry in. */
 type FigureRecord = 'statsNames' | 'statsWrite';
@@ -320,22 +394,33 @@ function excludeIndex(key: string): number | null {
 	return parts ? Number(parts[1]) : null;
 }
 
+/** The four boxes one pack row holds. */
+type PackField = 'name' | 'path' | 'minZoom' | 'maxZoom';
+
 type EntryPath =
 	| { list: 'externalMaps'; index: number; field: 'on' }
-	| { list: 'customMaps'; index: number; field: 'name' | 'url' | 'datum' };
+	| { list: 'customMaps'; index: number; field: 'name' | 'url' | 'datum' }
+	| { list: 'tilePacks'; index: number; field: PackField };
 
-const ENTRY_KEY = /^(externalMaps|customMaps)\.(\d+)\.(on|name|url|datum)$/;
+const ENTRY_KEY = /^(externalMaps|customMaps|tilePacks)\.(\d+)\.(on|name|url|datum|path|minZoom|maxZoom)$/;
 
 /** The reverse of an `EntryKey`, and null for every ordinary settings key. */
 function entryPath(key: string): EntryPath | null {
 	const parts = ENTRY_KEY.exec(key);
 	if (!parts) return null;
 	const index = Number(parts[2]);
+	const field = parts[3];
 	if (parts[1] === 'externalMaps') {
-		return parts[3] === 'on' ? { list: 'externalMaps', index, field: 'on' } : null;
+		return field === 'on' ? { list: 'externalMaps', index, field: 'on' } : null;
 	}
-	if (parts[3] === 'on') return null;
-	return { list: 'customMaps', index, field: parts[3] as 'name' | 'url' | 'datum' };
+	if (parts[1] === 'tilePacks') {
+		const packFields: readonly string[] = ['name', 'path', 'minZoom', 'maxZoom'];
+		return packFields.includes(field) ? { list: 'tilePacks', index, field: field as PackField } : null;
+	}
+	const customFields: readonly string[] = ['name', 'url', 'datum'];
+	return customFields.includes(field)
+		? { list: 'customMaps', index, field: field as 'name' | 'url' | 'datum' }
+		: null;
 }
 
 /** One entry picked up and put down at another index. */
@@ -712,6 +797,19 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		return customMaps(this.plugin.settings.customMaps);
 	}
 
+	/** Every pack as the reader has them; the list draws this, and a write starts from it. */
+	private packs(): TilePack[] {
+		return tilePacks(this.plugin.settings.tilePacks);
+	}
+
+	/** "No default", then one entry per named pack. A row still being filled in
+	 *  has no name yet and nothing to be chosen by, so it is not offered. */
+	private defaultChoices(): Record<string, string> {
+		const choices: Record<string, string> = { '': t('settings.tiles.default.none') };
+		for (const pack of this.packs()) choices[pack.name] = pack.name;
+		return choices;
+	}
+
 	/**
 	 * A whole list replaced — an entry added, deleted or moved.
 	 *
@@ -720,7 +818,10 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 * control writes on every keystroke, and a re-render mid-word would take the
 	 * focus with it.
 	 */
-	private async writeList(key: 'externalMaps' | 'customMaps', next: BuiltinMap[] | CustomMap[]): Promise<void> {
+	private async writeList(
+		key: 'externalMaps' | 'customMaps' | 'tilePacks',
+		next: BuiltinMap[] | CustomMap[] | TilePack[]
+	): Promise<void> {
 		await this.setControlValue(key, next);
 		this.update();
 	}
@@ -737,31 +838,70 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * The path template, saying what is wrong with it as it is typed.
+	 * One pack on one row: what it is called, where its tiles are, and the two
+	 * levels it holds — saying what is wrong with the path as it is typed.
 	 *
-	 * Structural only: whether the three placeholders are there. Whether anything
-	 * is at that path cannot be asked without enumerating a directory outside the
-	 * vault, and a pack whose path is wrong draws nothing, which is visible at
-	 * once.
+	 * The check is structural only: whether the three placeholders are there.
+	 * Whether anything is at that path cannot be asked without enumerating a
+	 * directory outside the vault, and a pack whose path is wrong draws nothing,
+	 * which is visible at once.
+	 *
+	 * Four boxes on one row because the list counts rows, and one row has to be
+	 * one pack for its ✕ and its drag handle to mean what they say.
 	 */
-	private offlineTilesRow(setting: Setting): void {
-		const say = (value: string) => {
-			// Empty is "no pack", not a mistake.
-			const problem = value.trim() === '' ? null : tilesProblem(value);
+	private packRow(setting: Setting, entry: TilePack, index: number): void {
+		setting.settingEl.addClass('advanced-maps-pack-entry');
+		const say = (path: string) => {
+			// Empty is a row still being filled in, not a wrong one.
+			const problem = path.trim() === '' ? null : tilesProblem(path);
 			setting.setErrorMessage(problem === null ? null : t(`settings.tiles.error.${problem}`));
 		};
+
+		setting.addText((text) => {
+			text.setPlaceholder(t('settings.tiles.pack.name'))
+				.setValue(entry.name)
+				.onChange((value) => void this.setControlValue(`tilePacks.${index}.name`, value));
+			text.inputEl.setAttribute('aria-label', t('settings.tiles.pack.name'));
+		});
 		setting.addText((text) => {
 			text.setPlaceholder(OFFLINE_TILES_PLACEHOLDER)
-				.setValue(this.plugin.settings.offlineTiles)
+				.setValue(entry.path)
 				.onChange((value) => {
+					// Said while the reader is still looking at the box: a template
+					// missing a placeholder resolves to nothing, and a map that draws
+					// nothing cannot explain why.
 					say(value);
-					void this.setControlValue('offlineTiles', value);
+					void this.setControlValue(`tilePacks.${index}.path`, value);
 				});
 			text.inputEl.addClass('advanced-maps-tiles-path');
+			text.inputEl.setAttribute('aria-label', t('settings.tiles.path.name'));
 		});
-		// A template saved by an older version, or left half-written, states itself
-		// on arrival rather than waiting to be typed in again.
-		say(this.plugin.settings.offlineTiles);
+		this.levelBox(setting, entry.minZoom, index, 'minZoom', 'settings.tiles.minZoom.name');
+		this.levelBox(setting, entry.maxZoom, index, 'maxZoom', 'settings.tiles.maxZoom.name');
+		// A template saved half-written states itself on arrival rather than
+		// waiting to be typed in again.
+		say(entry.path);
+	}
+
+	/** One of a pack row's two zoom levels: a number box, not a slider — a slider
+	 *  would take the width the path box needs, four controls to a row. */
+	private levelBox(
+		setting: Setting,
+		value: number,
+		index: number,
+		field: 'minZoom' | 'maxZoom',
+		label: TranslationKey
+	): void {
+		setting.addText((text) => {
+			text.setValue(String(value)).onChange(
+				(next) => void this.setControlValue(`tilePacks.${index}.${field}`, next)
+			);
+			text.inputEl.type = 'number';
+			text.inputEl.min = '0';
+			text.inputEl.max = String(TILE_ZOOM_MAX);
+			text.inputEl.addClass('advanced-maps-tiles-level');
+			text.inputEl.setAttribute('aria-label', t(label));
+		});
 	}
 
 	/**
@@ -867,35 +1007,52 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			this.page(
 				'tiles',
 				[
+					// A list rather than a fixed row apiece: a pack is regional, so a
+					// reader who has one usually has two — the city they live in and the
+					// trail they walk — and each carries its own levels because each was
+					// unpacked to its own depth.
 					{
-						name: t('settings.tiles.path.name'),
-						desc: t('settings.tiles.path.desc'),
-						// Hand-built rather than a declarative text control so the row can
-						// say what is wrong with a template while it is still being typed,
-						// the same way a custom external-map URL does. The write still goes
-						// through the shared seam.
-						render: (setting: Setting) => this.offlineTilesRow(setting),
+						type: 'list',
+						heading: t('settings.tiles.packs.heading'),
+						emptyState: t('settings.tiles.packs.empty'),
+						items: this.packs().map((entry, index) => ({
+							// Ordinary nameless rows retain the list's drag/delete affordances.
+							name: '',
+							searchable: false,
+							render: (setting: Setting) => this.packRow(setting, entry, index),
+						})),
+						addItem: {
+							name: t('settings.tiles.packs.add'),
+							action: () => {
+								void this.writeList('tilePacks', [...this.packs(), { ...NEW_PACK }]);
+							},
+						},
+						onDelete: (index: number) => {
+							void this.writeList(
+								'tilePacks',
+								this.packs().filter((_, at) => at !== index)
+							);
+						},
+						onReorder: (from: number, to: number) => {
+							void this.writeList('tilePacks', moved(this.packs(), from, to));
+						},
 					},
-					this.slider(
-						'settings.tiles.minZoom.name',
-						'settings.tiles.minZoom.desc',
-						'offlineTilesMinZoom',
-						0,
-						TILE_ZOOM_MAX,
-						1
-					),
-					this.slider(
-						'settings.tiles.maxZoom.name',
-						'settings.tiles.maxZoom.desc',
-						'offlineTilesMaxZoom',
-						0,
-						TILE_ZOOM_MAX,
-						1
-					),
+					{
+						name: t('settings.tiles.default.name'),
+						desc: t('settings.tiles.default.desc'),
+						// Only ever the packs configured right now, so this cannot name one
+						// that is gone; a stored name that no longer matches falls back to
+						// the native background, which is what an empty value means anyway.
+						control: {
+							type: 'dropdown',
+							key: 'defaultBasemap',
+							options: this.defaultChoices(),
+						},
+					},
 				],
-				// The pack itself, named rather than summarized: a path is what the
-				// page is set to, and what a reader checking it wants to read back.
-				() => this.plugin.settings.offlineTiles || t('settings.state.unset')
+				// What every map draws unless it says otherwise — the one thing on this
+				// page that changes what a reader sees without opening a map view.
+				() => this.plugin.settings.defaultBasemap || t('settings.tiles.default.none')
 			),
 
 			this.page(
@@ -1203,6 +1360,10 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		const path = entryPath(key);
 		if (!path) return super.getControlValue(key);
 		if (path.list === 'externalMaps') return this.builtins()[path.index]?.on ?? true;
+		if (path.list === 'tilePacks') {
+			const pack = this.packs()[path.index];
+			return pack ? pack[path.field] : '';
+		}
 		const entry = this.customs()[path.index];
 		return entry ? entry[path.field] : '';
 	}
@@ -1215,6 +1376,32 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			if (!entry) return;
 			list[path.index] = { ...entry, on: value === true };
 			await this.setControlValue('externalMaps', list);
+			return;
+		}
+		if (path.list === 'tilePacks') {
+			const list = this.packs();
+			const entry = list[path.index];
+			if (!entry) return;
+			const updated = { ...entry };
+			if (path.field === 'minZoom' || path.field === 'maxZoom') {
+				// The two boxes are numbers typed by hand: an emptied one is not a
+				// level, so the pack keeps the one it had rather than jumping to zero
+				// while the reader is still mid-edit.
+				const level = Number(value);
+				if (!isFinite(level)) return;
+				updated[path.field] = Math.min(TILE_ZOOM_MAX, Math.max(0, Math.round(level)));
+			} else {
+				updated[path.field] = typeof value === 'string' ? value.trim() : '';
+			}
+			list[path.index] = updated;
+			await this.setControlValue('tilePacks', list);
+			// A pack is referred to by name, so renaming the default one would
+			// otherwise leave the setting pointing at a pack that no longer exists —
+			// silently no default at all, on the keystroke that removed the last
+			// character of the old name.
+			if (path.field === 'name' && this.plugin.settings.defaultBasemap === entry.name) {
+				await this.setControlValue('defaultBasemap', updated.name);
+			}
 			return;
 		}
 		const list = this.customs();
@@ -1284,15 +1471,15 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		// an unknown provider or datum cannot be stored by going through here.
 		if (key === 'externalMaps') next = resolveBuiltins(next, getLocale());
 		if (key === 'customMaps') next = customMaps(next);
+		if (key === 'tilePacks') next = tilePacks(next);
 		await super.setControlValue(key, next);
 
 		switch (key) {
 			case 'coordSystem':
 				this.plugin.reprojectAll();
 				break;
-			case 'offlineTiles':
-			case 'offlineTilesMinZoom':
-			case 'offlineTilesMaxZoom':
+			case 'tilePacks':
+			case 'defaultBasemap':
 				// Not on the track-refresh list below: this replaces the ground under
 				// the tracks rather than the tracks, and the redraw the new style
 				// triggers puts them back by itself.

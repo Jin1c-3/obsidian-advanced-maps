@@ -8,8 +8,11 @@ import type { PaneType, TFile } from 'obsidian';
 import {
 	applyOfflineTiles,
 	boundOfflineSource,
+	DEFAULT_BACKGROUND,
+	nativeTileSets,
+	packBackgroundId,
+	resolveBackground,
 	restyleForBasemap,
-	usesOfflineTiles,
 	type OfflineBasemap,
 } from './basemap';
 import {
@@ -79,6 +82,8 @@ import type {
 	MapMarker,
 	MapMouseEvent,
 	MarkerFeature,
+	NativeMapsPlugin,
+	NativeTileSet,
 } from './types/obsidian-internals';
 
 interface DrawItem {
@@ -173,6 +178,25 @@ export class TrackLayer {
 	/** Reached past the wrapper by `hover()`, which already holds tile-space coordinates. */
 	private origShowPopup: BasesMapView['popupManager']['showPopup'] | null = null;
 	private locate: LocateGuard | null = null;
+	/**
+	 * The background the reader picked from the map itself, or null while they
+	 * have picked none. Held here rather than written anywhere: a background
+	 * picked from the host's own control does not outlive the view either — its
+	 * `getEphemeralState` carries center and zoom and nothing else — and a menu
+	 * click that edited a `.base` file would be a surprise.
+	 */
+	private chosen: string | null = null;
+	/**
+	 * How to take this plugin's entries back out of the menu the host's control is
+	 * still holding. The control keeps the array it was constructed with for as
+	 * long as its map lives, so restoring the host's own settings object is not
+	 * enough on its own: without this, a disabled plugin leaves packs on offer
+	 * that nothing answers to. Null until a control has been offered any.
+	 */
+	private retireOffer: (() => void) | null = null;
+	/** The menu the host's control is drawing from, and the host's own entries it
+	 *  is rebuilt out of. Null until a control has been handed one. */
+	private offered: { list: NativeTileSet[]; own: NativeTileSet[] } | null = null;
 	/** Which space the map is currently drawn in, so a change to it can be noticed. */
 	private appliedSystem: CoordSystem | null = null;
 	/** The signature of what is currently on the map; null once nothing is. */
@@ -426,14 +450,44 @@ export class TrackLayer {
 		// centre is projected with the datum of whichever tiles are actually going
 		// to be drawn.
 		this.wrap(view, 'loadConfig', (orig) => (tileSetId?: string) => {
-			const config = orig.call(view, tileSetId);
-			applyOfflineTiles(config, this.basemap());
+			// Where the host rebuilds a map's configuration is also where what that
+			// map offers is brought up to date; see `syncOffer`.
+			this.syncOffer();
+			const background = this.background();
+			const pack = this.plugin.basemapFor(background);
+			// A background that is neither ours nor the native default names one of
+			// the host's own, and the host resolves that itself — from the argument,
+			// which is what is being overridden here. Passing the caller's instead
+			// would let a stale `currentTileSetId` outvote what the reader picked.
+			const native =
+				pack === null && background !== DEFAULT_BACKGROUND && background !== '' ? background : undefined;
+			const config = orig.call(view, native ?? tileSetId);
+			if (applyOfflineTiles(config, pack)) {
+				// So the host's own control shows this pack checked: it is handed
+				// `mapConfig.currentTileSetId` when it is built, and our entry in the
+				// menu it was handed answers to exactly this id.
+				config.currentTileSetId = background;
+			}
 			this.projectConfigCenter(config);
 			return config;
 		});
 
-		// `switchToTileSet` mutates the live config without calling `loadConfig` again.
+		// `switchToTileSet` mutates the live config without calling `loadConfig`
+		// again, and resolves ids through the host's own settings — so an id of
+		// ours reaches it, finds nothing, and returns having done nothing at all.
+		// Both halves are answered here.
 		this.wrap(view, 'switchToTileSet', (orig) => async (tileSetId: string) => {
+			// Recorded before anything is drawn, and recorded for a host background
+			// too: the substitution has to know a host background was asked for, or
+			// the next configuration reload puts the pack straight back over it.
+			this.chosen = typeof tileSetId === 'string' ? tileSetId : null;
+			if (this.answersFor(tileSetId)) {
+				// The same sequence the native method runs — rebuild the config from
+				// the pick, then restyle — plus this pack's own bounds, which the
+				// host's tile-set shape has nowhere to carry.
+				this.refreshBasemap();
+				return;
+			}
 			await orig.call(view, tileSetId);
 			this.projectConfigCenter(view.mapConfig);
 			this.realignCamera();
@@ -481,7 +535,17 @@ export class TrackLayer {
 		}
 
 		this.wrap(view, 'initializeMap', (orig) => async () => {
-			await orig.call(view);
+			// For the duration of this one call, and no longer: the host builds its
+			// background control here, and hands it whatever array it reads then.
+			const restore = this.offerPacks();
+			try {
+				await orig.call(view);
+			} finally {
+				// In a `finally` because the call spans an await on the style: a
+				// network failure there must not leave another plugin's settings
+				// object holding entries of ours.
+				restore();
+			}
 			const map = view.map;
 			// Native initialization can finish after detach or after the host replaces
 			// its map. Neither case authorizes plugin work against that instance.
@@ -741,6 +805,11 @@ export class TrackLayer {
 		if (this.detached) return;
 		this.detached = true;
 		this.syncRevision++;
+		// A pick belongs to one map on screen. This one is going, and the wrappers
+		// that read this are about to be put back.
+		this.chosen = null;
+		this.retireOffer?.();
+		this.retireOffer = null;
 		const view = this.view;
 
 		// A native Bases map can stay alive while this plugin instance goes away.
@@ -961,13 +1030,136 @@ export class TrackLayer {
 		}
 	}
 
+	/** What this view's own options name as the background it opens on. */
+	namedBackground(): string {
+		const named = this.option('offlineTiles');
+		return typeof named === 'string' ? named : '';
+	}
+
 	/**
-	 * The pack this view draws, or null. The view option wins: a map that has
-	 * declined the offline basemap keeps whatever background it was configured
-	 * with, and every other map on the vault stays on the pack.
+	 * Which background this map is on, as one value read by every path that can
+	 * change it: what the reader picked from the map, else what the view names,
+	 * else the plugin's own default.
+	 *
+	 * The whole defect this replaces was two paths deciding this separately. The
+	 * substitution ran inside the `loadConfig` wrapper and knew nothing of a pick;
+	 * the native `switchToTileSet` wrote the live config without going through
+	 * `loadConfig` and knew nothing of the substitution. So a pick worked, the
+	 * next configuration reload silently put the pack back, and the menu went on
+	 * showing what the reader had chosen.
 	 */
+	private background(): string {
+		return resolveBackground(this.chosen, this.namedBackground(), this.plugin.defaultBackground());
+	}
+
+	/** The pack this view draws, or null when its background is not one of ours. */
 	private basemap(): OfflineBasemap | null {
-		return usesOfflineTiles(this.option('offlineTiles')) ? this.plugin.offlineBasemap() : null;
+		return this.plugin.basemapFor(this.background());
+	}
+
+	/**
+	 * The Maps plugin instance behind this view.
+	 *
+	 * Through the view first, because that is the object whose `initializeMap` is
+	 * wrapped and whose `switchToTileSet` resolves ids: the array read here has to
+	 * be the one those two calls read. The registry lookup is the fallback for a
+	 * build that stops keeping the reference.
+	 */
+	private host(): NativeMapsPlugin | null {
+		return this.view.plugin ?? this.plugin.nativeMaps();
+	}
+
+	/**
+	 * Is this a background id the host cannot resolve — one of ours?
+	 *
+	 * Asked of the host's own list rather than of our prefix, because that is the
+	 * exact question: `switchToTileSet` resolves through
+	 * `plugin.settings.tileSets.find(…)` and returns early when the id is not
+	 * there, so every id it would decline has to be answered here instead.
+	 */
+	private answersFor(id: unknown): boolean {
+		if (typeof id !== 'string' || id === '') return false;
+		return !nativeTileSets(this.host()).some((entry) => entry.id === id);
+	}
+
+	/**
+	 * Offer this plugin's packs where the host offers its own backgrounds, and
+	 * hand back the undo.
+	 *
+	 * The host's control keeps a *reference* to the array it is constructed with
+	 * and rebuilds its menu from it on every click, reading each entry's `id` and
+	 * `name` and nothing else. So the array handed to that one construction is
+	 * this plugin's own, and the host's is put back the moment its
+	 * `initializeMap` returns: the control goes on showing the packs, and another
+	 * plugin's settings object is the object it always was.
+	 *
+	 * Not appended to for good, which is the obvious alternative and the wrong
+	 * one: that array is saved whenever the reader edits anything in the native
+	 * Maps settings tab, and what would be saved is entries of ours — carrying, if
+	 * they carried a URL at all, an `app://<token>` that dies at the next launch.
+	 * These carry `id` and `name`, so even a save landing inside the swap writes
+	 * two harmless rows.
+	 *
+	 * Installed whether or not any pack is configured right now, because the
+	 * control cannot be handed a different array later: a pack added while this
+	 * map is open has to land in the array the control already holds. That is
+	 * also what makes this responsible for the host's own entries — see
+	 * `syncOffer`.
+	 *
+	 * A no-op, answering an undo that undoes nothing, whenever the shape is not
+	 * the one this expects. The packs stay reachable from the view's own setting.
+	 */
+	private offerPacks(): () => void {
+		const settings = this.host()?.settings;
+		const own = settings?.tileSets;
+		if (!settings || !Array.isArray(own)) return () => {};
+
+		const offered: NativeTileSet[] = [];
+		this.offered = { list: offered, own: own as NativeTileSet[] };
+		this.syncOffer();
+		settings.tileSets = offered;
+		// Emptied in place rather than replaced, because the control holds this
+		// exact array: when the host had none of its own there is nothing left to
+		// switch to, which is the truth once this plugin is gone — the control
+		// would not have been built at all without the entries it is losing.
+		this.retireOffer = () => {
+			this.offered = null;
+			offered.splice(0, offered.length, ...(own as NativeTileSet[]));
+		};
+		return () => {
+			settings.tileSets = own;
+		};
+	}
+
+	/**
+	 * Bring what is on offer up to date, inside the array the control is holding.
+	 *
+	 * Rewritten in place rather than replaced, because that array is the control's
+	 * only handle on what to draw a menu from — so a pack added, renamed or
+	 * removed reaches a map already on screen without it being reopened, which is
+	 * how every other part of this feature already behaves.
+	 *
+	 * The host's own entries are re-read here too. Handing the control this
+	 * plugin's array took away the live reference it used to have to the host's,
+	 * so a background the reader adds in the Maps settings tab arrives by this
+	 * route instead — which is why this runs from the configuration path and not
+	 * only when this plugin's own settings change.
+	 */
+	private syncOffer(): void {
+		const offer = this.offered;
+		if (!offer) return;
+		const next: NativeTileSet[] = [...offer.own];
+		const packs = this.plugin.tilePacks();
+		if (packs.length > 0) {
+			// The way back to the background a reader would have with no pack at
+			// all. With one host background configured that is already the first
+			// entry, and the host resolves it; with none there is nothing to pick,
+			// so one entry standing for it is added — which also carries the host's
+			// own `length > 1` gate past two entries and makes the control appear.
+			if (next.length === 0) next.push({ id: DEFAULT_BACKGROUND, name: t('background.default') });
+			for (const pack of packs) next.push({ id: packBackgroundId(pack.name), name: pack.name });
+		}
+		offer.list.splice(0, offer.list.length, ...next);
 	}
 
 	/** Stop the map asking for levels the pack does not hold. A no-op without one. */
@@ -978,7 +1170,12 @@ export class TrackLayer {
 
 	/** The pack was configured, changed or cleared while this map was on screen. */
 	refreshBasemap(): void {
-		if (this.detached || !restyleForBasemap(this.view)) return;
+		if (this.detached) return;
+		// Ahead of the restyle, and unconditionally: a map with no MapLibre
+		// instance yet still has a menu to keep current, and a pack that is gone
+		// must stop being on offer even where nothing is drawn.
+		this.syncOffer();
+		if (!restyleForBasemap(this.view)) return;
 		// Turning a pack on over a Chinese background changes what "auto" answers,
 		// and that moves every pin by a few hundred metres. Realign the camera
 		// against the tiles that are about to be drawn, before the restyle's own

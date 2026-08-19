@@ -495,6 +495,35 @@
 	display: none;
 }
 
+/* One tile pack: a name, a path and its two levels sharing one row, for the same
+ * reason a custom map app does — the list counts rows, and one row has to be one
+ * pack for its ✕ and its drag handle to mean what they say. Four boxes is more
+ * than a settings row is built for, so the control side wraps and the path takes
+ * whatever the two narrow number boxes leave it. */
+.advanced-maps-pack-entry .setting-item-control {
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
+
+.advanced-maps-pack-entry .setting-item-info {
+	display: none;
+}
+
+.advanced-maps-pack-entry input.advanced-maps-tiles-path {
+	flex: 1 1 16em;
+	min-width: 10em;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}
+
+/* Wide enough for two digits and the stepper the browser puts beside them. */
+.advanced-maps-pack-entry input.advanced-maps-tiles-level {
+	flex: 0 0 auto;
+	width: 5em;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}
+
 .advanced-maps-map-entry input.advanced-maps-map-url {
 	flex: 1 1 16em;
 	min-width: 10em;

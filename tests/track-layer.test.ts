@@ -5,7 +5,8 @@ import { wgs2gcj } from '../src/coords';
 import { TrackLayer } from '../src/track-layer';
 import type AdvancedMapsPlugin from '../src/main';
 import type { TrackRecord } from '../src/track-cache';
-import type { BasesMapView, MapLibreMap } from '../src/types/obsidian-internals';
+import type { OfflineBasemap } from '../src/basemap';
+import type { BasesMapView, MapLibreMap, NativeMapsPlugin, NativeTileSet } from '../src/types/obsidian-internals';
 
 function mapAt(
 	lng = 116.397428,
@@ -80,12 +81,21 @@ function view(map: MapLibreMap | null): BasesMapView {
 	};
 }
 
-function plugin(pack: ReturnType<AdvancedMapsPlugin['offlineBasemap']> = null): AdvancedMapsPlugin {
+/**
+ * A stand-in plugin. `packs` is what each background id resolves to, so a test
+ * can hand out two packs with different bounds and see which one a map is on;
+ * the first entry is the plugin's own default, matching the real one.
+ */
+function plugin(packs: Record<string, OfflineBasemap> = {}, maps: NativeMapsPlugin | null = null): AdvancedMapsPlugin {
+	const ids = Object.keys(packs);
 	return {
 		settings: { follow: true, measure: true, followActiveNote: false, coordSystem: 'gcj02' },
 		layers: new Set(),
 		resolveTracks: () => [],
-		offlineBasemap: () => pack,
+		tilePacks: () => ids.map((id) => ({ name: id.slice('pack:'.length), path: 'x', minZoom: 0, maxZoom: 16 })),
+		defaultBackground: () => ids[0] ?? 'off',
+		basemapFor: (background: string) => packs[background] ?? null,
+		nativeMaps: () => maps,
 		// The real Plugin clears this on unload; the layer registers its adoption
 		// poll with it as a second line of defence.
 		registerInterval: (id: number) => id,
@@ -647,20 +657,31 @@ describe('the places a map can export', () => {
 });
 
 describe('the basemap a map draws', () => {
-	const PACK = {
-		url: 'app://token/mnt/tiles/{z}/{x}/{y}.png',
-		sourceMaxZoom: 14,
-		cameraMinZoom: 2,
+	const CITY = 'pack:City';
+	const TRAIL = 'pack:Trail';
+	const PACK: Record<string, OfflineBasemap> = {
+		[CITY]: { url: 'app://token/mnt/tiles/{z}/{x}/{y}.png', sourceMaxZoom: 14, cameraMinZoom: 2 },
+	};
+	const TWO_PACKS: Record<string, OfflineBasemap> = {
+		[CITY]: PACK[CITY],
+		[TRAIL]: { url: 'app://token/mnt/trail/{z}/{x}/{y}.png', sourceMaxZoom: 17, cameraMinZoom: 9 },
 	};
 
-	/** A view whose native `loadConfig` answers with the background it is given. */
+	/** A view whose native `loadConfig` answers with the background it is given,
+	 *  and records which tile set id it was asked for — the way the host resolves
+	 *  its own backgrounds. */
 	function configured(option: unknown, native: string) {
-		const v = view(mapAt());
+		const asked: Array<string | undefined> = [];
+		const v = view(mapAt()) as BasesMapView & { asked: Array<string | undefined> };
+		v.asked = asked;
 		v.config = {
 			get: (key) => (key === 'offlineTiles' ? option : undefined),
 			getDisplayName: String,
 		};
-		v.loadConfig = () => ({ mapTiles: [native], mapTilesDark: [native], minZoom: 0, defaultZoom: 4 });
+		v.loadConfig = (tileSetId?: string) => {
+			asked.push(tileSetId);
+			return { mapTiles: [native], mapTilesDark: [native], minZoom: 0, defaultZoom: 4 };
+		};
 		return v;
 	}
 
@@ -670,8 +691,8 @@ describe('the basemap a map draws', () => {
 		new TrackLayer(plugin(PACK), v).attach();
 
 		const config = v.loadConfig();
-		expect(config.mapTiles).toEqual([PACK.url]);
-		expect(config.mapTilesDark).toEqual([PACK.url]);
+		expect(config.mapTiles).toEqual([PACK[CITY].url]);
+		expect(config.mapTilesDark).toEqual([PACK[CITY].url]);
 		// The camera bound rides along on the number the native view already applies.
 		expect(config.minZoom).toBe(2);
 		expect(config.defaultZoom).toBe(4);
@@ -689,7 +710,7 @@ describe('the basemap a map draws', () => {
 	it('leaves every view alone when no pack is configured', () => {
 		vi.stubGlobal('createDiv', () => document.createElement('div'));
 		const v = configured('', 'https://tiles.example.com/{z}/{x}/{y}.png');
-		new TrackLayer(plugin(null), v).attach();
+		new TrackLayer(plugin(), v).attach();
 
 		expect(v.loadConfig().mapTiles).toEqual(['https://tiles.example.com/{z}/{x}/{y}.png']);
 	});
@@ -721,8 +742,257 @@ describe('the basemap a map draws', () => {
 		// same centre does move — which is what makes the assertion above about
 		// the order of the two substitutions rather than about nothing happening.
 		const plain = amap();
-		new TrackLayer(plugin(null), plain).attach();
+		new TrackLayer(plugin(), plain).attach();
 		const [lng, lat] = wgs2gcj(120.149, 30.242);
 		expect(plain.loadConfig().center).toBe(`${lat},${lng}`);
+	});
+
+	it('draws the pack a view names, over the plugin default', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = configured(TRAIL, 'https://tiles.example.com/{z}/{x}/{y}.png');
+		new TrackLayer(plugin(TWO_PACKS), v).attach();
+
+		// City is the plugin default; this view says Trail, and Trail's own
+		// shallowest level is what bounds the camera.
+		expect(v.loadConfig().mapTiles).toEqual([TWO_PACKS[TRAIL].url]);
+		expect(v.loadConfig().minZoom).toBe(9);
+	});
+
+	it('falls back to the default background for a name nothing answers to', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = configured('pack:Coast', 'https://tiles.example.com/{z}/{x}/{y}.png');
+		new TrackLayer(plugin(TWO_PACKS), v).attach();
+
+		// Not the plugin default either: the view said something, and what it said
+		// resolves to no pack — so the map draws what the native view resolves.
+		expect(v.loadConfig().mapTiles).toEqual(['https://tiles.example.com/{z}/{x}/{y}.png']);
+	});
+
+	it("hands the host's own id straight through when a view names one", () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = configured('1786102216451', 'https://tiles.example.com/{z}/{x}/{y}.png');
+		new TrackLayer(plugin(TWO_PACKS), v).attach();
+
+		v.loadConfig();
+		// Resolved by the host, from the id it was handed — not by a stale
+		// `currentTileSetId` the caller passed.
+		expect((v as unknown as { asked: string[] }).asked).toEqual(['1786102216451']);
+	});
+});
+
+describe('picking a background from the map', () => {
+	const CITY = 'pack:City';
+	const TRAIL = 'pack:Trail';
+	const PACKS: Record<string, OfflineBasemap> = {
+		[CITY]: { url: 'app://token/city/{z}/{x}/{y}.png', sourceMaxZoom: 14, cameraMinZoom: 2 },
+		[TRAIL]: { url: 'app://token/trail/{z}/{x}/{y}.png', sourceMaxZoom: 17, cameraMinZoom: 9 },
+	};
+	const LIBERTY = '1786085922534';
+
+	/** The Maps plugin as it stores its own backgrounds. */
+	function maps(...tileSets: NativeTileSet[]): NativeMapsPlugin {
+		return { settings: { tileSets } };
+	}
+
+	/** A view that resolves a background the way the host does, and remembers
+	 *  every switch that reached the host's own method. */
+	function switchable(host: NativeMapsPlugin) {
+		const switched: string[] = [];
+		const v = view(mapAt()) as BasesMapView & { switched: string[] };
+		v.switched = switched;
+		v.plugin = host;
+		v.config = { get: () => undefined, getDisplayName: String };
+		v.loadConfig = (tileSetId?: string) => {
+			const found = (host.settings?.tileSets as NativeTileSet[]).find((entry) => entry.id === tileSetId);
+			const url = typeof found?.lightTiles === 'string' ? found.lightTiles : 'default-style';
+			return { mapTiles: [url], mapTilesDark: [url], minZoom: 0, defaultZoom: 4, currentTileSetId: tileSetId };
+		};
+		v.switchToTileSet = async (tileSetId: string) => {
+			switched.push(tileSetId);
+			v.mapConfig = v.loadConfig(tileSetId);
+		};
+		return v;
+	}
+
+	it('draws the pack the reader picked, over what the view and the plugin say', async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = switchable(maps({ id: LIBERTY, name: 'Liberty', lightTiles: 'https://liberty/{z}/{x}/{y}.png' }));
+		new TrackLayer(plugin(PACKS), v).attach();
+
+		await v.switchToTileSet(TRAIL);
+		// Never reached the host: it resolves ids through its own settings and
+		// would have returned early, leaving the map exactly as it was.
+		expect((v as unknown as { switched: string[] }).switched).toEqual([]);
+		// And a configuration reload — the step that used to put the pack back —
+		// now finds the pick still in force, with Trail's own bounds.
+		const config = v.loadConfig(v.mapConfig?.currentTileSetId as string | undefined);
+		expect(config.mapTiles).toEqual([PACKS[TRAIL].url]);
+		expect(config.minZoom).toBe(9);
+		// …and reports the same background as the current one, which is what the
+		// host's control shows checked.
+		expect(config.currentTileSetId).toBe(TRAIL);
+	});
+
+	it('stops substituting once the reader picks one of the host backgrounds', async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = switchable(maps({ id: LIBERTY, name: 'Liberty', lightTiles: 'https://liberty/{z}/{x}/{y}.png' }));
+		new TrackLayer(plugin(PACKS), v).attach();
+
+		// The plugin default is City, so this map starts on the pack.
+		expect(v.loadConfig().mapTiles).toEqual([PACKS[CITY].url]);
+
+		await v.switchToTileSet(LIBERTY);
+		expect((v as unknown as { switched: string[] }).switched).toEqual([LIBERTY]);
+		// The measured defect: the next configuration reload used to put the pack
+		// back while the menu went on showing Liberty.
+		expect(v.loadConfig().mapTiles).toEqual(['https://liberty/{z}/{x}/{y}.png']);
+		expect(v.loadConfig().mapTiles).toEqual(['https://liberty/{z}/{x}/{y}.png']);
+	});
+
+	it('forgets the pick when the layer detaches, so the view opens on what it names', async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = switchable(maps({ id: LIBERTY, name: 'Liberty', lightTiles: 'https://liberty/{z}/{x}/{y}.png' }));
+		const layer = new TrackLayer(plugin(PACKS), v).attach();
+
+		await v.switchToTileSet(LIBERTY);
+		layer.detach();
+		// Wrapped again, because the wrappers went with the layer; a fresh layer on
+		// the same view is a view that was reopened.
+		new TrackLayer(plugin(PACKS), v).attach();
+		expect(v.loadConfig().mapTiles).toEqual([PACKS[CITY].url]);
+	});
+
+	it("offers each pack in the host's own menu and puts the host's array back", async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const host = maps({ id: LIBERTY, name: 'Liberty' });
+		const own = host.settings?.tileSets as NativeTileSet[];
+		const v = switchable(host);
+		let offered: NativeTileSet[] = [];
+		v.initializeMap = async () => {
+			// Read where the host reads it: inside its own map initialisation.
+			offered = host.settings?.tileSets as NativeTileSet[];
+		};
+		new TrackLayer(plugin(PACKS), v).attach();
+
+		await v.initializeMap();
+		expect(offered.map((entry) => entry.id)).toEqual([LIBERTY, CITY, TRAIL]);
+		// Names only, so nothing that could be saved carries a URL rebuilt at
+		// every launch.
+		expect(offered[1]).toEqual({ id: CITY, name: 'City' });
+		// And the host's own array is the object it always was.
+		expect(host.settings?.tileSets).toBe(own);
+		expect(own.map((entry) => entry.id)).toEqual([LIBERTY]);
+	});
+
+	it("restores the host's array even when its initialisation throws", async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const host = maps({ id: LIBERTY, name: 'Liberty' });
+		const own = host.settings?.tileSets;
+		const v = switchable(host);
+		v.initializeMap = () => Promise.reject(new Error('style fetch failed'));
+		new TrackLayer(plugin(PACKS), v).attach();
+
+		await expect(v.initializeMap()).rejects.toThrow('style fetch failed');
+		expect(host.settings?.tileSets).toBe(own);
+	});
+
+	it('adds a way back to the native background only when the host offers none', async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const host = maps();
+		const v = switchable(host);
+		let offered: NativeTileSet[] = [];
+		v.initializeMap = async () => {
+			offered = host.settings?.tileSets as NativeTileSet[];
+		};
+		new TrackLayer(plugin(PACKS), v).attach();
+
+		await v.initializeMap();
+		// Two packs plus the way back is three entries, which also carries the
+		// host's own `length > 1` gate and makes its control appear at all.
+		expect(offered.map((entry) => entry.id)).toEqual(['off', CITY, TRAIL]);
+	});
+
+	it('takes its entries back out of the menu the control is holding, on detach', async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const host = maps({ id: LIBERTY, name: 'Liberty' });
+		const v = switchable(host);
+		let offered: NativeTileSet[] = [];
+		v.initializeMap = async () => {
+			offered = host.settings?.tileSets as NativeTileSet[];
+		};
+		const layer = new TrackLayer(plugin(PACKS), v).attach();
+
+		await v.initializeMap();
+		expect(offered).toHaveLength(3);
+		layer.detach();
+		// The same array the control kept a reference to, emptied back to the
+		// host's own entries — not a stale offer of packs nothing answers to.
+		expect(offered.map((entry) => entry.id)).toEqual([LIBERTY]);
+		// …and a later refresh does not put them back on a retired layer.
+		layer.refreshBasemap();
+		expect(offered.map((entry) => entry.id)).toEqual([LIBERTY]);
+	});
+
+	it('offers a pack added while the map is open, without it being reopened', async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const host = maps({ id: LIBERTY, name: 'Liberty' });
+		const v = switchable(host);
+		let offered: NativeTileSet[] = [];
+		v.initializeMap = async () => {
+			offered = host.settings?.tileSets as NativeTileSet[];
+		};
+		// No packs at all when this map was built, so the menu is the host's own.
+		const p = plugin();
+		const layer = new TrackLayer(p, v).attach();
+		await v.initializeMap();
+		expect(offered.map((entry) => entry.id)).toEqual([LIBERTY]);
+
+		// The control cannot be handed a different array, so a pack configured now
+		// has to land in the one it is already holding.
+		const withPacks = plugin(PACKS);
+		Object.assign(p, {
+			tilePacks: () => withPacks.tilePacks(),
+			basemapFor: (background: string) => withPacks.basemapFor(background),
+			defaultBackground: () => withPacks.defaultBackground(),
+		});
+		layer.refreshBasemap();
+		expect(offered.map((entry) => entry.id)).toEqual([LIBERTY, CITY, TRAIL]);
+
+		// …and a background the reader adds in the host's own settings arrives by
+		// the same route, since handing over our array took away the live
+		// reference the control used to have to theirs.
+		(host.settings?.tileSets as NativeTileSet[]).push({ id: '999', name: 'Terrain' });
+		v.loadConfig();
+		expect(offered.map((entry) => entry.id)).toEqual([LIBERTY, '999', CITY, TRAIL]);
+	});
+
+	it('adds nothing when there are no packs, or when the shape is not the one this reads', async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const host = maps({ id: LIBERTY, name: 'Liberty' });
+		const own = host.settings?.tileSets as NativeTileSet[];
+		const noPacks = switchable(host);
+		let offered: NativeTileSet[] = [];
+		noPacks.initializeMap = async () => {
+			offered = host.settings?.tileSets as NativeTileSet[];
+		};
+		new TrackLayer(plugin(), noPacks).attach();
+		await noPacks.initializeMap();
+		// The host's own entries and nothing else, so its `length > 1` gate answers
+		// exactly as it did before this plugin was installed.
+		expect(offered.map((entry) => entry.id)).toEqual([LIBERTY]);
+		expect(own.map((entry) => entry.id)).toEqual([LIBERTY]);
+
+		// A host whose settings this cannot read: the packs stay reachable from
+		// the view's own setting, and nothing here throws.
+		const strange = switchable({ settings: { tileSets: 'not an array' } });
+		strange.initializeMap = async () => undefined;
+		new TrackLayer(plugin(PACKS), strange).attach();
+		await expect(strange.initializeMap()).resolves.toBeUndefined();
+
+		const none = switchable({});
+		none.plugin = undefined;
+		none.initializeMap = async () => undefined;
+		new TrackLayer(plugin(PACKS), none).attach();
+		await expect(none.initializeMap()).resolves.toBeUndefined();
 	});
 });

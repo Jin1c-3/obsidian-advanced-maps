@@ -8,7 +8,15 @@
  * this plugin's own — only the right string in the config the native view builds.
  */
 
-import type { BasesMapView, MapConfig, MapLibreMap, RasterTileSource, VaultPaths } from './types/obsidian-internals';
+import type {
+	BasesMapView,
+	MapConfig,
+	MapLibreMap,
+	NativeMapsPlugin,
+	NativeTileSet,
+	RasterTileSource,
+	VaultPaths,
+} from './types/obsidian-internals';
 
 /**
  * What a tile template must carry for MapLibre to fill it in, each entry being
@@ -26,6 +34,129 @@ export const TILE_ZOOM_MAX = 22;
  * whose shallowest directory is `2` is fully covered from map zoom 1 upwards.
  */
 const TILE_ZOOM_OFFSET = 1;
+
+/** A stated level, held inside the range a tile pyramid actually has. */
+function level(value: unknown, fallback: number): number {
+	const number = typeof value === 'number' ? value : Number.NaN;
+	if (!isFinite(number)) return fallback;
+	return Math.min(TILE_ZOOM_MAX, Math.max(0, Math.round(number)));
+}
+
+/**
+ * One pack as the reader configured it: a name to tell it from the others, the
+ * template its tiles are addressed by, and the two levels it holds.
+ *
+ * The name is not decoration. It is the id a view stores and the label a reader
+ * picks from the map, so it has to survive a base file being opened in another
+ * vault — which a path cannot, and which is why the *name* is what travels.
+ */
+export interface TilePack {
+	name: string;
+	path: string;
+	minZoom: number;
+	maxZoom: number;
+}
+
+/**
+ * Whatever a stored settings file holds, read as a list of packs.
+ *
+ * Every field is checked rather than trusted: this is read back from a
+ * `data.json` an older — or newer — version of this plugin wrote, and a row
+ * missing its name would otherwise become a background nothing can name.
+ */
+export function tilePacks(value: unknown): TilePack[] {
+	if (!Array.isArray(value)) return [];
+	const packs: TilePack[] = [];
+	const named = new Set<string>();
+	for (const row of value) {
+		if (!row || typeof row !== 'object') continue;
+		const entry = row as Partial<TilePack>;
+		const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+		const path = typeof entry.path === 'string' ? entry.path.trim() : '';
+		// A name is how this pack is referred to everywhere else, so two packs
+		// sharing one are one pack as far as every reference is concerned. The
+		// first wins, which is the one the reader typed first.
+		if (name === '' || named.has(name)) continue;
+		named.add(name);
+		packs.push({ name, path, minZoom: level(entry.minZoom, 0), maxZoom: level(entry.maxZoom, TILE_ZOOM_MAX) });
+	}
+	return packs;
+}
+
+/** The pack of that name, or null. */
+export function findPack(packs: readonly TilePack[], name: string): TilePack | null {
+	return packs.find((pack) => pack.name === name) ?? null;
+}
+
+/**
+ * The background the native view resolves on its own — the view's own map tiles,
+ * else the host's first background, else the default style.
+ *
+ * The literal is `off` because that is what a base file has been storing since
+ * before there was more than one background to name, and reading it as the name
+ * of this one is what keeps such a file drawing exactly what it drew.
+ */
+export const DEFAULT_BACKGROUND = 'off';
+
+/**
+ * What one of this plugin's own backgrounds is called where the host's are
+ * named. Prefixed so a pack can never be mistaken for a host background: those
+ * ids are `Date.now()` strings minted by the Maps settings tab.
+ */
+const PACK_ID_PREFIX = 'pack:';
+
+export function packBackgroundId(name: string): string {
+	return PACK_ID_PREFIX + name;
+}
+
+/** The pack this id names, or null when it names something else. */
+export function packBackgroundName(id: unknown): string | null {
+	if (typeof id !== 'string' || !id.startsWith(PACK_ID_PREFIX)) return null;
+	const name = id.slice(PACK_ID_PREFIX.length);
+	return name === '' ? null : name;
+}
+
+/**
+ * The host's own backgrounds, read out of the Maps plugin's settings.
+ *
+ * Every entry is checked rather than trusted: this is another plugin's stored
+ * data, reached through an accessor no published type covers, and an entry
+ * without a usable id is one the host's own control cannot switch to either.
+ * An unrecognisable shape answers with an empty list, which leaves this plugin
+ * offering its own packs and saying nothing about the host's.
+ */
+export function nativeTileSets(maps: NativeMapsPlugin | null | undefined): NativeTileSet[] {
+	const stored = maps?.settings?.tileSets;
+	if (!Array.isArray(stored)) return [];
+	return stored.filter((entry): entry is NativeTileSet => {
+		if (!entry || typeof entry !== 'object') return false;
+		const id = (entry as NativeTileSet).id;
+		return typeof id === 'string' && id !== '';
+	});
+}
+
+/** What one host background is called, falling back to its id when it is nameless. */
+export function tileSetLabel(entry: NativeTileSet): string {
+	const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+	return name === '' ? String(entry.id) : name;
+}
+
+/**
+ * Which background a map is on: what the reader picked, else what the view
+ * names, else the plugin's own default.
+ *
+ * One function rather than a condition at each call site, because the whole
+ * defect this replaces was two paths deciding the background separately and
+ * disagreeing — the pick knew nothing of the substitution, and the substitution
+ * knew nothing of the pick.
+ */
+export function resolveBackground(chosen: unknown, viewOption: unknown, pluginDefault: string): string {
+	if (typeof chosen === 'string' && chosen !== '') return chosen;
+	// Empty is the default a base file written before any of this holds, and it
+	// means "follow the plugin", not "no background".
+	if (typeof viewOption === 'string' && viewOption !== '') return viewOption;
+	return pluginDefault;
+}
 
 /** The one thing about a template that can be checked without touching the disk. */
 export type TilesProblem = 'placeholders';
@@ -185,12 +316,6 @@ export interface OfflineBasemap {
 	cameraMinZoom: number;
 }
 
-function level(value: unknown, fallback: number): number {
-	const number = typeof value === 'number' ? value : Number.NaN;
-	if (!isFinite(number)) return fallback;
-	return Math.min(TILE_ZOOM_MAX, Math.max(0, Math.round(number)));
-}
-
 /**
  * The two bounds a pack implies, from the two levels the reader stated.
  *
@@ -315,12 +440,20 @@ export function restyleForBasemap(view: BasesMapView | null | undefined): boolea
 }
 
 /**
- * Does this view draw the pack? The view option is empty — the default, meaning
- * use it — or `off`. Anything else a stored base file might hold means on, since
- * the only way to decline is to have said so.
+ * One named pack as something a map can draw, or null when it cannot draw it.
+ *
+ * The two halves are deliberately together: a pack's URL and a pack's bounds
+ * have to come from the same pack, and keeping the second reading a plugin
+ * setting while the first took an argument is exactly how a map ends up drawing
+ * one pack bounded to another's levels.
  */
-export const OFFLINE_TILES_OFF = 'off';
-
-export function usesOfflineTiles(option: unknown): boolean {
-	return option !== OFFLINE_TILES_OFF;
+export function packBasemap(
+	pack: TilePack | null | undefined,
+	prefix: string,
+	vaultBase: string
+): OfflineBasemap | null {
+	if (!pack) return null;
+	const url = offlineTileUrl(pack.path, prefix, vaultBase);
+	if (url === null) return null;
+	return { url, ...offlineZoomBounds(pack.minZoom, pack.maxZoom) };
 }

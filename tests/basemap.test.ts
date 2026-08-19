@@ -5,13 +5,27 @@ import {
 	localResourcePrefix,
 	offlineTileUrl,
 	offlineZoomBounds,
+	findPack,
+	nativeTileSets,
+	packBackgroundId,
+	packBackgroundName,
+	packBasemap,
+	resolveBackground,
 	restyleForBasemap,
+	tilePacks,
+	tileSetLabel,
 	tilesProblem,
-	usesOfflineTiles,
 	vaultBasePath,
 	type OfflineBasemap,
+	type TilePack,
 } from '../src/basemap';
-import type { BasesMapView, MapConfig, MapLibreMap, VaultPaths } from '../src/types/obsidian-internals';
+import type {
+	BasesMapView,
+	MapConfig,
+	MapLibreMap,
+	NativeMapsPlugin,
+	VaultPaths,
+} from '../src/types/obsidian-internals';
 
 const PREFIX = 'app://d8f7f8c48a5edbe498d0f343debc07325525/';
 const VAULT = '/home/ethan/Documents/Obsidian/jot';
@@ -355,18 +369,164 @@ describe('boundOfflineSource', () => {
 	});
 });
 
-describe('usesOfflineTiles', () => {
-	it('reads an unset option as using the pack', () => {
-		expect(usesOfflineTiles('')).toBe(true);
-		expect(usesOfflineTiles(undefined)).toBe(true);
-		expect(usesOfflineTiles(null)).toBe(true);
+describe('tilePacks', () => {
+	it('reads a stored list, holding each level inside the range a pyramid has', () => {
+		expect(
+			tilePacks([
+				{ name: 'City', path: '/packs/city/{z}/{x}/{y}.png', minZoom: 2, maxZoom: 16 },
+				{ name: 'Trail', path: '.tiles/{z}/{x}/{y}.png', minZoom: -3, maxZoom: 99 },
+			])
+		).toEqual([
+			{ name: 'City', path: '/packs/city/{z}/{x}/{y}.png', minZoom: 2, maxZoom: 16 },
+			{ name: 'Trail', path: '.tiles/{z}/{x}/{y}.png', minZoom: 0, maxZoom: 22 },
+		]);
 	});
 
-	it('declines only on the value that says so', () => {
-		expect(usesOfflineTiles('off')).toBe(false);
-		// Anything a stored base file might hold means on: the only way to decline
-		// is to have said so.
-		expect(usesOfflineTiles('yes')).toBe(true);
+	it('leaves out a row with no name, since nothing could refer to it', () => {
+		expect(tilePacks([{ path: '/packs/{z}/{x}/{y}.png' }, { name: '   ', path: '/x/{z}/{x}/{y}.png' }])).toEqual(
+			[]
+		);
+	});
+
+	it('keeps the first of two rows sharing a name', () => {
+		const packs = tilePacks([
+			{ name: 'City', path: '/first/{z}/{x}/{y}.png' },
+			{ name: 'City', path: '/second/{z}/{x}/{y}.png' },
+		]);
+		expect(packs).toHaveLength(1);
+		expect(packs[0].path).toBe('/first/{z}/{x}/{y}.png');
+	});
+
+	it('answers an empty list for anything that is not one', () => {
+		expect(tilePacks(undefined)).toEqual([]);
+		expect(tilePacks('/packs/{z}/{x}/{y}.png')).toEqual([]);
+		expect(tilePacks([null, 7, 'x'])).toEqual([]);
+	});
+
+	it('falls back to the whole range for a level a stored file states as anything else', () => {
+		expect(tilePacks([{ name: 'City', path: 'x/{z}/{x}/{y}.png', minZoom: '4', maxZoom: null }])).toEqual([
+			{ name: 'City', path: 'x/{z}/{x}/{y}.png', minZoom: 0, maxZoom: 22 },
+		]);
+	});
+});
+
+describe('findPack', () => {
+	const packs: TilePack[] = [
+		{ name: 'City', path: '/city/{z}/{x}/{y}.png', minZoom: 0, maxZoom: 16 },
+		{ name: 'Trail', path: '/trail/{z}/{x}/{y}.png', minZoom: 8, maxZoom: 14 },
+	];
+
+	it('finds a pack by the name the reader gave it', () => {
+		expect(findPack(packs, 'Trail')?.path).toBe('/trail/{z}/{x}/{y}.png');
+	});
+
+	it('answers null for a name nothing has', () => {
+		expect(findPack(packs, 'Coast')).toBeNull();
+		expect(findPack([], 'City')).toBeNull();
+	});
+});
+
+describe('background ids', () => {
+	it('round-trips a pack name through the id a view stores', () => {
+		expect(packBackgroundName(packBackgroundId('Trail'))).toBe('Trail');
+		// A name with the separator in it survives, because only the first one is
+		// the prefix.
+		expect(packBackgroundName(packBackgroundId('pack:Trail'))).toBe('pack:Trail');
+	});
+
+	it('answers null for every id that is not one of ours', () => {
+		// A host background's id is a `Date.now()` string minted by its settings tab.
+		expect(packBackgroundName('1786085922534')).toBeNull();
+		expect(packBackgroundName('off')).toBeNull();
+		expect(packBackgroundName('')).toBeNull();
+		expect(packBackgroundName('pack:')).toBeNull();
+		expect(packBackgroundName(undefined)).toBeNull();
+	});
+});
+
+describe('resolveBackground', () => {
+	const PLUGIN_DEFAULT = packBackgroundId('City');
+
+	it('puts the reader ahead of the view, and the view ahead of the plugin', () => {
+		expect(resolveBackground(packBackgroundId('Trail'), 'off', PLUGIN_DEFAULT)).toBe(packBackgroundId('Trail'));
+		expect(resolveBackground(null, 'off', PLUGIN_DEFAULT)).toBe('off');
+		expect(resolveBackground(null, '', PLUGIN_DEFAULT)).toBe(PLUGIN_DEFAULT);
+	});
+
+	it('reads a stored `off` as naming the background the native view resolves', () => {
+		// The value a base file has been holding since before there was more than
+		// one background to name, and it still means what it meant.
+		expect(resolveBackground(null, 'off', PLUGIN_DEFAULT)).toBe('off');
+	});
+
+	it('reads a host background a view names, so one base file can hold both', () => {
+		expect(resolveBackground(null, '1786085922534', PLUGIN_DEFAULT)).toBe('1786085922534');
+	});
+
+	it('ignores a pick and a view value that are not strings', () => {
+		expect(resolveBackground(undefined, undefined, PLUGIN_DEFAULT)).toBe(PLUGIN_DEFAULT);
+		expect(resolveBackground(7, { off: true }, PLUGIN_DEFAULT)).toBe(PLUGIN_DEFAULT);
+	});
+});
+
+describe('packBasemap', () => {
+	const city: TilePack = { name: 'City', path: '/packs/city/{z}/{x}/{y}.png', minZoom: 2, maxZoom: 16 };
+	const trail: TilePack = { name: 'Trail', path: 'tiles/{z}/{x}/{y}.png', minZoom: 10, maxZoom: 14 };
+
+	it('resolves one pack with its own two bounds', () => {
+		expect(packBasemap(city, PREFIX, VAULT)).toEqual({
+			url: `${PREFIX}packs/city/{z}/{x}/{y}.png`,
+			sourceMaxZoom: 16,
+			cameraMinZoom: 1,
+		});
+	});
+
+	it('gives two packs their own ranges rather than one shared pair', () => {
+		const first = packBasemap(city, PREFIX, VAULT);
+		const second = packBasemap(trail, PREFIX, VAULT);
+		expect(first?.sourceMaxZoom).toBe(16);
+		expect(first?.cameraMinZoom).toBe(1);
+		expect(second?.sourceMaxZoom).toBe(14);
+		expect(second?.cameraMinZoom).toBe(9);
+		// The vault-relative one starts at the vault, not at the other pack.
+		expect(second?.url).toBe(`${PREFIX}home/ethan/Documents/Obsidian/jot/tiles/{z}/{x}/{y}.png`);
+	});
+
+	it('answers null for no pack, and for a pack whose template cannot draw', () => {
+		expect(packBasemap(null, PREFIX, VAULT)).toBeNull();
+		expect(packBasemap({ ...city, path: '' }, PREFIX, VAULT)).toBeNull();
+		expect(packBasemap({ ...city, path: '/packs/city.png' }, PREFIX, VAULT)).toBeNull();
+	});
+});
+
+describe('nativeTileSets', () => {
+	it('reads the host backgrounds it can switch to', () => {
+		const maps = {
+			settings: {
+				tileSets: [
+					{ id: '1786085922534', name: 'Liberty', lightTiles: 'https://tiles.example/styles/liberty' },
+					{ id: '1786102216451', name: 'ArcGIS satellite' },
+				],
+			},
+		} as NativeMapsPlugin;
+		expect(nativeTileSets(maps).map((entry) => entry.id)).toEqual(['1786085922534', '1786102216451']);
+	});
+
+	it('leaves out an entry the host could not switch to either', () => {
+		const maps = { settings: { tileSets: [{ name: 'No id' }, { id: '' }, null, 'x'] } } as NativeMapsPlugin;
+		expect(nativeTileSets(maps)).toEqual([]);
+	});
+
+	it('answers an empty list for a shape this cannot read', () => {
+		expect(nativeTileSets(null)).toEqual([]);
+		expect(nativeTileSets({})).toEqual([]);
+		expect(nativeTileSets({ settings: {} })).toEqual([]);
+		expect(nativeTileSets({ settings: { tileSets: 'nope' } })).toEqual([]);
+	});
+
+	it('falls back to the id for a host background with no name', () => {
+		expect(tileSetLabel({ id: '1786085922534', name: '  ' })).toBe('1786085922534');
+		expect(tileSetLabel({ id: '1786085922534', name: 'Liberty' })).toBe('Liberty');
 	});
 });
 

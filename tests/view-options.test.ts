@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
 	appendTrackOptions,
+	basemapOptionGroup,
 	coordOptionGroup,
 	groupIndexByKey,
-	offlineTilesOptionGroup,
 	trackOptionGroup,
 } from '../src/view-options';
 import { COORD_MODES } from '../src/coords';
@@ -42,7 +42,7 @@ describe('appendTrackOptions', () => {
 		const names = list.map((g) => g.displayName);
 		// Where a background is chosen, then what it is made of, then the datum it
 		// implies — and the track knobs behind the markers they sit beside.
-		expect(names.indexOf(offlineTilesOptionGroup().displayName)).toBe(1);
+		expect(names.indexOf(basemapOptionGroup().displayName)).toBe(1);
 		expect(names.indexOf(coordOptionGroup().displayName)).toBe(2);
 		expect(names.indexOf(trackOptionGroup().displayName)).toBe(4);
 		expect(names[0]).toBe('Background');
@@ -79,12 +79,37 @@ describe('option groups', () => {
 		expect(trackOptionGroup().items.map((i) => i.key)).toEqual(['trackWeight', 'trackOpacity', 'fitMaxZoom']);
 	});
 
-	it('defaults the offline basemap to on, with "off" the only way to decline', () => {
-		const item = offlineTilesOptionGroup().items[0];
+	it('keeps the two values a base file could already hold, meaning what they meant', () => {
+		const item = basemapOptionGroup().items[0];
+		// The same key, so no base file written before this needs editing.
 		expect(item.key).toBe('offlineTiles');
 		// Empty is the default, so a base written before this existed follows the
 		// plugin setting rather than opting out by omission.
 		expect(item.default).toBe('');
 		expect(Object.keys(item.options ?? {})).toEqual(['', 'off']);
+	});
+
+	it('offers the host backgrounds and the packs behind those two', () => {
+		const item = basemapOptionGroup([
+			{ id: '1786085922534', name: 'Liberty' },
+			{ id: 'pack:Trail', name: 'Trail' },
+		]).items[0];
+		expect(Object.keys(item.options ?? {})).toEqual(['', 'off', '1786085922534', 'pack:Trail']);
+		expect(item.options?.['1786085922534']).toBe('Liberty');
+		expect(item.options?.['pack:Trail']).toBe('Trail');
+	});
+
+	it('names a background an open view wants that nothing answers to', () => {
+		const item = basemapOptionGroup([{ id: 'pack:City', name: 'City' }], ['pack:Trail']).items[0];
+		expect(Object.keys(item.options ?? {})).toEqual(['', 'off', 'pack:City', 'pack:Trail']);
+		// Under the name the reader gave it, not the id it is stored as.
+		expect(item.options?.['pack:Trail']).toContain('Trail');
+		expect(item.options?.['pack:Trail']).not.toBe('Trail');
+	});
+
+	it('never lets a pack take the entry that is the way back to no pack at all', () => {
+		const item = basemapOptionGroup([{ id: 'off', name: 'A background called off' }], ['off', '']).items[0];
+		expect(Object.keys(item.options ?? {})).toEqual(['', 'off']);
+		expect(item.options?.off).not.toBe('A background called off');
 	});
 });
