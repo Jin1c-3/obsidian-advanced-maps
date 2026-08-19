@@ -10,9 +10,9 @@ import type { MapLibreMap } from './types/obsidian-internals';
  * needs its exact matching `off` or a detached layer wakes up again when a new
  * plugin instance recreates the same layer ids.
  *
- * Keeping the two registration shapes here makes cleanup one operation and
- * prevents the event name, layer id or callback identity from being restated at
- * teardown time.
+ * Keeping the registration shapes here makes cleanup one operation and prevents
+ * the event name, layer id or callback identity from being restated at teardown
+ * time.
  */
 export class MapEventBindings {
 	private readonly remove: Array<() => void> = [];
@@ -25,6 +25,24 @@ export class MapEventBindings {
 	onLayer<E>(map: MapLibreMap, type: string, layerId: string, listener: (event: E) => void): void {
 		map.on(type, layerId, listener);
 		this.remove.push(() => map.off(type, layerId, listener));
+	}
+
+	/**
+	 * A plain DOM listener on an element the map owns — its canvas or the
+	 * container around it.
+	 *
+	 * Here rather than in the caller because it answers the same question the two
+	 * above do: a keystroke bound to a map's canvas outlives `removeLayer` and
+	 * `removeControl` exactly as a MapLibre listener does, and cleanup has to be
+	 * one operation for all three or the odd one out is the one that leaks.
+	 */
+	dom<K extends keyof HTMLElementEventMap>(
+		el: HTMLElement,
+		type: K,
+		listener: (event: HTMLElementEventMap[K]) => void
+	): void {
+		el.addEventListener(type, listener);
+		this.remove.push(() => el.removeEventListener(type, listener));
 	}
 
 	/** Remove every listener once, continuing if a map is already torn down. */

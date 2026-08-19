@@ -20,16 +20,16 @@ the topic pages below as recipes and reference.
 
 ## Choose a workflow
 
-| I want to…                                                                           | Read                                                    |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| Install the plugin and make my first map                                             | [Getting started](getting-started.md)                   |
-| Map a photo folder or the photos linked from notes                                   | [Photo maps](photo-maps.md)                             |
-| Draw GPX, GeoJSON, KML, TCX, areas, or inline route statistics                       | [Tracks and areas](tracks-and-areas.md)                 |
-| Map the notes connected to this one, open notes in a Base, or follow the active note | [Around and navigation](around-and-navigation.md)       |
-| Bring a file of saved places into notes, or take a Base's places back out            | [Places in and out](places-in-and-out.md)               |
-| Draw the basemap from a folder of tiles already on disk, with no network at all      | [Offline basemap](offline-basemap.md)                   |
-| Align mainland basemaps, parse map links, search places, or open another map app     | [Coordinates and services](coordinates-and-services.md) |
-| Check supported files, option ownership, privacy, operational limits, or attribution | [Reference and privacy](reference-and-privacy.md)       |
+| I want to…                                                                                               | Read                                                    |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Install the plugin and make my first map                                                                 | [Getting started](getting-started.md)                   |
+| Map a photo folder or the photos linked from notes                                                       | [Photo maps](photo-maps.md)                             |
+| Draw GPX, GeoJSON, KML, TCX, areas, or inline route statistics                                           | [Tracks and areas](tracks-and-areas.md)                 |
+| Map the notes connected to this one, open notes in a Base, follow the active note, or measure a distance | [Around and navigation](around-and-navigation.md)       |
+| Bring a file of saved places into notes, or take a Base's places back out                                | [Places in and out](places-in-and-out.md)               |
+| Draw the basemap from a folder of tiles already on disk, with no network at all                          | [Offline basemap](offline-basemap.md)                   |
+| Align mainland basemaps, parse map links, search places, or open another map app                         | [Coordinates and services](coordinates-and-services.md) |
+| Check supported files, option ownership, privacy, operational limits, or attribution                     | [Reference and privacy](reference-and-privacy.md)       |
 
 The workflows compose. A single Base can show place notes, a multi-day route,
 and every geotagged photo along it.

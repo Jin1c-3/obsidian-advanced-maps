@@ -1,6 +1,6 @@
 ---
 title: 'Around views and navigation'
-description: 'Map the notes connected to the current one, open a note in a map, follow the active note, and read shared pins.'
+description: 'Map the notes connected to the current one, open a note in a map, follow the active note, measure a distance, and read shared pins.'
 ---
 
 # Around views and navigation
@@ -85,6 +85,29 @@ Press the ⊹ control beside zoom-to-fit and that map follows notes as you switc
 between them. It keeps the current zoom and never rewrites the Base query.
 
 ![A note beside its Base map, with the map following the note and its popup open](../../images/follow-active-note.png)
+
+## Measure a distance
+
+Press the ruler control under ⊹ and the map becomes a measuring surface. Click to
+drop a point, and each one after the first is labelled with the distance from
+where you started; a dashed leg follows the pointer with the running total, and
+the readout in the bottom-left corner shows what has actually been placed.
+
+Take back the last point with ↺ or **Backspace**, and put the tape away with ✕,
+**Escape**, or the ruler control again. Nothing is written to any note, and the
+measurement is gone as soon as you stop.
+
+![A Base map with a three-point measurement drawn across it, each point labelled with the distance from the start](../../images/measure-distance.png)
+
+While the tape is out, clicks belong to it: a click on a pin adds a point rather
+than opening that note, and no popup covers the ground you are measuring across.
+A double-click places two points instead of zooming.
+
+Distances are great-circle metres between the places you clicked, which is not
+the same as the distance along a road or a path — for that, draw the route as a
+track and read [its statistics](tracks-and-areas.md). On a mainland basemap the
+tape measures the real coordinates behind the shifted tiles, so a measurement
+does not change when you switch the background under it.
 
 ## Pins at the same coordinate
 

@@ -108,7 +108,13 @@ getting reopened.
 - **Drawing and editing shapes on the map.** No drawing library is reachable, so
   it would be hand-rolled from pointer events. The elevation profile under an
   inline map is hand-rolled SVG for the same reason, and is about the size such
-  a thing can reasonably get before the argument stops holding.
+  a thing can reasonably get before the argument stops holding. **Measuring a
+  distance is done** and is deliberately not this: a tape is appended to, undone
+  and thrown away, never edited, never named and never saved, and it has one
+  geometry rather than a palette of them — three layers, one class, and the map
+  left as it was found. What stays out is the part that begins with a shape the
+  reader keeps: vertex handles, a shape kind to choose, somewhere to store it,
+  and a second editor beside the note that would have to own it.
 - **Display rules and a query language.** Bases already has filters, formulas and
   per-note colours and icons, and the map view reads them. Building a second
   system beside it would duplicate the host and undercut the one thing this

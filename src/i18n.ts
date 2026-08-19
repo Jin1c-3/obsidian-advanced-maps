@@ -36,6 +36,11 @@ const en = {
 	'control.zoomToFit': 'Zoom to fit',
 	'control.follow': 'Follow the active note',
 	'control.followOff': 'Stop following the active note',
+	'control.measure': 'Measure distance',
+	'control.measureOff': 'Stop measuring',
+	'measure.hint': 'Click two points on the map',
+	'measure.undo': 'Take back the last point',
+	'measure.done': 'Done measuring',
 	'embed.failed': 'Could not draw {file}: {message}',
 	'embed.mapsDisabled': 'the built-in Maps plugin is not enabled',
 
@@ -494,6 +499,11 @@ const zh: Record<TranslationKey, string> = {
 	'control.zoomToFit': '缩放到全部',
 	'control.follow': '跟随当前笔记',
 	'control.followOff': '停止跟随当前笔记',
+	'control.measure': '测距',
+	'control.measureOff': '结束测距',
+	'measure.hint': '在地图上点两个点',
+	'measure.undo': '撤销上一个点',
+	'measure.done': '结束测距',
 	'embed.failed': '无法绘制 {file}：{message}',
 	'embed.mapsDisabled': '内置的 Maps 插件未启用',
 

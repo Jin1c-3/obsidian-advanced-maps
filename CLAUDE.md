@@ -43,6 +43,7 @@ workflow.
 src/
   main.ts, track-layer.ts        plugin lifecycle and one native map enhancement
   layers.ts, geometry.ts         owned MapLibre sources, layers, icons, bounds
+  measure.ts, measure-tool.ts    a tape measure's arithmetic, and one map's
   basemap.ts                     a tile pack on disk as one map's background
   track-cache.ts, parse.ts       cached GPX/GeoJSON/KML/TCX/photo ingestion
   exif.ts                        bounded EXIF/container reader
@@ -113,6 +114,7 @@ both `docs/guide/en/` and `docs/guide/zh-cn/`, link it from each locale's
 - [Track map rendering](openspec/specs/track-map-rendering/spec.md)
 - [Photo map rendering](openspec/specs/photo-map-rendering/spec.md)
 - [Pin spreading](openspec/specs/pin-spreading/spec.md)
+- [Map measuring](openspec/specs/map-measuring/spec.md)
 - [Coordinate datum](openspec/specs/coordinate-datum/spec.md)
 - [Offline basemap](openspec/specs/offline-basemap/spec.md)
 - [Note and map navigation](openspec/specs/note-map-navigation/spec.md)
