@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Feature, Geometry, LineString, Point } from 'geojson';
 import { toTileSpace } from '../src/coords';
-import { cumulativeDistances, measureDrawing, measuredDistance, type MeasureProps } from '../src/measure';
+import {
+	cumulativeDistances,
+	measureDrawing,
+	measuredDistance,
+	nearestSnap,
+	type MeasureProps,
+	type SnapCandidate,
+} from '../src/measure';
 import { formatDistance } from '../src/stats';
 
 const wgs84 = (lng: number, lat: number): [number, number] => [lng, lat];
@@ -146,5 +153,72 @@ describe('measureDrawing: across the 180th meridian', () => {
 		const draft = only(data.features, 'draft')[0].geometry as LineString;
 		expect(draft.coordinates[0][0]).toBeCloseTo(180.1, 6);
 		expect(draft.coordinates[1][0]).toBeCloseTo(180.5, 6);
+	});
+});
+
+describe('nearestSnap', () => {
+	const at = (x: number, y: number, lng = 0, lat = 0): SnapCandidate => ({ point: { lng, lat }, at: { x, y } });
+	const pointer = { x: 100, y: 100 };
+
+	it('offers nothing when nothing is close enough', () => {
+		expect(nearestSnap(pointer, [at(120, 100), at(100, 130)], 12)).toBeNull();
+		expect(nearestSnap(pointer, [], 12)).toBeNull();
+	});
+
+	it('offers the candidate nearest the pointer, not the first one in range', () => {
+		const near = at(104, 100, 5, 5);
+		const found = nearestSnap(pointer, [at(108, 100), near, at(100, 110)], 12);
+		expect(found?.point).toEqual(near.point);
+	});
+
+	it('measures in both axes at once, so a corner of the box is out of range', () => {
+		// 12 px right and 12 px down is 17 px away, and the radius is a radius.
+		expect(nearestSnap(pointer, [at(112, 112)], 12)).toBeNull();
+		expect(nearestSnap(pointer, [at(108, 108)], 12)).not.toBeNull();
+	});
+
+	it('keeps the first of two candidates at exactly the same distance', () => {
+		const first = at(105, 100, 1, 1);
+		const second = at(95, 100, 2, 2);
+		expect(nearestSnap(pointer, [first, second], 12)?.point).toEqual(first.point);
+	});
+
+	it('skips a candidate the map could not place', () => {
+		const real = at(110, 100, 3, 3);
+		expect(nearestSnap(pointer, [at(NaN, NaN), real], 12)?.point).toEqual(real.point);
+	});
+});
+
+describe('measureDrawing: the point a click would take', () => {
+	it('rings the draft, and only when it is one already on the map', () => {
+		const free = measureDrawing({ points: [A], draft: B }, wgs84);
+		expect(roles(free.data.features)).toEqual(['draft', 'vertex']);
+		const snapped = measureDrawing({ points: [A], draft: B, snapped: true }, wgs84);
+		expect(roles(snapped.data.features)).toEqual(['draft', 'vertex', 'snap']);
+		expect((only(snapped.data.features, 'snap')[0].geometry as Point).coordinates).toEqual([B.lng, B.lat]);
+	});
+
+	it('rings a point before the first one has been placed', () => {
+		const { data, labels } = measureDrawing({ points: [], draft: A, snapped: true }, wgs84);
+		// The ring and nothing else: no line to draw yet, and no distance to claim.
+		expect(roles(data.features)).toEqual(['snap']);
+		expect(labels).toEqual([]);
+	});
+
+	it('rings the projected coordinate, so the ring is on the pin the tiles drew', () => {
+		const { data } = measureDrawing({ points: [A], draft: B, snapped: true }, (lng, lat) =>
+			toTileSpace('gcj02', lng, lat)
+		);
+		expect((only(data.features, 'snap')[0].geometry as Point).coordinates).toEqual(
+			toTileSpace('gcj02', B.lng, B.lat)
+		);
+	});
+
+	it('rings a point east of the 180th meridian on the turn the line is drawn on', () => {
+		const { data } = measureDrawing(
+			{ points: [{ lng: 179.9, lat: -16.5 }], draft: { lng: -179.9, lat: -16.6 }, snapped: true },
+			wgs84
+		);
+		expect((only(data.features, 'snap')[0].geometry as Point).coordinates[0]).toBeCloseTo(180.1, 6);
 	});
 });

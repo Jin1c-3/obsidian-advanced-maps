@@ -110,8 +110,23 @@ export const MEASURE_SRC = 'advanced-maps-measure-src';
 export const MEASURE_LINE_LAYER = 'advanced-maps-measure-line';
 export const MEASURE_DRAFT_LAYER = 'advanced-maps-measure-draft';
 export const MEASURE_POINT_LAYER = 'advanced-maps-measure-points';
+/** The ring drawn on the point a click would take instead of the bare pixel;
+ *  added over the vertices, because it claims one of them as often as it claims
+ *  a pin. */
+export const MEASURE_SNAP_LAYER = 'advanced-maps-measure-snap';
 /** On the canvas while the tape is out; the crosshair cursor hangs off it. */
 export const MEASURING_CLASS = 'advanced-maps-measuring';
+
+/**
+ * CSS px from the pointer within which a point already drawn on the map is
+ * offered in place of the pixel under it.
+ *
+ * Half a finger and a bit: wide enough that a pin does not have to be hit
+ * exactly, narrow enough that two waypoints a reader can tell apart on screen
+ * are still two separate things to aim at. It is also the box the map is asked
+ * to hit-test in, so it bounds the query as well as the offer.
+ */
+export const SNAP_PX = 12;
 
 /** Bounded retry window for a lazily-created map targeted by a pop-up. */
 /**

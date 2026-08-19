@@ -483,8 +483,13 @@ export interface MapLibreMap {
 	 * therefore cannot make an owned layer lose to a pin; asking what is under
 	 * the pointer can.
 	 */
+	/** A pixel, or — for the measuring tape's snapping — a box given as its two
+	 *  opposite corners. Both forms are MapLibre's own; hand-typed here like
+	 *  everything else this file says about a map, because the plugin depends on
+	 *  no `maplibre-gl` package to import them from. A layer id the style does
+	 *  not have throws rather than being skipped, so callers filter first. */
 	queryRenderedFeatures?(
-		point: { x: number; y: number } | [number, number],
+		point: { x: number; y: number } | [number, number] | [[number, number], [number, number]],
 		options?: { layers?: string[] }
 	): unknown[];
 	/** Pixel back to a coordinate — in tile space, like everything the map holds. */
