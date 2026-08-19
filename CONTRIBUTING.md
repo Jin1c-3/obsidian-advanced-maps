@@ -96,7 +96,7 @@ seam there when relevant and record what was tried and observed in the PR.
 ## Testing on mobile
 
 The plugin is not desktop-only, and the desktop pane cannot check that. A change
-that moves a control, a readout, or a layout takes two passes.
+that moves a control, a readout, or a layout takes more than one pass.
 
 **Emulation first**, in the running desktop app:
 
@@ -109,24 +109,55 @@ reaches anything registered under `Platform.isMobile*` — the native locate but
 among them — and shows touch-sized layout. It draws none of Obsidian's own mobile
 chrome and runs none of Android's web view.
 
-**A device for the rest.** Get `main.js`, `manifest.json` and `styles.css` into
-`.obsidian/plugins/advanced-maps/` in a vault on the phone — Syncthing, `adb
+**An emulator for most of the rest.** An Android emulator runs the real APK in a
+real Android web view, which is the part emulation cannot reach. Any
+cmdline-tools install works; with mise it is:
+
+```bash
+mise use -g java@21 android-sdk@latest
+sdkmanager "platform-tools" "emulator" "system-images;android-36;google_apis;x86_64"
+avdmanager create avd -n obs -k "system-images;android-36;google_apis;x86_64" -d pixel_7
+emulator -avd obs -gpu swiftshader_indirect
+```
+
+Sideload the APK from the same
+[releases](https://github.com/obsidianmd/obsidian-releases/releases) page as the
+desktop builds — it is universal, so an `x86_64` image needs no ARM
+translation — then `adb install` it and `adb push` a vault and the built plugin
+under `/sdcard/`. Obsidian's _Device storage_ vault ends in a folder picker;
+grant it once and `adb push` reaches the vault from then on. Take a
+`google_apis` system image rather than `google_apis_playstore`, which blocks
+`adb root`.
+
+`chrome://inspect` reaches its web view exactly as it reaches a phone's, and an
+emulator hosted in WSL keeps adb in WSL with it.
+
+Hardware acceleration is not optional: the emulator wants `/dev/kvm`, so under
+WSL that means nested virtualization and membership in the `kvm` group. The
+window comes back through WSLg.
+
+It renders through SwiftShader. That is enough for WebGL 2, so MapLibre draws
+markers, tracks and photo thumbnails correctly — just slowly, and on a host GPU
+that cannot help. Read timings off a device, never off this.
+
+**A device for the last of it.** Get `main.js`, `manifest.json` and `styles.css`
+into `.obsidian/plugins/advanced-maps/` in a vault on the phone — Syncthing, `adb
 push`, or Obsidian Sync — and read that vault's console over USB debugging at
-`chrome://inspect#devices`, which gives the same devtools as the desktop. Under
-WSL, run adb and Chrome on the Windows side or pair wirelessly with `adb
-connect`; WSL has no USB device of its own.
+`chrome://inspect#devices`. Under WSL, run adb and Chrome on the Windows side or
+pair wirelessly with `adb connect`; WSL has no USB device of its own.
+
+An emulator settles the web view questions — whether a control sits under the
+mobile toolbars, whether `Platform.resourcePathPrefix` and `getResourcePath()`
+behave (the offline tile URL is built from the first, and the bounded track read
+is a `Range` request against the second, which a web view may answer with the
+whole file), and the location permission prompt including a refusal, which is
+the one failure that does not right itself.
 
 What only a device settles:
 
-- Whether a control sits under the mobile toolbars. They cover the bottom of the
-  map and part of the top, and emulation draws neither.
-- `Platform.resourcePathPrefix` and `getResourcePath()` — the offline tile URL is
-  built from the first, and the bounded track read is a `Range` request against
-  the second, which a web view may answer with the whole file.
-- The location permission prompt, including a refusal, which is the one failure
-  that does not right itself.
 - Graphics and decoded-image budgets, which an inline map's bounded WebGL
-  lifecycle meets sooner on a phone.
+  lifecycle meets sooner on a phone than on a desktop-class emulator.
+- Whether any of it is fast enough to use.
 
 ## Figures
 
