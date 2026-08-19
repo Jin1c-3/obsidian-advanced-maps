@@ -29,7 +29,10 @@ narrow implementation constraints.
 
 Use an OpenSpec change when work adds or changes a stable behavior, invariant,
 compatibility boundary, or maintainer contract. Keep executable proof in tests
-rather than copying transcripts into documentation.
+rather than copying transcripts into documentation. Proposing, applying and
+archiving one needs the `openspec` CLI, which this repository does not install:
+`npm install -g @fission-ai/openspec`, or run it through `npx`. Work that carries
+no OpenSpec change never needs it.
 
 The patching code reaches undocumented Obsidian internals. Wrap instances rather
 than prototypes, validate every runtime shape before use, and record any new
@@ -43,10 +46,12 @@ Ordinary work follows this loop:
 1. Update local `main` from the remote.
 2. Create a focused short-lived branch.
 3. Implement and validate one coherent change.
-4. Push the branch and open a pull request.
-5. Resolve conversations and wait for
+4. If the work carries an OpenSpec change, promote its delta specs and archive
+   it — `/opsx:archive`, or `openspec archive <name>`.
+5. Push the branch and open a pull request.
+6. Resolve conversations and wait for
    `CI / format · lint · types · tests · build` to pass.
-6. Squash-merge into `main`; the remote deletes the merged branch.
+7. Squash-merge into `main`; the remote deletes the merged branch.
 
 Do not push ordinary changes directly to `main`. This is a solo-maintained
 repository, so pull requests require zero approving reviews; the PR and required
@@ -54,6 +59,20 @@ CI are still mandatory. Administrator bypass is for emergencies only. Record
 the reason and run the same checks before, or immediately after, any bypass.
 Dependabot and routine automation use pull requests and the same CI rather than
 a broad direct-push exemption.
+
+Step 4 comes before step 5 on purpose. One pull request carries the
+implementation, the specs it promotes, and the archived change together, so a
+reviewer sees the contract and the code that answers it in the same diff. A
+change does not reach `main` while it is still active, and `npm run check` fails
+when a change whose tasks are all complete still sits outside
+`openspec/changes/archive/`. While any of its tasks remain, the check passes, so
+the command stays usable throughout the work. The same rule applies to every
+author; there is no exemption for a pull request from a fork.
+
+That is also why a change's task list ends at verification and carries no
+branch, push, pull-request, or archive steps. A list that requires the pull
+request to exist cannot be completed before it, and archiving asks for completed
+tasks — which is how three changes reached `main` unarchived.
 
 Keep a PR focused and squashable. Link its OpenSpec change or explain why the
 change has no specification impact. For behavior-preservation work, include the

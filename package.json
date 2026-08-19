@@ -49,7 +49,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "smoke": "node .github/scripts/smoke-bundle.mjs",
-    "check": "node .github/scripts/check-source-bytes.mjs && node .github/scripts/check-docs-links.mjs && npm run format:check && npm run lint && npm run typecheck && npm run test && node .github/scripts/check-manifest.mjs && node esbuild.config.mjs production && npm run smoke",
+    "check": "node .github/scripts/check-source-bytes.mjs && node .github/scripts/check-docs-links.mjs && node .github/scripts/check-change-archived.mjs && npm run format:check && npm run lint && npm run typecheck && npm run test && node .github/scripts/check-manifest.mjs && node esbuild.config.mjs production && npm run smoke",
     "version": "node version-bump.mjs && git add manifest.json versions.json"
   },
   "devDependencies": {
