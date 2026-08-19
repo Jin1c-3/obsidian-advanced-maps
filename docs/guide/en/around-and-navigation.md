@@ -61,11 +61,11 @@ Set **Base file** and **View name** once, under Advanced Maps settings →
 **Open in map**. The same
 Base then powers Open in map, Follow active note, and Around embeds.
 
-| Question                                       | Defined by                                                                 |
-| ---------------------------------------------- | -------------------------------------------------------------------------- |
-| Which notes or direct photo files participate? | Base filters                                                               |
-| What does a note marker look like?             | Base formulas and the map view's **Marker icon**/**Marker colour** options |
-| Where is a note's coordinate?                  | The map view's **Coordinates** property                                    |
+| Question                                       | Defined by                                                                |
+| ---------------------------------------------- | ------------------------------------------------------------------------- |
+| Which notes or direct photo files participate? | Base filters                                                              |
+| What does a note marker look like?             | Base formulas and the map view's **Marker icon**/**Marker color** options |
+| Where is a note's coordinate?                  | The map view's **Marker coordinates** property                            |
 
 ## Open in map
 

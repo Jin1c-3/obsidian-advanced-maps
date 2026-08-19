@@ -34,7 +34,7 @@ coords: 31.230400,121.473700
 Go at night. Ask for the set menu.
 ```
 
-The coordinate goes into the property named in Settings → **Coordinates** →
+The coordinate goes into the property named in Settings → **Open in map** →
 **Coordinate property**, in the same form every other command in this plugin
 writes. The placemark's own name becomes the note's file name, and its
 description becomes the body.

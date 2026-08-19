@@ -51,8 +51,8 @@ search, which reaches rows inside these pages the same way it reaches any other.
 | Question                                                | Defined by                                                                                                       |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Which notes or direct files participate?                | Base filters                                                                                                     |
-| What does a note marker look like?                      | Base formulas and the map view's **Marker icon**/**Marker colour** options                                       |
-| Where is a note's coordinate?                           | The map view's **Coordinates** property                                                                          |
+| What does a note marker look like?                      | Base formulas and the map view's **Marker icon**/**Marker color** options                                        |
+| Where is a note's coordinate?                           | The map view's **Marker coordinates** property                                                                   |
 | Which Base powers navigation and Around?                | Advanced Maps **Base file** and **View name** settings                                                           |
 | How a specific map draws tracks or converts its basemap | `trackWeight`, `trackOpacity`, `fitMaxZoom`, and `coordSystem` view keys when present; plugin settings otherwise |
 | Whether a map draws the offline basemap                 | The `offlineTiles` view key; the pack itself is a plugin setting                                                 |
