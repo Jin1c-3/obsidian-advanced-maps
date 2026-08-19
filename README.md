@@ -108,7 +108,7 @@ keys, supported photos, and the next recipes.
 | [Getting started](docs/guide/en/getting-started.md)                   | Installation, Base boundaries, first map, view keys                               |
 | [Photo maps](docs/guide/en/photo-maps.md)                             | Photo folders, OneDrive, linked photos, thumbnails, index                         |
 | [Tracks and areas](docs/guide/en/tracks-and-areas.md)                 | Route links, inline maps, GPX/GeoJSON/KML/TCX, polygons, statistics as properties |
-| [Around and navigation](docs/guide/en/around-and-navigation.md)       | Around views, reusable Base, Open in map, follow, shared pins                     |
+| [Around and navigation](docs/guide/en/around-and-navigation.md)       | Around views, reusable Base, Open in map, follow, measuring, shared pins          |
 | [Places in and out](docs/guide/en/places-in-and-out.md)               | Importing a file of placemarks as notes, exporting a Base as GPX/KML/CSV          |
 | [Offline basemap](docs/guide/en/offline-basemap.md)                   | Tiles already on disk as the background, zoom bounds, per-view opt-out            |
 | [Coordinates and services](docs/guide/en/coordinates-and-services.md) | WGS-84/GCJ-02/BD-09, external maps, search, geocoding, location                   |

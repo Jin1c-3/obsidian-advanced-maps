@@ -6,7 +6,7 @@ Defines explicit coordinate acquisition and place lookup tools, including provid
 
 ### Requirement: Map links are parsed by provider
 
-The plugin SHALL parse supported full map links and coordinate text using provider-specific axis order and datum rules, normalize successful results to WGS-84, and refuse recognized short links without resolving them over the network. A link SHALL be attributed to a provider only when its host is that provider's own domain or a subdomain of it, never merely because the provider's name appears somewhere in the host.
+The plugin SHALL parse supported full map links and coordinate text using provider-specific axis order and datum rules, normalize successful results to WGS-84, and refuse recognized short links without resolving them over the network. A link SHALL be attributed to a provider only when its host is that provider's own domain or a subdomain of it, never merely because the provider's name appears somewhere in the host. Text SHALL also be parsed as an Open Location Code, in WGS-84 by that format's own definition and independently of where the code decodes to; a code that names no single place SHALL be refused with the reason rather than reported as unreadable text.
 
 #### Scenario: Provider axis orders differ
 
@@ -32,6 +32,21 @@ The plugin SHALL parse supported full map links and coordinate text using provid
 
 - **WHEN** a link uses a provider's country or regional domain
 - **THEN** it is parsed with that provider's rules as before
+
+#### Scenario: A full Plus Code is pasted
+
+- **WHEN** a full Open Location Code is pasted on its own, among other words, or as a `plus.codes` link
+- **THEN** the centre of the area it names is offered as the coordinate to write
+
+#### Scenario: A Plus Code decodes to a mainland location
+
+- **WHEN** a full Open Location Code decodes to a point inside China
+- **THEN** it is read as WGS-84 rather than through the mainland-datum rule applied to provider links, and the reader can still override the datum by hand
+
+#### Scenario: A Plus Code names no single place
+
+- **WHEN** a pasted Open Location Code is short, or padded so that it names a region kilometres across
+- **THEN** the plugin explains which of the two it is and offers no coordinate
 
 ### Requirement: Place search respects provider contracts
 

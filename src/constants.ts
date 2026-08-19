@@ -102,6 +102,17 @@ export const HIT_LAYER = 'advanced-maps-track-hit';
 export const CURSOR_SRC = 'advanced-maps-cursor-src';
 export const CURSOR_LAYER = 'advanced-maps-cursor';
 
+/* The measuring tape. Its own source, so removing the tracks never takes a live
+ * measurement with them; and its layers are added with no `before`, because a
+ * tape is drawn over everything — native pins included — for as long as it is
+ * out. */
+export const MEASURE_SRC = 'advanced-maps-measure-src';
+export const MEASURE_LINE_LAYER = 'advanced-maps-measure-line';
+export const MEASURE_DRAFT_LAYER = 'advanced-maps-measure-draft';
+export const MEASURE_POINT_LAYER = 'advanced-maps-measure-points';
+/** On the canvas while the tape is out; the crosshair cursor hangs off it. */
+export const MEASURING_CLASS = 'advanced-maps-measuring';
+
 /** Bounded retry window for a lazily-created map targeted by a pop-up. */
 /**
  * The gestures that mean the reader has taken the wheel, so auto-framing stops

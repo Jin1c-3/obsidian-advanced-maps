@@ -246,13 +246,90 @@
 	height: min(70vh, 800px) !important;
 }
 
-/* The follow toggle's pressed state. The built-in map controls are all
+/* A pressed toggle — following, or measuring. The built-in map controls are all
  * momentary — there is no "on" look to inherit from them — so this states one,
  * in the accent colour the rest of the UI already uses for it. The button also
  * carries aria-pressed, which is the half of this a colour cannot say. */
-.canvas-control-item.advanced-maps-follow.is-active {
+.canvas-control-item.advanced-maps-toggle.is-active {
 	color: var(--text-accent);
 	background-color: var(--background-modifier-hover);
+}
+
+/* ---- the measuring tape ---- */
+
+/* While the tape is out the whole map is one measuring surface, so the
+ * crosshair has to hold over a pin too — where the native view otherwise asks
+ * for a pointer on the same element. That rule and this one differ only in
+ * order, which is why this one insists. */
+.maplibregl-canvas.advanced-maps-measuring {
+	cursor: crosshair !important;
+}
+
+/* Inside MapLibre's canvas container, which is the exact box `map.project()`
+ * answers in — so a label's pixel needs no correction for where its parent
+ * sits. Transparent to the pointer, or a label under the cursor would eat the
+ * mousemove the preview leg is drawn from. */
+.advanced-maps-measure-labels {
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	pointer-events: none;
+}
+
+.advanced-maps-measure-label {
+	position: absolute;
+	padding: 0 var(--size-2-2);
+	transform: translate(-50%, -180%);
+	white-space: nowrap;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	color: var(--text-normal);
+	font-size: var(--font-ui-smaller);
+	/* Figures the same width in every digit, so a label following the pointer
+	   does not jitter sideways as the distance changes. */
+	font-variant-numeric: tabular-nums;
+}
+
+/* Flipped by measure-tool.ts for a vertex near the top edge, where the default
+ * above-the-point transform would carry the label off the map. */
+.advanced-maps-measure-label.is-below {
+	transform: translate(-50%, 80%);
+}
+
+/* The leg under the pointer is a preview, and reads as one. */
+.advanced-maps-measure-label.is-draft {
+	background: var(--text-accent);
+	border-color: var(--text-accent);
+	color: var(--text-on-accent);
+}
+
+/* A row, not the column the control group it borrows its look from is: this is
+ * one readout with its two actions beside it, rather than a stack of buttons. */
+.advanced-maps-measure-panel {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: var(--size-2-1);
+	padding-left: var(--size-2-2);
+}
+
+.advanced-maps-measure-value {
+	white-space: nowrap;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Not a distance yet — what to do instead, and quieter than an answer. */
+.advanced-maps-measure-value.is-hint {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.advanced-maps-measure-action.is-disabled {
+	opacity: 0.4;
+	pointer-events: none;
 }
 
 /* ---- "set coordinates from a link" ---- */

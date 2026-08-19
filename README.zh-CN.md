@@ -94,7 +94,7 @@ views:
 | [快速开始](docs/guide/zh-cn/getting-started.md)                | 安装、Base 边界、第一张地图、视图键                       |
 | [照片地图](docs/guide/zh-cn/photo-maps.md)                     | 照片目录、OneDrive、链接照片、缩略图、索引                |
 | [轨迹与区域](docs/guide/zh-cn/tracks-and-areas.md)             | 轨迹链接、内联地图、GPX/GeoJSON/KML/TCX、面、统计写进属性 |
-| [周围视图与导航](docs/guide/zh-cn/around-and-navigation.md)    | 周围视图、复用 Base、在地图中打开、跟随、重合图钉         |
+| [周围视图与导航](docs/guide/zh-cn/around-and-navigation.md)    | 周围视图、复用 Base、在地图中打开、跟随、测距、重合图钉   |
 | [地点的进出](docs/guide/zh-cn/places-in-and-out.md)            | 把地标文件导入成笔记，把 Base 导出成 GPX/KML/CSV          |
 | [离线底图](docs/guide/zh-cn/offline-basemap.md)                | 磁盘上现成的瓦片当底图、层级边界、按视图关闭              |
 | [坐标与地图服务](docs/guide/zh-cn/coordinates-and-services.md) | WGS-84/GCJ-02/BD-09、外部地图、搜索、地理编码、定位       |

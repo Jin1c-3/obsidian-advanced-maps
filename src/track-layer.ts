@@ -41,6 +41,7 @@ import {
 import { boundsOf, styleReady, trackFeatures, trackKnob, type TrackFeatureProps } from './geometry';
 import { getLocale, t } from './i18n';
 import { MapEventBindings, override } from './map-events';
+import { MeasureTool } from './measure-tool';
 import {
 	applyTrackPaint,
 	cancelPhotoImages,
@@ -52,6 +53,7 @@ import {
 	FitControl,
 	FollowControl,
 	guardLocateControl,
+	MeasureControl,
 	photoIconSource,
 	removeTrackLayers,
 	type LocateGuard,
@@ -193,6 +195,10 @@ export class TrackLayer {
 	/** Which drawn feature the native popup is currently describing, so pointing
 	 *  at it again costs nothing. Null whenever that is no longer known. */
 	private shownPopup: string | null = null;
+	/** The measuring tape on this map, and the button that takes it out. Both
+	 *  live and die with one MapLibre instance. */
+	private measure: MeasureTool | null = null;
+	private measureControl: MeasureControl | null = null;
 	/** The sole MapLibre instance this layer has initialized; reset on native destruction. */
 	private createdMap: MapLibreMap | null = null;
 	/** True only until the pre-wrapper native map, if any, is adopted once. */
@@ -287,7 +293,11 @@ export class TrackLayer {
 		});
 
 		// Preserve the native callback except when following supplies another pane.
+		// Measured against the Maps source: a click on a native pin calls this
+		// directly, so the popup gate below is not enough — without this, a point
+		// placed on top of a pin would also open that pin's note in the editor.
 		this.wrap(manager, 'onOpenFile', (orig) => (path: string, newLeaf: boolean) => {
+			if (this.measure?.isActive()) return;
 			this.openNote(path, newLeaf, () => orig.call(manager, path, newLeaf));
 		});
 
@@ -295,6 +305,9 @@ export class TrackLayer {
 		this.wrap(popups, 'showPopup', (orig) => {
 			this.origShowPopup = orig;
 			return (entry, latLng, properties, markerProps, displayName) => {
+				// Nothing pops up over the tape: while it is out a click is a point,
+				// and a note's card would cover the ground being measured across.
+				if (this.measure?.isActive()) return;
 				const [lng, lat] = this.fanned(entry, ...toTileSpace(this.system(), latLng[1], latLng[0]));
 				orig.call(popups, entry, [lat, lng], properties, markerProps, displayName);
 			};
@@ -337,6 +350,7 @@ export class TrackLayer {
 			this.projectConfigCenter(view.mapConfig);
 			this.realignCamera();
 			this.locate?.replaceDot();
+			this.measure?.redraw();
 		});
 
 		// Native menu actions read `unproject()` synchronously; expose a vault
@@ -400,8 +414,13 @@ export class TrackLayer {
 			// Remove them before the native view tears the map down; on recreation,
 			// onMapCreated() registers one fresh set against the new instance.
 			this.mapEvents.clear();
+			// Before the controls: putting the tape away removes its own readout
+			// control and the listeners it put on this map.
+			this.measure?.dispose();
+			this.measure = null;
 			this.fitControl = null;
 			this.followControl = null;
+			this.measureControl = null;
 			this.interactionsBound = false;
 			this.handledClick = null;
 			this.handledHover = null;
@@ -641,6 +660,8 @@ export class TrackLayer {
 		// before a later plugin instance recreates the same layer ids. Async photo
 		// decodes need their own cancellation because the map remains alive.
 		this.mapEvents.clear();
+		this.measure?.dispose();
+		this.measure = null;
 		const map = view.map;
 		if (map) cancelPhotoImages(map);
 		this.removeLayers();
@@ -650,7 +671,7 @@ export class TrackLayer {
 		// A native layer, so this one is handed back rather than removed.
 		this.restoreSpread();
 		this.spread = null;
-		for (const control of [this.fitControl, this.followControl]) {
+		for (const control of [this.fitControl, this.followControl, this.measureControl]) {
 			if (!control || !view.map) continue;
 			try {
 				view.map.removeControl(control);
@@ -660,6 +681,7 @@ export class TrackLayer {
 		}
 		this.fitControl = null;
 		this.followControl = null;
+		this.measureControl = null;
 
 		for (const restore of this.restorers.splice(0)) restore();
 		delete view.__advancedMapsLayer;
@@ -690,9 +712,18 @@ export class TrackLayer {
 		map.addControl(this.fitControl, 'top-right');
 		this.followControl = new FollowControl(() => this.toggleFollow());
 		map.addControl(this.followControl, 'top-right');
-		// `addControl` calls `onAdd` synchronously, so the button exists by now and
-		// can be told which way it is pointing.
+		this.measureControl = new MeasureControl(() => this.measure?.toggle());
+		map.addControl(this.measureControl, 'top-right');
+		// `addControl` calls `onAdd` synchronously, so both buttons exist by now and
+		// can be told which way they are pointing. The tape itself starts away, and
+		// tells the button whenever that changes — including when Escape ends it.
 		this.followControl.setActive(this.following);
+		this.measure = new MeasureTool(
+			map,
+			() => this.system(),
+			(on) => this.measureControl?.setActive(on)
+		);
+		this.measureControl.setActive(false);
 		this.locate ??= guardLocateControl(map, () => this.system());
 		this.appliedSystem = initialSystem === 'current' ? this.system() : (recordedCameraSystem(map) ?? 'wgs84');
 		this.realignCamera();
@@ -716,6 +747,8 @@ export class TrackLayer {
 			// re-applied by the `updateMarkers` the native view runs to put its own
 			// markers back.
 			this.spreadApplied = null;
+			// A live measurement lost its source and layers with everything else.
+			this.measure?.redraw();
 			this.sync().catch((e) => console.error('Advanced Maps: could not redraw tracks', e));
 		});
 
@@ -884,6 +917,7 @@ export class TrackLayer {
 		// marker rebuild lands.
 		this.realignCamera();
 		this.locate?.replaceDot();
+		this.measure?.redraw();
 	}
 
 	/** Preserve the real-world camera centre across tile-datum changes. */
@@ -976,6 +1010,7 @@ export class TrackLayer {
 		this.projectConfigCenter(view.mapConfig);
 		this.realignCamera();
 		this.locate?.replaceDot();
+		this.measure?.redraw();
 		if (view.data && view.markerManager) await view.markerManager.updateMarkers(view.data);
 		else await this.sync();
 	}
@@ -1174,6 +1209,9 @@ export class TrackLayer {
 		}
 
 		this.applyPaint();
+		// Beside the tracks because it answers the same event: the redraw above may
+		// have followed a style swap, and the tape's own layers went with theirs.
+		this.measure?.redraw();
 		this.ensurePhotoIcons(items);
 		this.bindInteractions();
 		this.fit(false);
@@ -1307,6 +1345,8 @@ export class TrackLayer {
 
 	/** Layer-scoped handlers may deliver one DOM event twice; handle it once. */
 	private open(ev: MapMouseEvent): void {
+		// Measuring owns the map's clicks; see the popup and menu wrappers above.
+		if (this.measure?.isActive()) return;
 		const item = this.itemFrom(ev);
 		if (!item) return;
 		if (ev.originalEvent) {
@@ -1358,6 +1398,9 @@ export class TrackLayer {
 	 * on once, and an unchanged feature is not acted on at all.
 	 */
 	private hover(ev: MapMouseEvent): void {
+		// Same reason as `open()`: while the tape is out, pointing at a track is
+		// aiming the next point rather than asking what the track is.
+		if (this.measure?.isActive()) return;
 		const item = this.itemFrom(ev);
 		const view = this.view;
 		if (!item || !view.data || !view.data.properties || !view.mapConfig || !view.config) return;

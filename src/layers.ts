@@ -7,6 +7,10 @@ import {
 	FILL_OPACITY_RATIO,
 	LINE_LAYER,
 	MARKER_LAYER,
+	MEASURE_DRAFT_LAYER,
+	MEASURE_LINE_LAYER,
+	MEASURE_POINT_LAYER,
+	MEASURE_SRC,
 	PHOTO_DOT_LAYER,
 	PHOTO_ICON_PREFIX,
 	PHOTO_ICON_MAX,
@@ -64,15 +68,20 @@ export class FitControl extends ControlButton {
 	}
 }
 
-/** Per-map follow toggle; pressed state is exposed through class and ARIA state. */
-export class FollowControl extends ControlButton {
-	constructor(onToggle: () => void) {
-		super('crosshair', t('control.follow'), onToggle);
+/** A control button that stays pressed; the state is in a class and in ARIA. */
+class ToggleControl extends ControlButton {
+	constructor(
+		icon: string,
+		private readonly labelOff: string,
+		private readonly labelOn: string,
+		onToggle: () => void
+	) {
+		super(icon, labelOff, onToggle);
 	}
 
 	override onAdd(): HTMLElement {
 		const el = super.onAdd();
-		this.buttonEl?.addClass('advanced-maps-follow');
+		this.buttonEl?.addClass('advanced-maps-toggle');
 		return el;
 	}
 
@@ -83,7 +92,21 @@ export class FollowControl extends ControlButton {
 		btn.setAttribute('aria-pressed', String(on));
 		// The label says what the button does next, which is the half a reader
 		// cannot get from the pressed look alone.
-		btn.setAttribute('aria-label', t(on ? 'control.followOff' : 'control.follow'));
+		btn.setAttribute('aria-label', on ? this.labelOn : this.labelOff);
+	}
+}
+
+/** Per-map follow toggle. */
+export class FollowControl extends ToggleControl {
+	constructor(onToggle: () => void) {
+		super('crosshair', t('control.follow'), t('control.followOff'), onToggle);
+	}
+}
+
+/** Per-map measuring toggle; what it turns on is `MeasureTool`. */
+export class MeasureControl extends ToggleControl {
+	constructor(onToggle: () => void) {
+		super('ruler', t('control.measure'), t('control.measureOff'), onToggle);
 	}
 }
 
@@ -420,6 +443,91 @@ export function removeTrackLayers(map: MapLibreMap): void {
 			if (map.hasImage(id)) map.removeImage(id);
 		}
 		// Refresh removes layers but keeps decoded photo images for the immediate redraw.
+	} catch {
+		/* style already torn down */
+	}
+}
+
+/* ---- the measuring tape ---- Its own source and layers, drawn over everything else while it is out. */
+
+/**
+ * The tape's three layers, built per call rather than held as constants: the
+ * colours are resolved through the theme, and a reader who switches themes
+ * between two measurements should get the second one in the new one.
+ */
+function measureLayerSpecs(): unknown[] {
+	const accent = resolveCssColor('var(--text-accent)');
+	const halo = resolveCssColor('var(--background-primary)');
+	return [
+		{
+			id: MEASURE_LINE_LAYER,
+			type: 'line',
+			source: MEASURE_SRC,
+			filter: ['==', ['get', 'amMeasure'], 'path'],
+			layout: { 'line-join': 'round', 'line-cap': 'round' },
+			paint: { 'line-color': accent, 'line-width': 3 },
+		},
+		{
+			id: MEASURE_DRAFT_LAYER,
+			type: 'line',
+			source: MEASURE_SRC,
+			filter: ['==', ['get', 'amMeasure'], 'draft'],
+			layout: { 'line-join': 'round', 'line-cap': 'round' },
+			// Dashed, because the leg under the pointer is a preview and not yet a
+			// measurement. `line-dasharray` takes no data-driven expression, which
+			// is why this is a second layer rather than a second paint value.
+			paint: { 'line-color': accent, 'line-width': 2, 'line-dasharray': [2, 2] },
+		},
+		{
+			id: MEASURE_POINT_LAYER,
+			type: 'circle',
+			source: MEASURE_SRC,
+			filter: ['==', ['get', 'amMeasure'], 'vertex'],
+			// Filled with the page behind it and ringed in the accent: a handle the
+			// reader placed, told apart at a glance from a note's own pin.
+			paint: {
+				'circle-color': halo,
+				'circle-radius': 4,
+				'circle-stroke-width': 2,
+				'circle-stroke-color': accent,
+			},
+		},
+	];
+}
+
+/**
+ * Put a measurement on the map, adding the source and layers the first time.
+ *
+ * False when the style was swapped out mid-draw, exactly as `drawTracks` reports
+ * it: `style.load` fires next and the tool draws again.
+ */
+export function drawMeasure(map: MapLibreMap, data: FeatureCollection): boolean {
+	try {
+		const source = map.getSource(MEASURE_SRC);
+		if (source) source.setData(data);
+		else {
+			map.addSource(MEASURE_SRC, { type: 'geojson', data });
+			// No `before`: a tape is drawn over everything, native pins included,
+			// for as long as it is out.
+			for (const spec of measureLayerSpecs()) map.addLayer(spec);
+		}
+		return true;
+	} catch (e) {
+		// Roll the whole group back rather than leave a source with only some of
+		// its layers, which would take the setData-only branch forever after.
+		removeMeasureLayers(map);
+		console.warn('Advanced Maps: deferring the measuring tape —', e instanceof Error ? e.message : e);
+		return false;
+	}
+}
+
+export function removeMeasureLayers(map: MapLibreMap): void {
+	if (!map.getStyle) return;
+	try {
+		for (const id of [MEASURE_POINT_LAYER, MEASURE_DRAFT_LAYER, MEASURE_LINE_LAYER]) {
+			if (map.getLayer(id)) map.removeLayer(id);
+		}
+		if (map.getSource(MEASURE_SRC)) map.removeSource(MEASURE_SRC);
 	} catch {
 		/* style already torn down */
 	}

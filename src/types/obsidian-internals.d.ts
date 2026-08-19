@@ -411,6 +411,11 @@ export interface MapLibreMap {
 	__advancedMapsCameraSystem?: 'wgs84' | 'gcj02' | 'bd09';
 	style?: { _loaded?: boolean };
 	scrollZoom: { disable(): void; enable(): void };
+	/** The same shape as `scrollZoom`, turned off while the measuring tape is out
+	 *  so a second point placed quickly is a point and not a zoom. Optional, and
+	 *  `isEnabled` doubly so: it is only asked in order to leave a handler the
+	 *  reader had already turned off exactly as they left it. */
+	doubleClickZoom?: { disable(): void; enable(): void; isEnabled?(): boolean };
 	isStyleLoaded?(): boolean;
 	getStyle?(): unknown;
 	/** Defaulted rather than overloaded: every existing call wants the GeoJSON

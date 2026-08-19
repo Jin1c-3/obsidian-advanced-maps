@@ -102,7 +102,8 @@ describe('native map lifecycle', () => {
 
 		expect(layer.onMapCreated(map, 'adopted')).toBe(true);
 		expect(layer.onMapCreated(map, 'adopted')).toBe(false);
-		expect(map.controls).toHaveLength(2);
+		// Zoom to fit, follow the active note, and measure — added once between them.
+		expect(map.controls).toHaveLength(3);
 		expect(map.centers).toHaveLength(1);
 		expect(map.centers[0]).toMatchObject(
 			Object.fromEntries([
@@ -137,7 +138,7 @@ describe('native map lifecycle', () => {
 		const map = mapAt();
 		deferred.map = map;
 		await vi.advanceTimersByTimeAsync(250);
-		expect(map.controls).toHaveLength(2);
+		expect(map.controls).toHaveLength(3);
 	});
 
 	it('gives up watching a view that never builds a map', async () => {
@@ -176,7 +177,7 @@ describe('native map lifecycle', () => {
 		adopted.map = recreated;
 		await adopted.initializeMap();
 
-		expect(recreated.controls).toHaveLength(2);
+		expect(recreated.controls).toHaveLength(3);
 		expect(recreated.centers).toHaveLength(0);
 	});
 
