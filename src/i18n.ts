@@ -214,6 +214,7 @@ const en = {
 	/* ---- track statistics written to a note ---- */
 	'notice.stats.done': 'Advanced Maps: wrote {count} properties — {distance}',
 	'notice.stats.none': '"{file}" has no track data to measure',
+	'notice.stats.noFigures': 'Advanced Maps: no figure is switched on — see Tracks → Track properties',
 	'notice.stats.failed': 'Advanced Maps: could not read that track — {reason}',
 	/* Names the property rather than the box: the clash can come from the prefix
 	 * or from that one figure's own name, and Track properties holds both. */
@@ -421,17 +422,31 @@ const en = {
 	'settings.tracks.statsPrefix.name': 'Track property prefix',
 	'settings.tracks.statsPrefix.desc':
 		'What "Write track statistics to properties" names what it writes: "track" gives track-distance-km, ' +
-		'track-ascent-m, track-duration-min and so on. The command touches nothing outside the nine names below.',
+		'track-ascent-m, track-duration-min and so on. The command touches nothing outside the names below, ' +
+		'and nothing at all behind a figure switched off there.',
 
 	/* ---- settings: track properties ----
-	 * The nine names the write-statistics command uses. Each box is empty by
-	 * default and shows the prefixed name it would otherwise write. */
+	 * The nine figures the write-statistics command knows: whether each one is
+	 * written, and what it is called when it is. Each box is empty by default and
+	 * shows the prefixed name it would otherwise write. */
 	'settings.trackProps.heading': 'Track properties',
 	'settings.trackProps.intro':
-		'What "Write track statistics to properties" calls each figure. Leave a box empty to keep the prefixed ' +
-		'name shown in it; type a name and that is the whole property name, prefix and all left out — which is ' +
-		'how a column ends up called anything you like. Renaming one does not rename what is already in your ' +
-		'notes: the old property stays until you remove it.',
+		'Which figures "Write track statistics to properties" writes, and what it calls each one. Switch a ' +
+		'figure off and the command stops reaching it altogether — it is not written, and one already in a note ' +
+		'is not removed either. Leave a box empty to keep the prefixed name shown in it; type a name and that ' +
+		'is the whole property name, prefix and all left out — which is how a column ends up called anything ' +
+		'you like. Renaming one does not rename what is already in your notes: the old property stays until ' +
+		'you remove it.',
+	'settings.trackProps.count': '{on} of {total} figures',
+	'settings.trackProps.distance.write': 'Write the distance',
+	'settings.trackProps.ascent.write': 'Write the ascent',
+	'settings.trackProps.descent.write': 'Write the descent',
+	'settings.trackProps.lowest.write': 'Write the lowest point',
+	'settings.trackProps.highest.write': 'Write the highest point',
+	'settings.trackProps.duration.write': 'Write the elapsed time',
+	'settings.trackProps.moving.write': 'Write the moving time',
+	'settings.trackProps.speed.write': 'Write the average speed',
+	'settings.trackProps.start.write': 'Write the start time',
 	'settings.trackProps.distance.name': 'Distance property',
 	'settings.trackProps.ascent.name': 'Ascent property',
 	'settings.trackProps.descent.name': 'Descent property',
@@ -644,6 +659,7 @@ const zh: Record<TranslationKey, string> = {
 
 	'notice.stats.done': 'Advanced Maps：写入了 {count} 个属性——{distance}',
 	'notice.stats.none': '「{file}」没有可统计的轨迹数据',
+	'notice.stats.noFigures': 'Advanced Maps：一项数据都没开——见「轨迹 → 轨迹属性」',
 	'notice.stats.failed': 'Advanced Maps：无法读取这条轨迹——{reason}',
 	'notice.stats.propertyClash':
 		'Advanced Maps：统计会写到「{property}」，而这个属性已经另有用途——请在「轨迹属性」里改前缀或那一项的名字，' +
@@ -780,12 +796,23 @@ const zh: Record<TranslationKey, string> = {
 	'settings.tracks.statsPrefix.name': '轨迹属性前缀',
 	'settings.tracks.statsPrefix.desc':
 		'「把轨迹数据写进属性」写出来的属性名怎么起：填 track 就是 track-distance-km、track-ascent-m、' +
-		'track-duration-min 等等。这个命令只碰下面这九个名字。',
+		'track-duration-min 等等。这个命令只碰下面这些名字，下面关掉的那几项则完全不碰。',
 
 	'settings.trackProps.heading': '轨迹属性',
 	'settings.trackProps.intro':
-		'「把轨迹数据写进属性」把每项数据叫什么。留空就用框里显示的那个带前缀的名字；填了名字，那就是完整的属性名，' +
+		'「把轨迹数据写进属性」写哪几项数据，以及每项叫什么。关掉某一项，命令就完全不碰它了——不会写进去，' +
+		'笔记里已经有的那个属性也不会被删掉。名字留空就用框里显示的那个带前缀的名字；填了名字，那就是完整的属性名，' +
 		'前缀不再往前面拼——想把某一列叫成什么都可以。改名不会动笔记里已经写好的：旧属性会一直留着，要自己删。',
+	'settings.trackProps.count': '{total} 项里写 {on} 项',
+	'settings.trackProps.distance.write': '写入距离',
+	'settings.trackProps.ascent.write': '写入累计爬升',
+	'settings.trackProps.descent.write': '写入累计下降',
+	'settings.trackProps.lowest.write': '写入最低点',
+	'settings.trackProps.highest.write': '写入最高点',
+	'settings.trackProps.duration.write': '写入总时长',
+	'settings.trackProps.moving.write': '写入移动时间',
+	'settings.trackProps.speed.write': '写入平均速度',
+	'settings.trackProps.start.write': '写入出发时间',
 	'settings.trackProps.distance.name': '距离属性',
 	'settings.trackProps.ascent.name': '累计爬升属性',
 	'settings.trackProps.descent.name': '累计下降属性',

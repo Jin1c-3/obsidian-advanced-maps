@@ -59,6 +59,10 @@ export interface AdvancedMapsSettings {
 	 *  string is "no answer", not a nameless property: the figure keeps
 	 *  `prefix-suffix`, which is what every figure is called by default. */
 	statsNames: Record<StatsFigure, string>;
+	/** Whether that command writes each figure at all. A figure switched off is
+	 *  not written and not removed either: the command stops reaching the name
+	 *  entirely, which is the same thing renaming a figure does to its old name. */
+	statsWrite: Record<StatsFigure, boolean>;
 	/** Start/end pins, direction arrows, and — inline only — a waypoint's name on hover. */
 	trackMarkers: boolean;
 	/** A linked photo's own EXIF coordinate, drawn the same way a one-point track is. */
@@ -123,6 +127,9 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	// Nine empty strings: every figure keeps its prefixed default, so a vault
 	// that never opens the page is named exactly as it was before this existed.
 	statsNames: Object.fromEntries(STATS_FIGURES.map((figure) => [figure, ''])) as Record<StatsFigure, string>,
+	// …and nine trues: the command wrote every figure before it could be told
+	// not to, so that is what a vault which never opens the page keeps doing.
+	statsWrite: Object.fromEntries(STATS_FIGURES.map((figure) => [figure, true])) as Record<StatsFigure, boolean>,
 	trackMarkers: true,
 	showPhotos: true,
 	photoThumbnails: true,
@@ -237,14 +244,20 @@ type PageKey =
 
 /** Indexed entry keys keep list rows on the declarative settings read/write seam. */
 type EntryKey = `externalMaps.${number}.on` | `customMaps.${number}.${'name' | 'url' | 'datum'}`;
-/** The same seam for a fixed key set rather than an index: one name per figure. */
-type FigureKey = `statsNames.${StatsFigure}`;
+/** The same seam for a fixed key set rather than an index: one row per figure,
+ *  in each of the two records a figure has an entry in. */
+type FigureRecord = 'statsNames' | 'statsWrite';
+type FigureKey = `${FigureRecord}.${StatsFigure}`;
 type ControlKey = Key | EntryKey | FigureKey;
 
-/** The figure a `statsNames.<figure>` control names, and null for anything else. */
-function figureKey(key: string): StatsFigure | null {
-	const figure = key.startsWith('statsNames.') ? key.slice('statsNames.'.length) : '';
-	return (STATS_FIGURES as readonly string[]).includes(figure) ? (figure as StatsFigure) : null;
+/** The record and figure a `statsNames.<figure>` or `statsWrite.<figure>`
+ *  control names, and null for anything else. */
+function figureKey(key: string): { record: FigureRecord; figure: StatsFigure } | null {
+	const dot = key.indexOf('.');
+	const record = key.slice(0, dot);
+	if (record !== 'statsNames' && record !== 'statsWrite') return null;
+	const figure = key.slice(dot + 1);
+	return (STATS_FIGURES as readonly string[]).includes(figure) ? { record, figure: figure as StatsFigure } : null;
 }
 
 /** Every figure's name as the reader has them, defaulting one a stored file predates. */
@@ -256,6 +269,14 @@ function storedNames(value: unknown): Record<StatsFigure, string> {
 		names[figure] = typeof name === 'string' ? name.trim() : '';
 	}
 	return names;
+}
+
+/** The same, for the switches — where the value a stored file predates is `true`. */
+function storedWrite(value: unknown): Record<StatsFigure, boolean> {
+	const stored = (value ?? {}) as Record<string, unknown>;
+	const written = {} as Record<StatsFigure, boolean>;
+	for (const figure of STATS_FIGURES) written[figure] = stored[figure] !== false;
+	return written;
 }
 
 type EntryPath =
@@ -480,8 +501,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * The prefix and the nine names it is the default for, together on one page
-	 * inside Tracks — the prefix beside what overrides it.
+	 * The prefix, the nine figures it is the default name for, and the switch
+	 * that decides whether each one is written at all — together on one page
+	 * inside Tracks.
 	 *
 	 * Each name's placeholder is the default that figure would be written under,
 	 * so an empty box states what leaving it empty means. It is read at render:
@@ -489,24 +511,43 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 * the page is drawn again, because the re-render that would restate them
 	 * takes the caret out of the box being typed in — the same reason
 	 * `coordsProperty` patches its mentions in place instead.
+	 *
+	 * A figure that is not written has no name to give, so its box goes with its
+	 * switch. That is a `visible` re-evaluated on each render, which is why
+	 * flipping one of these re-renders the pane — a switch, not a box, so there
+	 * is no caret for the refresh to take.
 	 */
 	private trackPropertiesPage(): SettingDefinitionItem<ControlKey> {
-		const { statsPrefix, statsNames } = this.plugin.settings;
+		const { statsPrefix, statsNames, statsWrite } = this.plugin.settings;
+		const written = storedWrite(statsWrite);
 		return this.page(
 			'trackProps',
 			[
 				this.text('settings.tracks.statsPrefix.name', 'settings.tracks.statsPrefix.desc', 'statsPrefix', {
 					placeholder: DEFAULT_SETTINGS.statsPrefix,
 				}),
-				...STATS_FIGURES.map((figure) =>
-					this.text(`settings.trackProps.${figure}.name`, undefined, `statsNames.${figure}`, {
-						placeholder: statsPropertyName(figure, statsPrefix),
-					})
-				),
+				...STATS_FIGURES.flatMap((figure) => [
+					{
+						name: t(`settings.trackProps.${figure}.write`),
+						control: { type: 'toggle' as const, key: `statsWrite.${figure}` as ControlKey },
+					},
+					{
+						...this.text(`settings.trackProps.${figure}.name`, undefined, `statsNames.${figure}`, {
+							placeholder: statsPropertyName(figure, statsPrefix),
+						}),
+						visible: () => storedWrite(this.plugin.settings.statsWrite)[figure],
+					},
+				]),
 			],
 			// The prefix, which is what the page is set to for anyone who has not
 			// renamed a figure — and the answer to "what are my columns called".
-			() => statsPropertyName('distance', statsPrefix, statsNames)
+			// Once figures are switched off that is the wrong summary, and how many
+			// are left is the right one: distance itself may be one of the ones off.
+			() => {
+				const on = STATS_FIGURES.filter((figure) => written[figure]).length;
+				if (on === STATS_FIGURES.length) return statsPropertyName('distance', statsPrefix, statsNames);
+				return t('settings.trackProps.count', { on: String(on), total: String(STATS_FIGURES.length) });
+			}
 		);
 	}
 
@@ -1012,8 +1053,12 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 
 	/** A list row reads its value out of the entry its key names. */
 	override getControlValue(key: string): unknown {
-		const figure = figureKey(key);
-		if (figure) return this.plugin.settings.statsNames[figure] ?? '';
+		const named = figureKey(key);
+		if (named) {
+			const { record, figure } = named;
+			if (record === 'statsWrite') return storedWrite(this.plugin.settings.statsWrite)[figure];
+			return this.plugin.settings.statsNames[figure] ?? '';
+		}
 		const path = entryPath(key);
 		if (!path) return super.getControlValue(key);
 		if (path.list === 'externalMaps') return this.builtins()[path.index]?.on ?? true;
@@ -1042,11 +1087,21 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	override async setControlValue(key: string, value: unknown): Promise<void> {
-		const figure = figureKey(key);
-		if (figure) {
-			// One figure's box writes back a copy of the whole record, the way a
-			// list row writes back a copy of its whole list. An emptied box stores
-			// an empty string, which is what restores the prefixed default name.
+		const named = figureKey(key);
+		if (named) {
+			const { record, figure } = named;
+			// One figure's control writes back a copy of the whole record, the way
+			// a list row writes back a copy of its whole list.
+			if (record === 'statsWrite') {
+				const written = storedWrite(this.plugin.settings.statsWrite);
+				written[figure] = value === true;
+				await super.setControlValue('statsWrite', written);
+				// The name box below this switch appears and disappears with it.
+				this.update();
+				return;
+			}
+			// An emptied box stores an empty string, which is what restores the
+			// prefixed default name.
 			const names = storedNames(this.plugin.settings.statsNames);
 			names[figure] = typeof value === 'string' ? value.trim() : '';
 			await super.setControlValue('statsNames', names);
