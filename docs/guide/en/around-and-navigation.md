@@ -93,10 +93,12 @@ button goes, on every map already open as well as the next one.
 
 ## Measure a distance
 
-Press the ruler control under ⊹ and the map becomes a measuring surface. Click to
-drop a point, and each one after the first is labelled with the distance from
-where you started; a dashed leg follows the pointer with the running total, while
-the readout that opens beside the ruler shows what has actually been placed.
+Press the ruler control under ⊹ and the map becomes a measuring surface. Click —
+tap, on a phone — to drop a point, and each one after the first is labelled with
+the distance from where you started; a dashed leg follows the pointer with the
+running total, while the readout that opens beside the ruler shows what has
+actually been placed. A phone has no pointer to lead the dashed leg, so the
+readout and the labels are the whole of what it tells you.
 
 Take back the last point with ↺ or **Backspace**. Press the ruler again and the
 readout folds away, leaving the measurement itself on the map — press it once more
@@ -113,7 +115,8 @@ Never measure anything? Switch **Measure distance** off under settings →
 
 While the tape is out, clicks belong to it: a click on a pin adds a point rather
 than opening that note, and no popup covers the ground you are measuring across.
-A double-click places two points instead of zooming.
+A double-click places two points instead of zooming. Taps belong to it in the
+same way, and a double-tap places two points rather than zooming in.
 
 Bring the pointer near something already on the map and a ring appears on it: a
 note's pin, a track's waypoint or start and end pin, a photo's position, or a
@@ -124,6 +127,11 @@ close on the place it started. The point you placed last is never offered, since
 a leg from a point to itself measures nothing. Hold **Alt** while pointing and
 clicking to ignore all of it and measure the bare ground.
 
+On a phone the point still lands on the thing's own coordinate, but there is no
+ring to aim by, because the ring is what hovering draws. Put the tap on the
+marker, waypoint or photo itself rather than near it. **Alt** has no equivalent
+there, so to measure the bare ground beside something, tap further from it.
+
 Distances are great-circle metres between the places you clicked, which is not
 the same as the distance along a road or a path — for that, draw the route as a
 track and read [its statistics](tracks-and-areas.md). On a mainland basemap the
@@ -133,6 +141,6 @@ does not change when you switch the background under it.
 ## Pins at the same coordinate
 
 At close zoom, notes sharing an exact coordinate fan out into a ring so every
-marker can be hovered and opened. Zoom out and they close back to the truthful
-shared point. Nothing is written to the notes, and copied coordinates remain
-unchanged. **Fan out overlapping pins** disables it.
+marker can be picked out and opened, by pointer or by tap. Zoom out and they
+close back to the truthful shared point. Nothing is written to the notes, and
+copied coordinates remain unchanged. **Fan out overlapping pins** disables it.

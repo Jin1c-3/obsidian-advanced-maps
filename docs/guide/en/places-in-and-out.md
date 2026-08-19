@@ -18,7 +18,8 @@ basemap you are looking at.
 ## Import a file's saved places as notes
 
 Right-click a `.kml`, `.gpx`, or `.geojson` file — in the file explorer, or from
-a note's ⋮ menu — and choose **Import places as notes…**.
+a note's ⋮ menu — and choose **Import places as notes…**. On a phone the file
+explorer opens that menu on a long press, and the ⋮ menu is where it is.
 
 The dialog says how many places the file holds, shows the first few names, and
 asks for a destination folder. It defaults to a folder named after the file,
@@ -62,7 +63,8 @@ Base that does that.
 
 ## Export the places a Base map shows
 
-Right-click the map itself and choose **Export places…**.
+Right-click the map itself — long press it on a phone — and choose
+**Export places…**.
 
 What gets exported is exactly what the map shows: the rows your Base matched
 whose coordinate resolved. A Base matching 16,000 notes of which 300 have a

@@ -45,6 +45,29 @@ The store listing is also readable on the web at
 
 </details>
 
+## On mobile
+
+Advanced Maps runs in the Obsidian mobile app, and draws there what it draws on
+the desktop: note markers with their icons and colours, GPX, GeoJSON, KML and
+TCX routes with direction arrows, photo thumbnails at the positions their EXIF
+gives, the tape measure, and inline `![[track.gpx]]` maps with their statistics
+and elevation profile.
+
+![A Base map open in the Obsidian mobile app: a route around West Lake drawn with direction arrows, coloured note markers, two photo thumbnails, and the map's controls down the right edge](../../images/mobile-map-view.png)
+
+A phone has no mouse, so two words in this guide need translating as you read.
+
+- **Long press** wherever a page says right-click. That opens the map's own
+  menu, and a file's menu in the file explorer.
+- **Tap** wherever a page says hover. A tap opens a route's popup and moves the
+  elevation profile's cursor. Two of them go further than a hover did: a tap on
+  a note's marker opens that note instead of previewing it, and a tap on a photo
+  opens the photo itself, which carries **Open note** inside it.
+
+One feature is desktop-only. An [offline basemap](offline-basemap.md) is not
+read on a phone, whatever path you give it; the map keeps its usual background
+and nothing else changes.
+
 ## How a Base becomes a map
 
 A Base filter is the boundary of a map. Advanced Maps expands each matched note

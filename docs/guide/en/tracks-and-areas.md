@@ -61,7 +61,8 @@ waypoints. **Show track markers** turns these extras off.
 ## Pointing at a route on a Base map
 
 Hovering a route opens the note's own popup — the same card its pin opens — with
-one row added for the thing under the pointer.
+one row added for the thing under the pointer. On a phone, tap the route
+instead; the same popup opens, with the same row.
 
 - **A route** adds that one file's distance, climb and elapsed time, labelled
   with the file's own name. A note carrying a morning hike and an afternoon ride
@@ -96,7 +97,10 @@ marker, waypoint, or photo inside an area keeps its own click.
 An inline `![[track.gpx]]` is a live map with distance, ascent and descent,
 elevation range, elapsed and moving time, pace, and an elevation profile.
 Missing source data is omitted instead of shown as zero. Hovering the profile
-moves a cursor along the route and vice versa.
+moves a cursor along the route and vice versa. On a phone both directions
+answer to a tap: tap the profile and the cursor moves along the route, tap the
+route and the profile's readout follows. The reading stays where you put it
+until you tap somewhere else, since there is no pointer to leave.
 
 ![A live GPX embed followed by distance, ascent, times, pace, and a hoverable elevation profile](../../images/inline-embed.png)
 
