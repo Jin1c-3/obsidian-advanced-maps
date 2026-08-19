@@ -49,11 +49,11 @@ on the machine works.
 
 **Settings → Community plugins → Advanced Maps → Offline basemap.**
 
-| Row                          | What to put there                                                         |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| Tile path                    | `/home/you/tiles/{z}/{x}/{y}.png` — the shape your files are addressed by |
-| Shallowest level in the pack | The lowest-numbered folder your `z` directories go down to                |
-| Deepest level in the pack    | The highest-numbered one                                                  |
+| Row                | What to put there                                                         |
+| ------------------ | ------------------------------------------------------------------------- |
+| Tile path          | `/home/you/tiles/{z}/{x}/{y}.png` — the shape your files are addressed by |
+| Lowest zoom level  | The lowest-numbered folder your `z` directories go down to                |
+| Highest zoom level | The highest-numbered one                                                  |
 
 The path may be absolute, or relative to your vault. `{z}`, `{x}` and `{y}` are
 filled in per tile; `{-y}` works too, for packs laid out in TMS row order. Leave
@@ -68,12 +68,12 @@ map, because the prefix that URL needs is regenerated every time Obsidian starts
 They are the folder names at either end of your pack, and each stops a different
 kind of failure:
 
-- **Deepest** bounds the tiles themselves. Zoom in past it and the map keeps
+- **Highest zoom level** bounds the tiles themselves. Zoom in past it and the map keeps
   drawing, magnifying the deepest tiles you have, instead of asking for files
   that are not there. Set it too low and you lose sharpness you had; too high and
   the map quietly issues a failed read for every tile past the end.
-- **Shallowest** bounds the camera. Zoom out towards it and the map stops there
-  rather than going blank, because there is nothing above your shallowest level
+- **Lowest zoom level** bounds the camera. Zoom out towards it and the map stops
+  there rather than going blank, because there is nothing above your lowest level
   to magnify.
 
 If your pack covers `z0`–`z14`, put 0 and 14 in.
@@ -110,8 +110,8 @@ in order:
    numbers substituted; if that file is not there, neither is the tile.
 2. **The extension.** `.png`, `.jpg` and `.webp` are all fine, but it has to be
    the one your files actually use.
-3. **The zoom levels.** A shallowest level higher than where the map is sitting
-   pins the camera; a deepest level set to 0 leaves one tile for the whole world.
+3. **The zoom levels.** A lowest level higher than where the map is sitting pins
+   the camera; a highest level set to 0 leaves one tile for the whole world.
 4. **The view.** Its **Offline basemap** option may be set to _No_.
 
 Measured on desktop. Mobile reaches local files by a different route and is

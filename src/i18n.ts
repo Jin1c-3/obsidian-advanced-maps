@@ -232,21 +232,19 @@ const en = {
 	/* ---- settings: external maps ---- */
 	'settings.external.heading': 'Open in external map',
 	'settings.external.intro':
-		'What the map offers when you right-click a spot on it. Order the built-in apps, switch off the ones you ' +
-		'never reach for, and add any other app that takes a coordinate in a URL.',
+		'What the map offers when you right-click a spot on it. Order the built-in apps, switch off the ones you never use, and add any app that takes a coordinate in a URL.',
 	'settings.external.builtin.heading': 'Built-in',
 	'settings.external.custom.heading': 'Your own',
-	'settings.external.custom.empty': 'Nothing added. The six above are the ones that need no setting up.',
+	'settings.external.custom.empty': 'Nothing added. The six above need no setting up.',
 	'settings.external.custom.add': 'Add a map app',
 	/* The three boxes on a custom entry's row carry their own labels as
 	 * placeholders — a row is one entry, so the fields share it. */
 	'settings.external.custom.name.name': 'Name',
 	'settings.external.custom.url.placeholder': 'https://…{lat}…{lng}',
 	'settings.external.custom.url.desc':
-		'{lat} and {lng} are replaced with the coordinate — put them in whichever order the app wants. An app ' +
-		'scheme such as waze:// or iosamap:// works too, on the device that has it.',
+		'{lat} and {lng} are replaced with the coordinate, in whichever order the app wants. An app scheme such as waze:// works on a device that has it.',
 	'settings.external.custom.datum.desc':
-		'Which system that URL expects. Guessing wrong lands the pin a few streets away rather than failing.',
+		'Which system that URL expects. Guessing wrong lands the pin a few streets away.',
 	/* Short forms: these sit in a dropdown beside two text boxes, where the
 	 * provider lists the coordinate-system setting spells out do not fit. */
 	'datum.wgs84': 'WGS-84',
@@ -259,18 +257,15 @@ const en = {
 	/* ---- settings: place search ---- */
 	'settings.search.heading': 'Place search',
 	'settings.search.intro':
-		'Looks a place name up and writes the coordinate it comes back with — and, the other way round, turns a ' +
-		"note's coordinate into a place name. These are the only two requests the plugin makes on its own behalf, " +
-		'both to the source below; nothing else does. A map on screen still fetches tiles from whichever background ' +
-		'it is set to.',
+		'Looks a place name up, and turns a coordinate back into a place name. These are the only two requests this plugin makes on its own; a map still fetches tiles from its own background.',
 	'settings.search.provider.name': 'Search provider',
 	'settings.search.provider.desc': 'Amap knows Chinese places far better; OpenStreetMap needs no signing up.',
-	'settings.search.keyStore.name': 'Where to keep the Amap key',
+	'settings.search.keyStore.name': 'Amap key storage',
 	// The two option labels carry the trade-off; this says the one thing they
 	// cannot, which is what happens to the key when the answer changes.
 	'settings.search.keyStore.desc':
-		'Switching to secret storage moves the key across; switching back does not copy it out.',
-	'settings.search.amapKey.name': 'Amap web-service key',
+		'Switching to secret storage moves the key across. Switching back does not copy it out.',
+	'settings.search.amapKey.name': 'Amap key',
 	'settings.search.amapKey.desc': 'From console.amap.com — a "Web service" key, not a JS API one.',
 
 	/* ---- settings ----
@@ -280,19 +275,19 @@ const en = {
 
 	/* ---- settings: location ---- */
 	'settings.locate.heading': 'Location',
-	'settings.locate.intro':
-		"Fills a note's coordinate property from the device — on the desktop as well as on mobile, wherever the " +
-		'operating system can answer.',
-	'settings.locate.enable.name': 'Enable location',
+	'settings.locate.intro': "Fills a note's coordinate property from the device, on the desktop as well as on mobile.",
+	'settings.locate.enable.name': 'Use device location',
 	'settings.locate.enable.desc':
 		'Enables the command and the automatic fill below. The first request raises a permission prompt.',
-	'settings.locate.auto.name': 'Fill an empty coordinate property',
+	'settings.locate.auto.name': 'Fill empty coordinates',
 	'settings.locate.auto.desc':
-		'Stamps the note you are in when its "{property}" is there but empty — a blank line in a template is the ' +
-		'invitation. A property that already holds something is never overwritten.',
-	'settings.locate.exclude.name': 'Skip paths containing',
+		'Stamps the note you are in when its "{property}" is there but empty. A property that already holds something is never overwritten.',
+	'settings.locate.exclude.name': 'Skip these folders',
 	'settings.locate.exclude.desc':
-		'Comma-separated path fragments. Templates belong here: their blank is the one to leave alone.',
+		'Notes under these paths are never stamped. Templates belong here: their blank is the one to leave alone.',
+	'settings.locate.exclude.empty':
+		'Nothing skipped — a blank coordinate in a template will be filled like any other.',
+	'settings.locate.exclude.add': 'Add a folder',
 
 	/* ---- settings: what a page entry states ----
 	 * A page shows no control of its own, so the entry says what is behind it. */
@@ -312,43 +307,34 @@ const en = {
 	/* ---- settings: coordinate system ---- */
 	'settings.coord.heading': 'Coordinate system',
 	'settings.coord.intro':
-		'Chinese basemaps sit 300–600 m away from raw GPS. Matching the system moves pins and tracks as they are ' +
-		'drawn, so they line up with the tiles; nothing on disk changes.',
+		'Chinese basemaps sit 300–600 m from raw GPS. Matching the system lines pins and tracks up with the tiles as they are drawn. Nothing on disk changes.',
 	'settings.coord.default.name': 'Default coordinate system',
-	'settings.coord.default.desc':
-		'Used by inline ![[track.gpx]] maps, and by every map view that does not set its own.',
+	'settings.coord.default.desc': 'Used by inline maps, and by every map view that does not set its own.',
 
 	/* ---- settings: offline basemap ---- */
 	'settings.tiles.heading': 'Offline basemap',
 	'settings.tiles.intro':
-		'A folder of map tiles already on your disk becomes the background of every map, drawn from the file system ' +
-		'with nothing asked of the network. The tiles are only ever read: nothing is downloaded, and nothing under ' +
-		'that folder is written to or moved.',
+		'A folder of tiles already on your disk becomes the background of every map, with nothing asked of the network. The tiles are only ever read.',
 	'settings.tiles.path.name': 'Tile path',
 	'settings.tiles.path.desc':
-		'The path your tiles are addressed by, holding {z}, {x} and {y} — for example ' +
-		'/home/you/tiles/{z}/{x}/{y}.png. Absolute, or relative to the vault. Empty leaves every map the background ' +
-		'it already has.',
+		'The path your tiles are addressed by, holding {z}, {x} and {y}. Absolute, or relative to the vault. Empty leaves every map the background it has.',
 	'settings.tiles.error.placeholders': 'Needs {z}, {x} and {y} in it.',
-	'settings.tiles.minZoom.name': 'Shallowest level in the pack',
+	'settings.tiles.minZoom.name': 'Lowest zoom level',
 	'settings.tiles.minZoom.desc':
-		'The lowest-numbered folder your tiles go down to. Maps stop zooming out there rather than emptying.',
-	'settings.tiles.maxZoom.name': 'Deepest level in the pack',
+		'The lowest-numbered folder your pack goes down to. Maps stop zooming out there rather than emptying.',
+	'settings.tiles.maxZoom.name': 'Highest zoom level',
 	'settings.tiles.maxZoom.desc':
-		'The highest-numbered folder your tiles go up to. Past it the map keeps drawing, magnified, instead of asking ' +
-		'for tiles you do not have. Setting it too low costs sharpness; too high fills the console with failed reads.',
+		'The highest-numbered folder your pack goes up to. Past it the map magnifies what it has instead of asking for tiles you do not have.',
 
 	/* ---- settings: open in map ---- */
 	'settings.open.heading': 'Open in map',
 	'settings.open.intro':
-		"Opens a base's map view on the note you are in, from its ⋮ menu or the command palette. It appears on notes " +
-		'whose coordinate property holds a value.',
+		'Opens a map view on the note you are in, from its ⋮ menu or the command palette. It appears on notes whose coordinate property holds a value.',
 	'settings.open.label.name': 'Menu item label',
 	'settings.open.label.desc':
 		'Blank for the default. The ⋮ menu follows at once, the command palette after a reload.',
-	'settings.open.basePath.name': 'Base file path',
-	'settings.open.basePath.desc':
-		'The .base file the map view is taken from — for this, the pop-up and the inserted map alike.',
+	'settings.open.basePath.name': 'Base file',
+	'settings.open.basePath.desc': 'The .base file every map this plugin opens is taken from.',
 	'settings.open.viewName.name': 'View name',
 	'settings.open.viewName.desc': 'Which view inside that base. Blank takes its first map view.',
 	'open.view.first': 'The first map view',
@@ -362,22 +348,18 @@ const en = {
 	'open.view.missing': '"{view}" — no such view in this base',
 	'settings.open.openIn.name': 'Open in',
 	'settings.open.openIn.desc':
-		'A tab opens the base file itself, so anything you change on the map is kept. A pop-up embeds the same view ' +
-		'and leaves your layout alone, but an embedded base has nowhere to write a change back to, so nothing you ' +
-		'change inside it survives closing it.',
+		'A tab opens the base file itself and keeps any view option you change there. A pop-up leaves your layout alone, but has nowhere to save a change.',
 	'open.target.tab': 'A tab, reusing one already showing that base',
 	'open.target.modal': 'A pop-up',
 	'settings.open.coordsProperty.name': 'Coordinate property',
-	'settings.open.coordsProperty.desc':
-		'The property holding "latitude,longitude". Location, below, writes to this one too.',
+	'settings.open.coordsProperty.desc': 'The property holding "latitude,longitude". Location writes to this one too.',
 	'settings.open.placeProperty.name': 'Place property',
-	'settings.open.placeProperty.desc': 'The property "Fill place name from coordinates" writes its result into.',
+	'settings.open.placeProperty.desc': 'Where "Fill place name from coordinates" writes its result.',
 	'settings.open.zoom.name': 'Zoom level',
-	'settings.open.zoom.desc': 'How close the map lands when it opens on a note. Following keeps the zoom you set.',
-	'settings.open.aroundView.name': '"Around this note" view name',
+	'settings.open.zoom.desc': 'How close the map lands when it opens on a note.',
+	'settings.open.aroundView.name': 'Around view name',
 	'settings.open.aroundView.desc':
-		'The view added to that base for maps of the notes around a note. Renaming it here does not repoint maps ' +
-		'already inserted — their links name the old one.',
+		'The view added to that base for maps of the notes around a note. Renaming it here does not repoint maps already inserted.',
 
 	/* ---- settings: map buttons ----
 	 * What this plugin adds to the map's own corner. Zoom-to-fit has no switch:
@@ -388,14 +370,12 @@ const en = {
 		'The buttons this plugin adds to a map view, beside the native ones. Zoom-to-fit is always there.',
 	'settings.controls.follow.name': 'Follow the active note',
 	'settings.controls.follow.desc':
-		'Adds the ⊹ button. A following map pans to the note you switch to and opens its popup, leaving the query ' +
-		'and the zoom alone.',
+		'Adds the ⊹ button. A following map pans to the note you switch to and opens its popup, leaving the query and the zoom alone.',
 	'settings.controls.followStart.name': 'New maps start following',
 	'settings.controls.followStart.desc':
 		'Which way ⊹ points on a map that has just opened. It is not remembered when a map is closed.',
 	'settings.controls.measure.name': 'Measure distance',
-	'settings.controls.measure.desc':
-		'Adds the ruler button. Its readout opens beside it for as long as you are measuring.',
+	'settings.controls.measure.desc': 'Adds the ruler button. Its readout opens beside it while you measure.',
 	'settings.controls.count': '{on} of {total} on',
 
 	/* ---- settings: pins ----
@@ -404,11 +384,9 @@ const en = {
 	 * knobs, which are about files a note points at. */
 	'settings.pins.heading': 'Pins',
 	'settings.pins.intro': "How the notes' own markers behave on a map view.",
-	'settings.pins.spread.name': 'Fan out pins that share a spot',
+	'settings.pins.spread.name': 'Fan out overlapping pins',
 	'settings.pins.spread.desc':
-		'Notes at the same place stack into one pin, and only the top one can be opened. Past zoom {zoom} they fan ' +
-		'apart onto a ring, so each can be hovered and opened on its own. Drawn on screen only — no note is moved ' +
-		'and nothing is written.',
+		'Notes at the same place stack into one pin. Past zoom {zoom} they fan onto a ring so each can be hovered and opened. Drawn on screen only; nothing is written.',
 
 	/* ---- settings: tracks ---- */
 	'settings.tracks.heading': 'Tracks',
@@ -426,19 +404,15 @@ const en = {
 	'settings.tracks.embedHeight.desc': 'Height in pixels of an inline ![[track.gpx]] map.',
 	'settings.tracks.stats.name': 'Show track statistics',
 	'settings.tracks.stats.desc':
-		'Distance, ascent and time under an inline map. GPX and TCX carry them; a GeoJSON usually carries neither, ' +
-		'and what is missing is left out rather than shown as zero.',
-	'settings.tracks.profile.name': 'Show the elevation profile',
+		'Distance, ascent and time under an inline map. What a file does not record is left out rather than shown as zero.',
+	'settings.tracks.profile.name': 'Show elevation profile',
 	'settings.tracks.profile.desc': 'A small chart under the statistics, for files that record elevation.',
 	'settings.tracks.markers.name': 'Show track markers',
 	'settings.tracks.markers.desc':
-		'A start and an end pin on every track, direction arrows along it, and — on inline maps — a waypoint’s ' +
-		'own name on hover.',
-	'settings.tracks.statsPrefix.name': 'Track property prefix',
+		"A start and an end pin on every track, direction arrows along it, and — inline — a waypoint's own name on hover.",
+	'settings.tracks.statsPrefix.name': 'Property prefix',
 	'settings.tracks.statsPrefix.desc':
-		'What "Write track statistics to properties" names what it writes: "track" gives track-distance-km, ' +
-		'track-ascent-m, track-duration-min and so on. The command touches nothing outside the names below, ' +
-		'and nothing at all behind a figure switched off there.',
+		'What "Write track statistics to properties" names what it writes: "track" gives track-distance-km, track-ascent-m, and so on.',
 
 	/* ---- settings: track properties ----
 	 * The nine figures the write-statistics command knows: whether each one is
@@ -446,31 +420,19 @@ const en = {
 	 * shows the prefixed name it would otherwise write. */
 	'settings.trackProps.heading': 'Track properties',
 	'settings.trackProps.intro':
-		'Which figures "Write track statistics to properties" writes, and what it calls each one. Switch a ' +
-		'figure off and the command stops reaching it altogether — it is not written, and one already in a note ' +
-		'is not removed either. Leave a box empty to keep the prefixed name shown in it; type a name and that ' +
-		'is the whole property name, prefix and all left out — which is how a column ends up called anything ' +
-		'you like. Renaming one does not rename what is already in your notes: the old property stays until ' +
-		'you remove it.',
+		'Which figures "Write track statistics to properties" writes, and what it calls each one. A figure switched off is not written, and one already in a note is not removed either. An empty box keeps the name shown in it.',
 	'settings.trackProps.count': '{on} of {total} figures',
-	'settings.trackProps.distance.write': 'Write the distance',
-	'settings.trackProps.ascent.write': 'Write the ascent',
-	'settings.trackProps.descent.write': 'Write the descent',
-	'settings.trackProps.lowest.write': 'Write the lowest point',
-	'settings.trackProps.highest.write': 'Write the highest point',
-	'settings.trackProps.duration.write': 'Write the elapsed time',
-	'settings.trackProps.moving.write': 'Write the moving time',
-	'settings.trackProps.speed.write': 'Write the average speed',
-	'settings.trackProps.start.write': 'Write the start time',
-	'settings.trackProps.distance.name': 'Distance property',
-	'settings.trackProps.ascent.name': 'Ascent property',
-	'settings.trackProps.descent.name': 'Descent property',
-	'settings.trackProps.lowest.name': 'Lowest-point property',
-	'settings.trackProps.highest.name': 'Highest-point property',
-	'settings.trackProps.duration.name': 'Elapsed-time property',
-	'settings.trackProps.moving.name': 'Moving-time property',
-	'settings.trackProps.speed.name': 'Average-speed property',
-	'settings.trackProps.start.name': 'Start-time property',
+	'settings.trackProps.figures.heading': 'Figures',
+	'settings.trackProps.write': 'Write this figure',
+	'settings.trackProps.distance.name': 'Distance',
+	'settings.trackProps.ascent.name': 'Ascent',
+	'settings.trackProps.descent.name': 'Descent',
+	'settings.trackProps.lowest.name': 'Lowest point',
+	'settings.trackProps.highest.name': 'Highest point',
+	'settings.trackProps.duration.name': 'Elapsed time',
+	'settings.trackProps.moving.name': 'Moving time',
+	'settings.trackProps.speed.name': 'Average speed',
+	'settings.trackProps.start.name': 'Start time',
 
 	/* ---- settings: photos ----
 	 * A page of its own beside the track knobs above: a track comes from a
@@ -479,27 +441,21 @@ const en = {
 	 * exists to say plainly what that free ride does and does not do. */
 	'settings.photos.heading': 'Photos',
 	'settings.photos.intro':
-		"Draws a linked photo's own location on the map, read from its EXIF GPS tags — the same way a linked " +
-		'.gpx file draws a track. A photo is only ever read, never written to, and nothing about it leaves the ' +
-		'vault.',
-	'setting.showPhotos': 'Show photos on the map',
+		"Draws a linked photo's own location, read from its EXIF GPS tags, the same way a linked .gpx file draws a track. A photo is only ever read, and nothing about it leaves the vault.",
+	'setting.showPhotos': 'Show photos',
 	'setting.showPhotos.desc': "Draws a pin at a linked photo's own coordinate, wherever its EXIF GPS tags name one.",
 	'setting.photoThumbnails': 'Show photo thumbnails',
 	'setting.photoThumbnails.desc':
 		"Uses each photo's own embedded thumbnail as its map icon, in place of a plain dot.",
 	'setting.photoDatum': 'Photo coordinate system',
 	'setting.photoDatum.desc':
-		"EXIF GPS coordinates are WGS-84 by specification. Auto believes a photo's own GPSMapDatum tag when it " +
-		'states one, and falls back to WGS-84 otherwise.',
+		"EXIF GPS coordinates are WGS-84 by specification. Auto believes a photo's own GPSMapDatum tag when it states one, and falls back to WGS-84.",
 	'setting.photoDatum.auto': "Auto — follow the photo's own GPSMapDatum, if it states one",
 	'setting.photoDatum.wgs84': 'WGS-84 — the EXIF specification',
 	'setting.photoDatum.gcj02': 'GCJ-02 — force it',
 	'setting.photoIndex': 'Clear the photo index',
 	'setting.photoIndex.desc':
-		'Reading a photo is remembered, so opening the vault again draws its pin without opening the file. ' +
-		'What is kept is only what was read out of the photo — its coordinate, the moment, and whether it has ' +
-		'a thumbnail — in one file beside these settings. Clearing it changes nothing on any map; the photos ' +
-		'are simply read again as maps ask for them.',
+		'Reading a photo is remembered, so opening the vault again draws its pin without opening the file. Clearing it changes nothing on any map; the photos are read again as maps ask for them.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
@@ -687,7 +643,7 @@ const zh: Record<TranslationKey, string> = {
 
 	'settings.external.heading': '用外部地图打开',
 	'settings.external.intro':
-		'在地图上右键一个位置时给出的选项。可以给内置的几个排序、把用不上的关掉，也可以自己添加任何能用 URL 接收坐标的地图应用。',
+		'在地图上右键一个位置时给出的选项。可以给内置的几个排序、把用不上的关掉，也可以添加任何用 URL 接收坐标的地图应用。',
 	'settings.external.builtin.heading': '内置',
 	'settings.external.custom.heading': '自定义',
 	'settings.external.custom.empty': '还没有添加。上面那六个不用配置就能用。',
@@ -695,7 +651,7 @@ const zh: Record<TranslationKey, string> = {
 	'settings.external.custom.name.name': '名称',
 	'settings.external.custom.url.placeholder': 'https://…{lat}…{lng}',
 	'settings.external.custom.url.desc':
-		'{lat} 和 {lng} 会被替换成坐标，先后顺序按目标应用的要求写。也可以用 waze:// 、iosamap:// 这类应用协议，在装了该应用的设备上有效。',
+		'{lat} 和 {lng} 会被替换成坐标，先后顺序按目标应用的要求写。waze:// 这类应用协议在装了该应用的设备上有效。',
 	'settings.external.custom.datum.desc': '这个 URL 期待的坐标系。选错不会报错，只会把标记落到隔几条街的地方。',
 	'datum.wgs84': 'WGS-84',
 	'datum.gcj02': 'GCJ-02 火星坐标',
@@ -706,23 +662,25 @@ const zh: Record<TranslationKey, string> = {
 
 	'settings.search.heading': '地点搜索',
 	'settings.search.intro':
-		'搜地名，把查到的坐标写进笔记；反过来，也能把笔记的坐标查成地名。这是插件自己发起的仅有的两次请求，都会发往下面选的搜索源，别的都不会。地图本身仍然会向所配置的底图服务请求瓦片。',
+		'搜地名，把查到的坐标写进笔记；反过来也能把坐标查成地名。这是插件自己发起的仅有的两次请求；地图本身仍会向底图服务请求瓦片。',
 	'settings.search.provider.name': '搜索源',
 	'settings.search.provider.desc': '高德对国内地点熟得多；OpenStreetMap 不用注册。',
-	'settings.search.keyStore.name': '高德 key 存在哪',
+	'settings.search.keyStore.name': '高德 key 存放位置',
 	'settings.search.keyStore.desc': '切到密钥存储会把 key 一并搬过去；切回来不会再抄出来。',
-	'settings.search.amapKey.name': '高德 Web 服务 key',
+	'settings.search.amapKey.name': '高德 key',
 	'settings.search.amapKey.desc': '在 console.amap.com 申请，要选「Web 服务」类型，不是 JS API。',
 
 	'settings.locate.heading': '定位',
-	'settings.locate.intro': '用设备定位填写笔记的坐标属性。桌面端也可以，只要操作系统能给出位置。',
-	'settings.locate.enable.name': '启用定位',
+	'settings.locate.intro': '用设备定位填写笔记的坐标属性。桌面端也可以。',
+	'settings.locate.enable.name': '使用设备定位',
 	'settings.locate.enable.desc': '开启后命令和下面的自动填写才生效。第一次请求会弹出权限询问。',
-	'settings.locate.auto.name': '自动填写空的坐标属性',
-	'settings.locate.auto.desc':
-		'当前笔记的「{property}」存在但为空时填入——模板里留一行空的就是在等它。已经有值的属性不会被覆盖。',
-	'settings.locate.exclude.name': '跳过路径包含',
-	'settings.locate.exclude.desc': '逗号分隔的路径片段。模板目录应当写在这里：它留出的空位正是不该被填掉的。',
+	'settings.locate.auto.name': '自动填写空坐标',
+	'settings.locate.auto.desc': '当前笔记的「{property}」存在但为空时填入。已经有值的属性不会被覆盖。',
+	'settings.locate.exclude.name': '跳过这些文件夹',
+	'settings.locate.exclude.desc':
+		'这些路径下的笔记永远不会被填写。模板目录应当写在这里：它留出的空位正是不该被填掉的。',
+	'settings.locate.exclude.empty': '没有跳过任何路径——模板里空着的坐标也会照常被填。',
+	'settings.locate.exclude.add': '添加文件夹',
 
 	'settings.state.on': '已开启',
 	'settings.state.off': '已关闭',
@@ -736,49 +694,46 @@ const zh: Record<TranslationKey, string> = {
 
 	'settings.coord.heading': '坐标系',
 	'settings.coord.intro':
-		'国内底图与 GPS 原始坐标相差 300–600 米。选对坐标系，标记和轨迹会在绘制时换算过去，与底图对齐；磁盘上的内容不会改动。',
+		'国内底图与 GPS 原始坐标相差 300–600 米。选对坐标系，标记和轨迹在绘制时换算过去，与底图对齐；磁盘上的内容不动。',
 	'settings.coord.default.name': '默认坐标系',
-	'settings.coord.default.desc': '内联 ![[track.gpx]] 地图，以及没有单独设置的地图视图都用它。',
+	'settings.coord.default.desc': '内联地图，以及没有单独设置的地图视图都用它。',
 
 	'settings.tiles.heading': '离线底图',
-	'settings.tiles.intro':
-		'磁盘上现成的一整套瓦片可以当所有地图的底图，直接从文件系统读，不走网络。瓦片只读不写：这里不会下载任何东西，也不会改动或移动那个文件夹里的内容。',
+	'settings.tiles.intro': '磁盘上现成的一整套瓦片可以当所有地图的底图，直接从文件系统读，不走网络。瓦片只读不写。',
 	'settings.tiles.path.name': '瓦片路径',
 	'settings.tiles.path.desc':
-		'瓦片的寻址路径，要含 {z}、{x}、{y}，例如 /home/you/tiles/{z}/{x}/{y}.png 。可以是绝对路径，也可以相对于仓库。留空则各地图保持原有底图。',
+		'瓦片的寻址路径，要含 {z}、{x}、{y}。可以是绝对路径，也可以相对于仓库。留空则各地图保持原有底图。',
 	'settings.tiles.error.placeholders': '需要同时包含 {z}、{x} 和 {y} 。',
-	'settings.tiles.minZoom.name': '瓦片最浅层级',
+	'settings.tiles.minZoom.name': '最低层级',
 	'settings.tiles.minZoom.desc': '这套瓦片里编号最小的那层。地图缩小到这里就停住，而不是变成空白。',
-	'settings.tiles.maxZoom.name': '瓦片最深层级',
+	'settings.tiles.maxZoom.name': '最高层级',
 	'settings.tiles.maxZoom.desc':
-		'这套瓦片里编号最大的那层。再往里放大时地图会把已有瓦片放大接着画，而不是去要没有的瓦片。填小了损失清晰度，填大了控制台会刷一屏读取失败。',
+		'这套瓦片里编号最大的那层。再放大时地图会把已有瓦片放大接着画，而不是去要没有的瓦片。',
 
 	'settings.open.heading': '在地图中打开',
 	'settings.open.intro':
-		'从 ⋮ 菜单或命令面板打开指定 base 的地图视图，并把镜头移到当前笔记上。只对坐标属性有值的笔记出现。',
+		'从笔记的 ⋮ 菜单或命令面板，把地图视图打开到当前笔记。只有坐标属性有值的笔记才会出现这一项。',
 	'settings.open.label.name': '菜单项名称',
 	'settings.open.label.desc': '留空用默认名称。⋮ 菜单立即生效，命令面板要重载插件。',
-	'settings.open.basePath.name': 'Base 文件路径',
-	'settings.open.basePath.desc': '从哪个 .base 文件取地图视图。这里、弹窗和插入的地图取的是同一个。',
+	'settings.open.basePath.name': 'Base 文件',
+	'settings.open.basePath.desc': '本插件打开的每张地图都取自这个 .base 文件。',
 	'settings.open.viewName.name': '视图名称',
 	'settings.open.viewName.desc': '该 base 里的哪个视图。留空取第一个地图视图。',
 	'open.view.first': '第一个地图视图',
 	'open.view.missing': '该 base 里没有「{view}」这个视图',
 	'settings.open.openIn.name': '打开方式',
 	'settings.open.openIn.desc':
-		'标签页打开的是 base 文件本身，在地图上改的东西都会存下来。弹窗嵌入的是同一个视图，不动你的布局，' +
-		'但嵌入的 base 没有地方回写视图设置——在里面改的东西关掉就没了。',
+		'标签页打开的是 base 文件本身，在地图上改的东西会存下来。弹窗不动你的布局，但没有地方回写视图设置。',
 	'open.target.tab': '标签页（已打开该 base 的就复用）',
 	'open.target.modal': '弹窗',
 	'settings.open.coordsProperty.name': '坐标属性',
-	'settings.open.coordsProperty.desc': '存放「纬度,经度」的属性名。下面的定位写入的也是它。',
+	'settings.open.coordsProperty.desc': '存放「纬度,经度」的属性名。定位写入的也是它。',
 	'settings.open.placeProperty.name': '地名属性',
 	'settings.open.placeProperty.desc': '「从坐标填写地名」命令写入结果的属性名。',
 	'settings.open.zoom.name': '缩放级别',
-	'settings.open.zoom.desc': '打开到某篇笔记时放大到的级别。跟随时不动缩放，保持你自己调的。',
+	'settings.open.zoom.desc': '打开到某篇笔记时放大到的级别。',
 	'settings.open.aroundView.name': '「周围」视图名称',
-	'settings.open.aroundView.desc':
-		'为「本篇相关笔记的地图」在该 base 中添加的视图。在这里改名不会改已经插入的地图——它们的链接指向旧名字。',
+	'settings.open.aroundView.desc': '为「本篇相关笔记的地图」在该 base 中添加的视图。在这里改名不会改已经插入的地图。',
 
 	'settings.controls.heading': '地图按钮',
 	'settings.controls.intro': '本插件加在地图视图上的按钮，和原生那几个排在一起。「缩放到全部」不可关闭。',
@@ -793,10 +748,9 @@ const zh: Record<TranslationKey, string> = {
 
 	'settings.pins.heading': '图钉',
 	'settings.pins.intro': '笔记自身的标记在地图视图里的行为。',
-	'settings.pins.spread.name': '散开位置重合的图钉',
+	'settings.pins.spread.name': '散开重合的图钉',
 	'settings.pins.spread.desc':
-		'位置相同的笔记会叠成一个图钉，只有最上面那个点得开。放大到 {zoom} 级以上后，它们会散成一圈，于是每一个都能单独悬停、单独打开。' +
-		'只是画在屏幕上——笔记不会被移动，也不会写入任何内容。',
+		'位置相同的笔记会叠成一个图钉，只有最上面那个点得开。放大到 {zoom} 级以上后散成一圈，每一个都能单独打开。只画在屏幕上，不写入任何内容。',
 
 	'settings.tracks.heading': '轨迹',
 	'settings.tracks.intro': 'GPX / GeoJSON 轨迹的画法。线宽、透明度和缩放上限都可以在单个地图视图里另设。',
@@ -810,47 +764,35 @@ const zh: Record<TranslationKey, string> = {
 	'settings.tracks.embedHeight.desc': '内联 ![[track.gpx]] 地图的高度（像素）。',
 	'settings.tracks.stats.name': '显示轨迹统计',
 	'settings.tracks.stats.desc':
-		'在内联地图下方显示距离、爬升和时间。GPX 和 TCX 带这些信息，GeoJSON 通常两样都没有；缺的那几项直接不显示，而不是显示成 0。',
+		'在内联地图下方显示距离、爬升和时间。文件里没记录的那几项直接不显示，而不是显示成 0。',
 	'settings.tracks.profile.name': '显示高程剖面',
 	'settings.tracks.profile.desc': '统计下面的小图，只对记录了高程的文件出现。',
 	'settings.tracks.markers.name': '显示轨迹标记',
-	'settings.tracks.markers.desc':
-		'每条轨迹的起点和终点图钉、沿线的方向箭头，以及——仅内联地图——悬停显示途经点自己的名称。',
-	'settings.tracks.statsPrefix.name': '轨迹属性前缀',
+	'settings.tracks.markers.desc': '每条轨迹的起点和终点图钉、沿线的方向箭头，以及仅内联地图上悬停显示的途经点名称。',
+	'settings.tracks.statsPrefix.name': '属性前缀',
 	'settings.tracks.statsPrefix.desc':
-		'「把轨迹数据写进属性」写出来的属性名怎么起：填 track 就是 track-distance-km、track-ascent-m、' +
-		'track-duration-min 等等。这个命令只碰下面这些名字，下面关掉的那几项则完全不碰。',
+		'「把轨迹数据写进属性」写出来的属性名怎么起：填 track 就是 track-distance-km、track-ascent-m 等等。',
 
 	'settings.trackProps.heading': '轨迹属性',
 	'settings.trackProps.intro':
-		'「把轨迹数据写进属性」写哪几项数据，以及每项叫什么。关掉某一项，命令就完全不碰它了——不会写进去，' +
-		'笔记里已经有的那个属性也不会被删掉。名字留空就用框里显示的那个带前缀的名字；填了名字，那就是完整的属性名，' +
-		'前缀不再往前面拼——想把某一列叫成什么都可以。改名不会动笔记里已经写好的：旧属性会一直留着，要自己删。',
+		'「把轨迹数据写进属性」写哪几项，以及每项叫什么。关掉的那项不会写进去，笔记里已经有的也不会被删。名字留空就用框里显示的那个。',
 	'settings.trackProps.count': '{total} 项里写 {on} 项',
-	'settings.trackProps.distance.write': '写入距离',
-	'settings.trackProps.ascent.write': '写入累计爬升',
-	'settings.trackProps.descent.write': '写入累计下降',
-	'settings.trackProps.lowest.write': '写入最低点',
-	'settings.trackProps.highest.write': '写入最高点',
-	'settings.trackProps.duration.write': '写入总时长',
-	'settings.trackProps.moving.write': '写入移动时间',
-	'settings.trackProps.speed.write': '写入平均速度',
-	'settings.trackProps.start.write': '写入出发时间',
-	'settings.trackProps.distance.name': '距离属性',
-	'settings.trackProps.ascent.name': '累计爬升属性',
-	'settings.trackProps.descent.name': '累计下降属性',
-	'settings.trackProps.lowest.name': '最低点属性',
-	'settings.trackProps.highest.name': '最高点属性',
-	'settings.trackProps.duration.name': '总时长属性',
-	'settings.trackProps.moving.name': '移动时间属性',
-	'settings.trackProps.speed.name': '平均速度属性',
-	'settings.trackProps.start.name': '出发时间属性',
+	'settings.trackProps.figures.heading': '数据项',
+	'settings.trackProps.write': '写入这一项',
+	'settings.trackProps.distance.name': '距离',
+	'settings.trackProps.ascent.name': '累计爬升',
+	'settings.trackProps.descent.name': '累计下降',
+	'settings.trackProps.lowest.name': '最低点',
+	'settings.trackProps.highest.name': '最高点',
+	'settings.trackProps.duration.name': '总时长',
+	'settings.trackProps.moving.name': '移动时间',
+	'settings.trackProps.speed.name': '平均速度',
+	'settings.trackProps.start.name': '出发时间',
 
 	'settings.photos.heading': '照片',
 	'settings.photos.intro':
-		'把笔记里链接的照片自身的位置画到地图上，读取的是照片的 EXIF GPS 标签——和链接的 .gpx 文件画出轨迹是同一条路径。' +
-		'照片只会被读取，不会被写入，也没有任何内容离开仓库。',
-	'setting.showPhotos': '在地图上显示照片',
+		'把笔记里链接的照片自身的位置画到地图上，读的是照片的 EXIF GPS 标签。照片只会被读取，也没有任何内容离开仓库。',
+	'setting.showPhotos': '显示照片',
 	'setting.showPhotos.desc': '在链接照片自身 EXIF GPS 标签给出的坐标处画一个图钉。',
 	'setting.photoThumbnails': '显示照片缩略图',
 	'setting.photoThumbnails.desc': '用照片自带的缩略图作为地图上的图标，代替一个普通的圆点。',
@@ -862,7 +804,7 @@ const zh: Record<TranslationKey, string> = {
 	'setting.photoDatum.gcj02': 'GCJ-02 · 强制指定',
 	'setting.photoIndex': '清空照片索引',
 	'setting.photoIndex.desc':
-		'读过的照片会被记下来，于是下次打开库时不必再打开文件就能画出它的图钉。存下来的只是从照片里读到的东西——坐标、时间，以及它有没有缩略图——放在这份设置旁边的一个文件里。清空它不会改变任何一张地图；照片只是会在地图再要它们时重新读一遍。',
+		'读过的照片会被记下来，下次打开库时不必再打开文件就能画出它的图钉。清空它不会改变任何一张地图，照片会在地图再要它们时重新读一遍。',
 };
 
 const LOCALES = { en, zh } as const;
