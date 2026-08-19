@@ -103,7 +103,7 @@ non-standard.
 
 Zoomed out, colliding thumbnails thin to a stable subset instead of piling into
 an unreadable stack; every mapped photo still has a dot. Zoom in and eligible
-thumbnails return. **Show photos on the map** and **Show photo thumbnails** can
+thumbnails return. **Show photos** and **Show photo thumbnails** can
 disable the two layers independently.
 
 ![The same photos at three zoom levels: thumbnails everywhere close in, thinning to a stable few over a field of dots as the map zooms out](../../images/photo-thinning.gif)

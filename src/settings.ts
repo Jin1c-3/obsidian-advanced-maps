@@ -167,6 +167,17 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	autoFillExclude: 'templates',
 };
 
+/**
+ * The skip list as the reader has it on screen, blanks included.
+ *
+ * A row just added is empty until it is typed in, so unlike `excludedFragments`
+ * this keeps one. The two differ only there: what matches a path is never a
+ * blank, and what the pane draws is every row the reader has.
+ */
+export function exclusionRows(setting: string): string[] {
+	return setting === '' ? [] : setting.split(',').map((part) => part.trim());
+}
+
 /** Path fragments that switch off the automatic fill, as a usable list. */
 export function excludedFragments(setting: string): string[] {
 	return setting
@@ -231,14 +242,17 @@ export function refreshesTracks(key: string): boolean {
 	return TRACK_REFRESH_KEYS.has(key);
 }
 
-/** Cleared placeholder-backed fields restore defaults; exclusion stays privacy-safe. */
-const PLACEHOLDER_DEFAULT_KEYS = [
-	'coordsProperty',
-	'placeProperty',
-	'statsPrefix',
-	'trackColor',
-	'autoFillExclude',
-] as const;
+/**
+ * Cleared placeholder-backed fields restore their default.
+ *
+ * `autoFillExclude` is deliberately not among them any more. It was, back when
+ * it was one box: an emptied box could not be told from a box nobody had filled
+ * in, and storing the empty one would have stamped every template note with the
+ * device's position. It is a list now, and deleting its last row is an answer
+ * rather than an accident — restoring `templates` under a reader who has just
+ * removed it would be the pane refusing what it offered.
+ */
+const PLACEHOLDER_DEFAULT_KEYS = ['coordsProperty', 'placeProperty', 'statsPrefix', 'trackColor'] as const;
 
 type PlaceholderDefaultKey = (typeof PLACEHOLDER_DEFAULT_KEYS)[number];
 
@@ -261,7 +275,8 @@ type PageKey =
 	| 'trackProps';
 
 /** Indexed entry keys keep list rows on the declarative settings read/write seam. */
-type EntryKey = `externalMaps.${number}.on` | `customMaps.${number}.${'name' | 'url' | 'datum'}`;
+type EntryKey =
+	`externalMaps.${number}.on` | `customMaps.${number}.${'name' | 'url' | 'datum'}` | `autoFillExclude.${number}`;
 /** The same seam for a fixed key set rather than an index: one row per figure,
  *  in each of the two records a figure has an entry in. */
 type FigureRecord = 'statsNames' | 'statsWrite';
@@ -295,6 +310,14 @@ function storedWrite(value: unknown): Record<StatsFigure, boolean> {
 	const written = {} as Record<StatsFigure, boolean>;
 	for (const figure of STATS_FIGURES) written[figure] = stored[figure] !== false;
 	return written;
+}
+
+const EXCLUDE_KEY = /^autoFillExclude\.(\d+)$/;
+
+/** The row an `autoFillExclude.<n>` control names, and null for every other key. */
+function excludeIndex(key: string): number | null {
+	const parts = EXCLUDE_KEY.exec(key);
+	return parts ? Number(parts[1]) : null;
 }
 
 type EntryPath =
@@ -491,6 +514,18 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	/**
+	 * A row that is nothing but its own label: what the list under it holds.
+	 *
+	 * A control-less declarative row is dropped, so this renders — but it renders
+	 * nothing of its own, since the name and description the framework has
+	 * already drawn are the whole row. Searchable, unlike `introItem`: this one
+	 * is how a reader finds the list it stands over.
+	 */
+	private labelItem(name: TranslationKey, desc: TranslationKey): SettingDefinition<ControlKey> {
+		return { name: t(name), desc: t(desc), render: () => undefined };
+	}
+
+	/**
 	 * One topic as a page reached from the pane's root, its intro leading the
 	 * rows it introduces.
 	 *
@@ -544,18 +579,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				this.text('settings.tracks.statsPrefix.name', 'settings.tracks.statsPrefix.desc', 'statsPrefix', {
 					placeholder: DEFAULT_SETTINGS.statsPrefix,
 				}),
-				...STATS_FIGURES.flatMap((figure) => [
-					{
-						name: t(`settings.trackProps.${figure}.write`),
-						control: { type: 'toggle' as const, key: `statsWrite.${figure}` as ControlKey },
-					},
-					{
-						...this.text(`settings.trackProps.${figure}.name`, undefined, `statsNames.${figure}`, {
-							placeholder: statsPropertyName(figure, statsPrefix),
-						}),
-						visible: () => storedWrite(this.plugin.settings.statsWrite)[figure],
-					},
-				]),
+				{
+					type: 'group' as const,
+					heading: t('settings.trackProps.figures.heading'),
+					items: STATS_FIGURES.map((figure) => ({
+						name: t(`settings.trackProps.${figure}.name`),
+						render: (setting: Setting) => this.figureRow(setting, figure, statsPrefix),
+					})),
+				},
 			],
 			// The prefix, which is what the page is set to for anyone who has not
 			// renamed a figure — and the answer to "what are my columns called".
@@ -695,6 +726,17 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	/**
+	 * The skip list as one stored string.
+	 *
+	 * `rerender` for the two that change how many rows there are; editing a row
+	 * deliberately does not, for the same reason `writeList` does not.
+	 */
+	private async writeExclusions(rows: string[], rerender = true): Promise<void> {
+		await super.setControlValue('autoFillExclude', rows.join(', '));
+		if (rerender) this.update();
+	}
+
+	/**
 	 * The path template, saying what is wrong with it as it is typed.
 	 *
 	 * Structural only: whether the three placeholders are there. Whether anything
@@ -720,6 +762,36 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		// A template saved by an older version, or left half-written, states itself
 		// on arrival rather than waiting to be typed in again.
 		say(this.plugin.settings.offlineTiles);
+	}
+
+	/**
+	 * One figure on one row: the name it is written under, and the switch that
+	 * decides whether it is written at all.
+	 *
+	 * Two rows apiece was eighteen rows for nine figures, and a switch that
+	 * showed and hid the box beside it. Together, the box is disabled rather
+	 * than taken away — there is still something to read there, which is what
+	 * the figure would be called if it were switched back on.
+	 *
+	 * The placeholder is the prefixed default, read at render: typing in the
+	 * prefix box above does not restate the nine placeholders until the page is
+	 * drawn again, because the re-render that would restate them takes the caret
+	 * out of the box being typed in.
+	 */
+	private figureRow(setting: Setting, figure: StatsFigure, prefix: string): void {
+		setting.settingEl.addClass('advanced-maps-figure-row');
+		const on = storedWrite(this.plugin.settings.statsWrite)[figure];
+		setting.addText((text) => {
+			text.setPlaceholder(statsPropertyName(figure, prefix))
+				.setValue(storedNames(this.plugin.settings.statsNames)[figure])
+				.onChange((value) => void this.setControlValue(`statsNames.${figure}`, value));
+			text.setDisabled(!on);
+			text.inputEl.setAttribute('aria-label', t(`settings.trackProps.${figure}.name`));
+		});
+		setting.addToggle((toggle) => {
+			toggle.setValue(on).onChange((value) => void this.setControlValue(`statsWrite.${figure}`, value));
+			toggle.toggleEl.setAttribute('aria-label', t('settings.trackProps.write'));
+		});
 	}
 
 	/** Draw three fields in one list row so delete/reorder indexes stay entry-aligned. */
@@ -1021,9 +1093,35 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 						desc: this.propertyDesc('settings.locate.auto.desc'),
 						control: { type: 'toggle', key: 'autoFillCoords' },
 					},
-					this.text('settings.locate.exclude.name', 'settings.locate.exclude.desc', 'autoFillExclude', {
-						placeholder: DEFAULT_SETTINGS.autoFillExclude,
-					}),
+					// Its own label above the list, because a list's heading is not a
+					// row that settings search can find.
+					this.labelItem('settings.locate.exclude.name', 'settings.locate.exclude.desc'),
+					{
+						type: 'list',
+						emptyState: t('settings.locate.exclude.empty'),
+						items: exclusionRows(this.plugin.settings.autoFillExclude).map((_, index) => ({
+							// Nameless, the way the custom-map rows are: a repeated label
+							// beside three identical boxes says nothing the box does not.
+							name: '',
+							searchable: false,
+							control: {
+								type: 'folder' as const,
+								key: `autoFillExclude.${index}` as ControlKey,
+								placeholder: DEFAULT_SETTINGS.autoFillExclude,
+							},
+						})),
+						addItem: {
+							name: t('settings.locate.exclude.add'),
+							action: () => {
+								void this.writeExclusions([...exclusionRows(this.plugin.settings.autoFillExclude), '']);
+							},
+						},
+						onDelete: (index: number) => {
+							void this.writeExclusions(
+								exclusionRows(this.plugin.settings.autoFillExclude).filter((_, at) => at !== index)
+							);
+						},
+					},
 				],
 				() => this.state(this.plugin.settings.locate)
 			),
@@ -1094,6 +1192,8 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 
 	/** A list row reads its value out of the entry its key names. */
 	override getControlValue(key: string): unknown {
+		const excluded = excludeIndex(key);
+		if (excluded !== null) return exclusionRows(this.plugin.settings.autoFillExclude)[excluded] ?? '';
 		const named = figureKey(key);
 		if (named) {
 			const { record, figure } = named;
@@ -1128,6 +1228,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	override async setControlValue(key: string, value: unknown): Promise<void> {
+		const excluded = excludeIndex(key);
+		if (excluded !== null) {
+			const rows = exclusionRows(this.plugin.settings.autoFillExclude);
+			if (excluded >= rows.length) return;
+			rows[excluded] = typeof value === 'string' ? value.trim() : '';
+			await this.writeExclusions(rows, false);
+			return;
+		}
 		const named = figureKey(key);
 		if (named) {
 			const { record, figure } = named;
@@ -1137,7 +1245,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				const written = storedWrite(this.plugin.settings.statsWrite);
 				written[figure] = value === true;
 				await super.setControlValue('statsWrite', written);
-				// The name box below this switch appears and disappears with it.
+				// The name box beside this switch is enabled and disabled with it,
+				// and the page's own entry counts how many are on. A switch has no
+				// caret for the re-render to take.
 				this.update();
 				return;
 			}

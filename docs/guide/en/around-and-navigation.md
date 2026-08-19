@@ -17,7 +17,7 @@ its full collection, and follow notes as you switch between them.
 ## Show only the notes around the current note
 
 In Advanced Maps settings, open **Open in map** and choose your reusable Base
-under **Base file path**.
+under **Base file**.
 Run **Insert a map of the notes around this one**. The command adds an `Around`
 map view to that Base when needed and inserts:
 
@@ -57,7 +57,7 @@ updating existing embeds.
 
 ## Reuse one Base everywhere
 
-Set **Base file path** and **View name** once, under Advanced Maps settings →
+Set **Base file** and **View name** once, under Advanced Maps settings →
 **Open in map**. The same
 Base then powers Open in map, Follow active note, and Around embeds.
 
@@ -135,4 +135,4 @@ does not change when you switch the background under it.
 At close zoom, notes sharing an exact coordinate fan out into a ring so every
 marker can be hovered and opened. Zoom out and they close back to the truthful
 shared point. Nothing is written to the notes, and copied coordinates remain
-unchanged. **Fan out pins that share a spot** disables it.
+unchanged. **Fan out overlapping pins** disables it.
