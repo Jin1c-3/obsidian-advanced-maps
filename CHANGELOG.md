@@ -4,6 +4,50 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [1.18.3]
+
+### Added
+
+- **Several tile packs, each with a name.** A pack is regional, so someone who
+  has one usually has two — the city they live in and the trail they walk. The
+  single tile path and its two zoom levels become a list: a name, a path and its
+  own lowest and highest level per pack, plus a **Default background** saying
+  which one every map opens on. Leave that at _None_ and your packs stay
+  configured and stay pickable without changing any map. The pack you already
+  had becomes the first entry, named after the last directory above its
+  placeholders, and becomes the default; nothing you configured is lost and no
+  base file needs editing.
+
+- **Pick a background from the map itself.** Your packs now appear in the map's
+  own layers button — the stack of squares in the top-right — beside the
+  backgrounds the Maps plugin offers, each under the name you gave it. Choosing
+  one draws it with that pack's own zoom bounds. With no backgrounds configured
+  in the Maps plugin, one pack is enough to make the button appear, and the menu
+  gains a **Default background** entry so choosing a pack is always reversible.
+  A choice lasts as long as the map is on screen, exactly as a background picked
+  from that menu already did, and nothing is written to a file.
+
+### Fixed
+
+- **Switching background no longer silently reverts.** With a pack configured,
+  picking one of the Maps plugin's own backgrounds drew it, and then the next
+  time anything reloaded the map's configuration the pack came back underneath
+  — while the menu went on showing what you had picked. So the control appeared
+  to work, quietly undid itself, and then reported the wrong background. Your
+  choice now wins for as long as that map is open, and what the menu shows is
+  what is drawn.
+
+### Changed
+
+- **A map view names the background it starts on.** The per-view **Offline
+  basemap** yes/no becomes **Basemap → This map opens on**, listing the plugin
+  default, every background the Maps plugin offers, and every pack. One base
+  file can now hold a view on a city pack and another on the network. A view
+  that was set to _No_ keeps meaning exactly that, so nothing you have written
+  changes. A view naming a pack you have since renamed or removed falls back to
+  what it would draw with no pack, and says so in that row rather than quietly
+  becoming something else.
+
 ## [1.18.2]
 
 ### Fixed
@@ -1094,6 +1138,7 @@ one vault; the behaviour is unchanged, everything around it is new.
   base's first map view, and the menu label falls back to the localized default.
 
 [Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.2...HEAD
+[1.18.3]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.2...1.18.3
 [1.18.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.1...1.18.2
 [1.18.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.0...1.18.1
 [1.18.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.2...1.18.0
