@@ -103,6 +103,15 @@ While the tape is out, clicks belong to it: a click on a pin adds a point rather
 than opening that note, and no popup covers the ground you are measuring across.
 A double-click places two points instead of zooming.
 
+Bring the pointer near something already on the map and a ring appears on it: a
+note's pin, a track's waypoint or start and end pin, a photo's position, or a
+point you placed earlier in this same measurement. Click and the point lands on
+that thing's own coordinate rather than on the pixel you could hit, which is
+what makes "how far is this note from that photo" exact — and what lets a route
+close on the place it started. The point you placed last is never offered, since
+a leg from a point to itself measures nothing. Hold **Alt** while pointing and
+clicking to ignore all of it and measure the bare ground.
+
 Distances are great-circle metres between the places you clicked, which is not
 the same as the distance along a road or a path — for that, draw the route as a
 track and read [its statistics](tracks-and-areas.md). On a mainland basemap the

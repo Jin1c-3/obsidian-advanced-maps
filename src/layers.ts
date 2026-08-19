@@ -10,6 +10,7 @@ import {
 	MEASURE_DRAFT_LAYER,
 	MEASURE_LINE_LAYER,
 	MEASURE_POINT_LAYER,
+	MEASURE_SNAP_LAYER,
 	MEASURE_SRC,
 	PHOTO_DOT_LAYER,
 	PHOTO_ICON_PREFIX,
@@ -451,7 +452,7 @@ export function removeTrackLayers(map: MapLibreMap): void {
 /* ---- the measuring tape ---- Its own source and layers, drawn over everything else while it is out. */
 
 /**
- * The tape's three layers, built per call rather than held as constants: the
+ * The tape's four layers, built per call rather than held as constants: the
  * colours are resolved through the theme, and a reader who switches themes
  * between two measurements should get the second one in the new one.
  */
@@ -492,6 +493,22 @@ function measureLayerSpecs(): unknown[] {
 				'circle-stroke-color': accent,
 			},
 		},
+		{
+			id: MEASURE_SNAP_LAYER,
+			type: 'circle',
+			source: MEASURE_SRC,
+			filter: ['==', ['get', 'amMeasure'], 'snap'],
+			// Hollow and wider than a vertex: it claims something already drawn —
+			// a note's pin, a waypoint, the point this measurement started at —
+			// rather than covering it up. Last of the four, so the ring reads over
+			// a vertex it has come back round to.
+			paint: {
+				'circle-opacity': 0,
+				'circle-radius': 9,
+				'circle-stroke-width': 2,
+				'circle-stroke-color': accent,
+			},
+		},
 	];
 }
 
@@ -524,7 +541,7 @@ export function drawMeasure(map: MapLibreMap, data: FeatureCollection): boolean 
 export function removeMeasureLayers(map: MapLibreMap): void {
 	if (!map.getStyle) return;
 	try {
-		for (const id of [MEASURE_POINT_LAYER, MEASURE_DRAFT_LAYER, MEASURE_LINE_LAYER]) {
+		for (const id of [MEASURE_SNAP_LAYER, MEASURE_POINT_LAYER, MEASURE_DRAFT_LAYER, MEASURE_LINE_LAYER]) {
 			if (map.getLayer(id)) map.removeLayer(id);
 		}
 		if (map.getSource(MEASURE_SRC)) map.removeSource(MEASURE_SRC);

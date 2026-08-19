@@ -24,15 +24,59 @@ export interface Measurement {
 	points: readonly MeasurePoint[];
 	/** Null before the first click, right after one, and on a device with no pointer. */
 	draft: MeasurePoint | null;
+	/** Whether the draft is a point already on the map — a pin, a waypoint, a
+	 *  photo, an earlier vertex — rather than the bare pixel under the pointer.
+	 *  What it changes is the ring: the coordinate is already in `draft`. */
+	snapped?: boolean;
+}
+
+/** One point already on the map, offered to a pointer that has come near it. */
+export interface SnapCandidate {
+	/** Vault space — exactly what a click takes if this one wins. */
+	point: MeasurePoint;
+	/** Where that coordinate is drawn, in the map container's own pixels. */
+	at: { x: number; y: number };
+}
+
+/**
+ * The candidate a pointer is taken to be aiming at, or null when none is close
+ * enough.
+ *
+ * Screen distance rather than ground distance, because this is a question about
+ * aim: two places a metre apart on a city map are one pixel apart on a country
+ * one, and the reader can only point at what they can see. Ties go to whichever
+ * candidate was offered first, which is how a caller states priority.
+ */
+export function nearestSnap(
+	pointer: { x: number; y: number },
+	candidates: readonly SnapCandidate[],
+	radiusPx: number
+): SnapCandidate | null {
+	let best: SnapCandidate | null = null;
+	// Compared squared, so the loop needs no square root to rank by.
+	let bestSq = radiusPx * radiusPx;
+	for (const candidate of candidates) {
+		const dx = candidate.at.x - pointer.x;
+		const dy = candidate.at.y - pointer.y;
+		if (!isFinite(dx) || !isFinite(dy)) continue;
+		const sq = dx * dx + dy * dy;
+		// Strictly nearer, so an equal candidate does not displace the earlier one.
+		if (sq < bestSq) {
+			bestSq = sq;
+			best = candidate;
+		}
+	}
+	return best;
 }
 
 /** WGS-84 into the datum the map draws in — `toTileSpace` bound to one system. */
 export type Project = (lng: number, lat: number) => [number, number];
 
-/** What a drawn tape feature carries; `amMeasure` is what the three layers filter on. */
+/** What a drawn tape feature carries; `amMeasure` is what the four layers filter on. */
 export interface MeasureProps extends Record<string, unknown> {
-	/** The committed line, the segment under the pointer, or one clicked point. */
-	amMeasure: 'path' | 'draft' | 'vertex';
+	/** The committed line, the segment under the pointer, one clicked point, or
+	 *  the point a click would take instead of the pixel under the pointer. */
+	amMeasure: 'path' | 'draft' | 'vertex' | 'snap';
 }
 
 /** One distance shown on the map, pinned to the vertex it is the distance to. */
@@ -77,7 +121,7 @@ function line(coordinates: Position[], role: 'path' | 'draft'): Feature<Geometry
 }
 
 /**
- * Everything one tape needs on screen: the features for its three layers, and
+ * Everything one tape needs on screen: the features for its four layers, and
  * the labels to hang beside them.
  *
  * Both halves come off one projected, unwrapped path so they cannot disagree
@@ -106,6 +150,18 @@ export function measureDrawing(measurement: Measurement, project: Project): Meas
 			type: 'Feature',
 			geometry: { type: 'Point', coordinates: path[i] },
 			properties: { amMeasure: 'vertex' },
+		});
+	}
+
+	// The ring, off the same path as everything else so a point taken east of the
+	// 180th meridian is ringed on the segment it belongs to rather than a world
+	// away from it. Drawn from `draft` alone, which is what makes it visible
+	// before the first point of a measurement has been placed.
+	if (draft && measurement.snapped) {
+		features.push({
+			type: 'Feature',
+			geometry: { type: 'Point', coordinates: path[committed] },
+			properties: { amMeasure: 'snap' },
 		});
 	}
 

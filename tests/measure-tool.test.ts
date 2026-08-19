@@ -1,15 +1,31 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FeatureCollection } from 'geojson';
+import type { FeatureCollection, Point } from 'geojson';
 import {
+	ENDPOINT_LAYER,
+	MARKER_LAYER,
 	MEASURE_DRAFT_LAYER,
 	MEASURE_LINE_LAYER,
 	MEASURE_POINT_LAYER,
+	MEASURE_SNAP_LAYER,
 	MEASURE_SRC,
 	MEASURING_CLASS,
 } from '../src/constants';
-import { toTileSpace, type CoordSystem } from '../src/coords';
+import { toTileSpace, toWgs84, type CoordSystem } from '../src/coords';
+import type { MeasureProps } from '../src/measure';
 import { MeasureTool } from '../src/measure-tool';
 import type { MapControl, MapLibreMap, MapMouseEvent } from '../src/types/obsidian-internals';
+
+/* The tape coalesces pointer work into an animation frame. Hold the frames
+ * rather than wait for them, so a test can say when one happens. */
+const frames = new Map<number, () => void>();
+let nextFrame = 1;
+
+/** Run everything the tape has put off until the next frame. */
+function frame(): void {
+	const due = [...frames.values()];
+	frames.clear();
+	for (const run of due) run();
+}
 
 /* Obsidian's own DOM helpers, which happy-dom does not carry. */
 beforeAll(() => {
@@ -48,6 +64,12 @@ beforeAll(() => {
 	proto.detach = function (this: HTMLElement) {
 		this.remove();
 	};
+	vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+		const id = nextFrame++;
+		frames.set(id, cb);
+		return id;
+	});
+	vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
 	vi.stubGlobal('createDiv', (cls?: string) => {
 		const el = document.createElement('div');
 		if (cls) el.className = cls;
@@ -112,7 +134,29 @@ class FakeMap {
 	}
 
 	getLayer(id: string): unknown {
-		return this.layers.includes(id) ? { id } : undefined;
+		return this.layers.includes(id) || this.drawn.some((f) => f.layer === id) ? { id } : undefined;
+	}
+
+	/** Points other layers have drawn, in the datum the map draws in. */
+	readonly drawn: Array<{ layer: string; at: [number, number] }> = [];
+	/** How many times the tape has asked what is under the pointer. */
+	queries = 0;
+	/** A style torn down between the pointer sample and the query. */
+	queryThrows = false;
+
+	queryRenderedFeatures(box: unknown, opts?: { layers?: string[] }): unknown[] {
+		this.queries++;
+		if (this.queryThrows) throw new Error('style is gone');
+		const [[left, top], [right, bottom]] = box as [[number, number], [number, number]];
+		const wanted = new Set(opts?.layers ?? []);
+		return this.drawn
+			.filter((f) => wanted.has(f.layer))
+			.filter((f) => {
+				// Hit-tested where it is drawn, which is what MapLibre answers about.
+				const at = this.project(f.at);
+				return at.x >= left && at.x <= right && at.y >= top && at.y <= bottom;
+			})
+			.map((f) => ({ geometry: { type: 'Point', coordinates: f.at } }));
 	}
 
 	addLayer(spec: { id: string }): void {
@@ -182,6 +226,7 @@ let told: boolean[];
 let tool: MeasureTool;
 
 beforeEach(() => {
+	frames.clear();
 	map = new FakeMap();
 	system = 'wgs84';
 	told = [];
@@ -212,7 +257,7 @@ describe('taking the tape out and putting it away', () => {
 		tool.toggle();
 		expect(tool.isActive()).toBe(true);
 		expect(told).toEqual([true]);
-		expect(map.layers).toEqual([MEASURE_LINE_LAYER, MEASURE_DRAFT_LAYER, MEASURE_POINT_LAYER]);
+		expect(map.layers).toEqual([MEASURE_LINE_LAYER, MEASURE_DRAFT_LAYER, MEASURE_POINT_LAYER, MEASURE_SNAP_LAYER]);
 		expect(map.canvasEl.classList.contains(MEASURING_CLASS)).toBe(true);
 		expect(map.doubleClickZoomOn).toBe(false);
 		expect(map.controls).toHaveLength(1);
@@ -283,20 +328,21 @@ describe('measuring', () => {
 	it('previews the leg under the pointer without counting it', () => {
 		tool.toggle();
 		clickAt(map, system, ...A);
-		// The preview is coalesced into a frame; draw it by hand rather than wait.
+		// The preview is coalesced into a frame; run it rather than wait for it.
 		map.fire('mousemove', { lngLat: { lng: B[0], lat: B[1] } });
-		tool.redraw();
+		frame();
 		expect(labels()).toEqual(['807 m']);
 		expect(map.containerEl.querySelector('.advanced-maps-measure-label.is-draft')).not.toBeNull();
 		// Nothing has been placed but the first point, so nothing is measured yet.
 		expect(readout()).not.toBe('807 m');
 	});
 
-	it('ignores the pointer before the first point is placed', () => {
+	it('draws nothing for a pointer over open ground before the first point', () => {
 		tool.toggle();
 		map.fire('mousemove', { lngLat: { lng: B[0], lat: B[1] } });
-		tool.redraw();
+		frame();
 		expect(labels()).toEqual([]);
+		expect(map.data?.features).toEqual([]);
 	});
 
 	it('takes back the last point, and stops at an empty tape', () => {
@@ -399,10 +445,143 @@ describe('the labels over the canvas', () => {
 		tool.toggle();
 		clickAt(map, system, ...A);
 		map.fire('mousemove', { lngLat: { lng: B[0], lat: B[1] } });
-		tool.redraw();
+		frame();
 		expect(labels()).toHaveLength(1);
 		map.fire('mouseout');
-		tool.redraw();
+		frame();
 		expect(labels()).toEqual([]);
+	});
+});
+
+/* ---- taking a point already on the map ---- */
+
+/** Far enough apart to be told apart: the fake projection is 10 px a degree. */
+const P: [number, number] = [0, 0];
+const Q: [number, number] = [3, 0];
+const R: [number, number] = [0, 3];
+
+/**
+ * A pointer sample as MapLibre reports one: a coordinate in the datum the tiles
+ * are drawn in, and the pixel it landed on.
+ */
+function sampleAt(lng: number, lat: number, alt = false): MapMouseEvent {
+	const tile = toTileSpace(system, lng, lat);
+	return {
+		lngLat: { lng: tile[0], lat: tile[1] },
+		point: map.project(tile),
+		originalEvent: { altKey: alt } as MouseEvent,
+	};
+}
+
+/** Every point placed, back in vault space — which is what a reader measures in. */
+function placed(): Array<[number, number]> {
+	return (map.data?.features ?? [])
+		.filter((f) => (f.properties as MeasureProps | null)?.amMeasure === 'vertex')
+		.map((f) => {
+			const [lng, lat] = (f.geometry as Point).coordinates;
+			return toWgs84(system, lng, lat);
+		});
+}
+
+/** Whether the map is offering a point to the pointer. */
+function ringed(): boolean {
+	return (map.data?.features ?? []).some((f) => (f.properties as MeasureProps | null)?.amMeasure === 'snap');
+}
+
+/** Stage a point on a layer of the map, where a query will find it. */
+function draw(layer: string, lng: number, lat: number): void {
+	map.drawn.push({ layer, at: toTileSpace(system, lng, lat) });
+}
+
+describe('taking a point already on the map', () => {
+	it('takes a pin the pointer is near, rather than the pixel beside it', () => {
+		draw(MARKER_LAYER, ...Q);
+		tool.toggle();
+		map.fire('click', sampleAt(...P));
+		// A shade off the pin: 0.8 px in the fake projection, well inside the box.
+		map.fire('click', sampleAt(3.08, 0));
+		expect(placed()[1]).toEqual(Q);
+	});
+
+	it('takes the coordinate behind a pin drawn on a Chinese background', () => {
+		system = 'gcj02';
+		const beijing: [number, number] = [116.3975, 39.9087];
+		draw(MARKER_LAYER, ...beijing);
+		tool.toggle();
+		map.fire('click', sampleAt(116.44, 39.9087));
+		// The note's own WGS-84 coordinate, not the offset copy its pin is drawn at.
+		expect(placed()[0][0]).toBeCloseTo(beijing[0], 9);
+		expect(placed()[0][1]).toBeCloseTo(beijing[1], 9);
+	});
+
+	it('offers the point before the click that takes it, and stops offering it', () => {
+		draw(ENDPOINT_LAYER, ...Q);
+		tool.toggle();
+		map.fire('mousemove', sampleAt(3.05, 0));
+		frame();
+		expect(ringed()).toBe(true);
+		map.fire('mousemove', sampleAt(1.5, 0));
+		frame();
+		expect(ringed()).toBe(false);
+	});
+
+	it('offers the nearer of two points within range', () => {
+		draw(MARKER_LAYER, 3.1, 0);
+		draw(ENDPOINT_LAYER, ...Q);
+		tool.toggle();
+		map.fire('click', sampleAt(3.02, 0));
+		expect(placed()[0]).toEqual(Q);
+	});
+
+	it('closes a measurement on the point it started at', () => {
+		tool.toggle();
+		map.fire('click', sampleAt(...P));
+		map.fire('click', sampleAt(...Q));
+		map.fire('click', sampleAt(...R));
+		map.fire('click', sampleAt(0.4, 0));
+		expect(placed()[3]).toEqual(P);
+	});
+
+	it('does not offer the point just placed', () => {
+		tool.toggle();
+		map.fire('click', sampleAt(...P));
+		map.fire('click', sampleAt(...Q));
+		map.fire('mousemove', sampleAt(3.02, 0));
+		frame();
+		// A leg from a point to itself is not a measurement.
+		expect(ringed()).toBe(false);
+	});
+
+	it('takes the bare pixel while the bypass key is held', () => {
+		draw(MARKER_LAYER, ...Q);
+		tool.toggle();
+		map.fire('click', sampleAt(3.08, 0, true));
+		expect(placed()[0][0]).toBeCloseTo(3.08, 9);
+		expect(map.queries).toBe(0);
+	});
+
+	it('asks nothing of a map that has drawn none of those layers', () => {
+		tool.toggle();
+		map.fire('click', sampleAt(...P));
+		expect(map.queries).toBe(0);
+		expect(placed()).toEqual([P]);
+	});
+
+	it('places the pixel when the style goes away under the query', () => {
+		draw(MARKER_LAYER, ...Q);
+		map.queryThrows = true;
+		tool.toggle();
+		map.fire('click', sampleAt(3.08, 0));
+		expect(placed()[0][0]).toBeCloseTo(3.08, 9);
+	});
+
+	it('asks once a frame however often the pointer moves', () => {
+		draw(MARKER_LAYER, ...Q);
+		tool.toggle();
+		map.fire('click', sampleAt(...P));
+		const before = map.queries;
+		for (let i = 0; i < 8; i++) map.fire('mousemove', sampleAt(1 + i / 100, 0));
+		frame();
+		expect(map.queries - before).toBe(1);
 	});
 });
