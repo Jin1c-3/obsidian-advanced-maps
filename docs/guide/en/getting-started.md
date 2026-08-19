@@ -64,9 +64,8 @@ A phone has no mouse, so two words in this guide need translating as you read.
   a note's marker opens that note instead of previewing it, and a tap on a photo
   opens the photo itself, which carries **Open note** inside it.
 
-One feature is desktop-only. An [offline basemap](offline-basemap.md) is not
-read on a phone, whatever path you give it; the map keeps its usual background
-and nothing else changes.
+An [offline basemap](offline-basemap.md) draws here as well, from a pack on the
+device's own storage; that page says which platform the claim was measured on.
 
 ## How a Base becomes a map
 

@@ -41,9 +41,26 @@ single-file `.mbtiles` or `.pmtiles` archive — reading one needs a hook into t
 map library that this plugin does not bundle. Unpack it into a directory tree
 once and the result is a tile pack.
 
-Keep the pack **outside your vault**. A regional pack is easily a hundred
-thousand files, and Obsidian indexes everything inside a vault. A path anywhere
-on the machine works.
+Keep the pack **out of the vault's index** — a regional pack is easily a hundred
+thousand files, and an indexed one slows down search, links and every Base you
+have. Two layouts do that, and which one you want turns on a single question:
+do your plugin settings sync between devices?
+
+| Your settings        | Put the pack                  | And type                 |
+| -------------------- | ----------------------------- | ------------------------ |
+| Stay on one device   | anywhere on that device       | an absolute path         |
+| Sync between devices | a dot-folder inside the vault | `.tiles/{z}/{x}/{y}.png` |
+
+The tile path is a single string, so settings that sync hand every device the
+same one — and an absolute path can only be right on the machine it was typed on.
+A dot-folder is what gets round that: Obsidian skips a folder whose name begins
+with a dot, the way it skips `.obsidian`, so the tiles are never indexed, never
+searched, never a Base result and never in the file explorer, while one relative
+path is resolved by each device against its own vault.
+
+If your settings stay put, there is nothing to solve — give each device an
+absolute path of its own. See [On a phone](#on-a-phone) for what that looks like
+there.
 
 ## Point at it
 
@@ -100,6 +117,29 @@ a Chinese provider it is GCJ-02, and automatic mode cannot tell: say so in
 Settings → **Coordinate system**, or in the view's own **Tile coordinate system**
 option. See [Coordinates and services](coordinates-and-services.md).
 
+## On a phone
+
+The same setting draws the same pack in the Obsidian mobile app, and the same two
+layouts apply. There is no separate mobile row to fill in.
+
+**Settings that stay on the device.** Give the phone an absolute path of its own
+— `/sdcard/Download/tiles/{z}/{x}/{y}.png` and the like, whatever your file
+manager shows you. This is the one to reach for on Android: the pack sits where
+the phone already keeps large downloads, and nothing about it comes near the
+vault.
+
+**Settings that sync.** Use `.tiles`, on every device including this one. A phone
+handed a desktop's absolute path draws nothing but your own pins over the
+background colour — the path resolves, the tiles are simply not there, and no
+error says so.
+
+Getting the pack onto the phone is the part this plugin has no hand in: a cable,
+or the sync that already carries your vault.
+
+Measured on Android. The address is asked of the running app rather than
+assembled from a platform name, so iOS is expected to follow, but it was not
+tested and this page does not claim it.
+
 ## When nothing draws
 
 The map goes to the background colour and your pins and routes still show. Check,
@@ -113,13 +153,6 @@ in order:
 3. **The zoom levels.** A lowest level higher than where the map is sitting pins
    the camera; a highest level set to 0 leaves one tile for the whole world.
 4. **The view.** Its **Offline basemap** option may be set to _No_.
-
-This is a desktop feature. On a phone a pack is not read at all, whichever way
-you write the path: a vault-relative one has nothing to resolve against there,
-and an absolute one becomes a `file://` address the mobile app's web view
-refuses to load. Nothing breaks — the map keeps its network background, and
-every pin, route and photo is drawn over it as usual. Leave the setting empty on
-a phone and you lose nothing by it.
 
 ## What this touches
 
