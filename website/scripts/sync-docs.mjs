@@ -34,11 +34,15 @@ const frontmatterOf = (text) => {
 	if (!match) throw new Error('page has no frontmatter');
 	const title = /^title:\s*(.*)$/m.exec(match[1]);
 	const description = /^description:\s*(.*)$/m.exec(match[1]);
+	// A page title carries the words someone would search for; the sidebar wants
+	// the short name. `sidebarLabel` lets one page have both.
+	const sidebarLabel = /^sidebarLabel:\s*(.*)$/m.exec(match[1]);
 	if (!title) throw new Error('page has no title');
 	return {
 		body: text.slice(match[0].length),
 		title: scalar(title[1]),
 		description: description ? scalar(description[1]) : '',
+		sidebarLabel: sidebarLabel ? scalar(sidebarLabel[1]) : '',
 	};
 };
 
@@ -66,7 +70,7 @@ const pageUrl = (target, up) => {
 const transform = (text, { locale, name }) => {
 	const isIndex = name === INDEX_SOURCE;
 	const up = isIndex ? '' : '../';
-	const { body, title, description } = frontmatterOf(text);
+	const { body, title, description, sidebarLabel } = frontmatterOf(text);
 
 	let out = body
 		// The hand-written locale/index line is what the sidebar and the locale
@@ -87,6 +91,7 @@ const transform = (text, { locale, name }) => {
 		`title: ${JSON.stringify(title)}`,
 		`description: ${JSON.stringify(description)}`,
 		`editUrl: ${JSON.stringify(`${REPO}/edit/main/docs/guide/${locale}/${name}`)}`,
+		...(sidebarLabel ? ['sidebar:', `  label: ${JSON.stringify(sidebarLabel)}`] : []),
 		'---',
 	];
 	return `${frontmatter.join('\n')}\n\n${out.trimStart()}`;

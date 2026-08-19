@@ -30,6 +30,7 @@ export default defineConfig({
 			// locales cannot drift into different orders or stale labels.
 			sidebar: [
 				{ slug: 'getting-started' },
+				{ slug: 'marker-icons-and-colors' },
 				{ slug: 'photo-maps' },
 				{ slug: 'tracks-and-areas' },
 				{ slug: 'around-and-navigation' },

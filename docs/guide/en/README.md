@@ -23,6 +23,7 @@ the topic pages below as recipes and reference.
 | I want to…                                                                                               | Read                                                    |
 | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | Install the plugin and make my first map                                                                 | [Getting started](getting-started.md)                   |
+| Give each note its own marker icon and color, or drive both from a formula                               | [Marker icons and colors](marker-icons-and-colors.md)   |
 | Map a photo folder or the photos linked from notes                                                       | [Photo maps](photo-maps.md)                             |
 | Draw GPX, GeoJSON, KML, TCX, areas, or inline route statistics                                           | [Tracks and areas](tracks-and-areas.md)                 |
 | Map the notes connected to this one, open notes in a Base, follow the active note, or measure a distance | [Around and navigation](around-and-navigation.md)       |
