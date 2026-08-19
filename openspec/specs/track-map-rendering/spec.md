@@ -279,14 +279,23 @@ writes that note's track statistics into its own frontmatter, and the figures
 SHALL be measured from the same unshifted WGS-84 features the inline statistics
 bar measures, so the values do not depend on which basemap is open. Where a note
 owns several track files, their features SHALL be measured together under the
-rules that already apply across the segments of a single file. Each figure SHALL
-be written as a number under a name the reader can configure: a name given for
-that figure is the whole property name, and a figure left unconfigured SHALL be
-named from the configurable prefix and its own unit-bearing suffix, which is what
-every figure is named by default. The command SHALL read and write no property
-outside the set of names its figures currently resolve to. A figure the file did
-not record SHALL leave no property behind, and the command SHALL never run except
-when invoked.
+rules that already apply across the segments of a single file.
+
+Each figure SHALL be written as a number under a name the reader can configure:
+a name given for that figure is the whole property name, and a figure left
+unconfigured SHALL be named from the configurable prefix and its own unit-bearing
+suffix, which is what every figure is named by default.
+
+The reader SHALL be able to choose which figures the command writes, one figure
+at a time, and every figure SHALL be chosen by default. The command SHALL read
+and write no property outside the set of names the figures it is currently
+writing resolve to: a figure the reader has not chosen SHALL be neither written
+nor removed, and SHALL take no part in the checks that refuse a write. Where no
+figure is chosen at all, the command SHALL say so rather than report a write of
+nothing.
+
+A figure the file did not record SHALL leave no property behind, and the command
+SHALL never run except when invoked.
 
 #### Scenario: A note's track is measured into properties
 
@@ -347,6 +356,31 @@ when invoked.
 
 - **WHEN** a measured track file is edited
 - **THEN** the note's properties are left as they were until the command is invoked again
+
+#### Scenario: Only some figures are wanted
+
+- **WHEN** the reader leaves distance and start time chosen and turns the other figures off, then invokes the command
+- **THEN** only those two properties are written, and the note gains none of the others
+
+#### Scenario: A figure is turned off after a note was measured
+
+- **WHEN** a figure that a note already carries is turned off and the command is run again
+- **THEN** that property is left exactly as it was, because the command no longer reaches the name it is under
+
+#### Scenario: A figure that is off would have collided
+
+- **WHEN** a figure whose configured name is the coordinate property is turned off
+- **THEN** the command writes the figures that are on, because a figure that is not written cannot collide with anything
+
+#### Scenario: Every figure is turned off
+
+- **WHEN** the command is invoked with no figure chosen
+- **THEN** it reports that nothing is chosen and no property is written or removed
+
+#### Scenario: Settings predate the choice
+
+- **WHEN** a vault's stored settings were written before figures could be chosen
+- **THEN** every figure is written, exactly as that vault was written before
 
 ### Requirement: A note popup describes the feature that raised it
 

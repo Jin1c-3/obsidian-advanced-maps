@@ -161,15 +161,27 @@ Three things worth knowing:
   afternoon ride; and pace is the total distance over the total moving time, so
   pairing a timed GPX with an untimed GeoJSON reads faster than either ride was.
   All of that is exactly what one two-segment file already reports.
-- **It owns the nine names and nothing else.** Anything outside them is never
-  read, written, or removed — and if a name would collide with the coordinate or
-  place property, or two figures would share one name, the command refuses
-  instead of overwriting anything.
+- **It owns the names it is currently writing, and nothing else.** Anything
+  outside them is never read, written, or removed — and if a name would collide
+  with the coordinate or place property, or two figures would share one name, the
+  command refuses instead of overwriting anything.
+
+### Choosing which figures are written
+
+Settings → **Tracks** → **Track properties** has a switch per figure, all on to
+begin with. Turn one off and the command stops reaching it: nothing is written
+for it, and a property already in a note under its name is left exactly where it
+is — turning a figure off is a decision about the next write, not permission to
+delete what you already have. So a walking log can keep distance and start time
+and leave the other seven out of every note it touches.
+
+With every figure switched off there is nothing to write, and the command says
+so rather than reporting that it wrote nothing.
 
 ### Naming the columns yourself
 
-Settings → **Tracks** → **Track properties** holds the prefix and one box per
-figure. **Track property prefix** decides all nine at once — `ride` gives
+The same page holds the prefix and one box per figure that is switched on.
+**Track property prefix** decides all of them at once — `ride` gives
 `ride-distance-km` and its siblings. A box below it decides one, and what you
 type there is the whole property name, prefix left out entirely:
 

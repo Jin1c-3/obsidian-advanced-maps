@@ -1163,7 +1163,19 @@ export default class AdvancedMapsPlugin extends Plugin {
 			return;
 		}
 
-		const properties = statsProperties(stats, this.settings.statsPrefix, this.settings.statsNames);
+		const properties = statsProperties(
+			stats,
+			this.settings.statsPrefix,
+			this.settings.statsNames,
+			this.settings.statsWrite
+		);
+		// Nothing to write is a setting rather than a track: reporting a write of
+		// no properties would read as a failure to measure the file, which it is
+		// not — the file measured fine and every figure it produced is switched off.
+		if (properties.length === 0) {
+			new Notice(t('notice.stats.noFigures'));
+			return;
+		}
 		// Said before anything is written, for the reason `reverseGeocodeCurrent`
 		// says it: the note's coordinate replaced by a distance is silent, and the
 		// pin moving is the only symptom.
@@ -1189,9 +1201,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 				for (const { key, value } of properties) {
 					// A figure this file no longer records leaves no property behind.
 					// A stale number still matches a filter, which is worse than an
-					// absent one — and every key here is one of the nine names these
-					// figures resolve to, which is the whole of what this command
-					// reaches: nothing else the reader keeps is in reach.
+					// absent one — and every key here is a name a figure the reader
+					// has switched on resolves to, which is the whole of what this
+					// command reaches: neither a figure switched off nor anything
+					// else the reader keeps is in reach.
 					if (value === null) {
 						delete frontmatter[key];
 						continue;

@@ -283,6 +283,17 @@ export const STATS_FIGURES = Object.keys(STATS_SUFFIXES) as StatsFigure[];
 /** A name per figure; an empty one means "no answer", not "a nameless property". */
 export type StatsNames = Partial<Record<StatsFigure, string>>;
 
+/**
+ * Which figures a note is written with. An absent entry is a written figure:
+ * settings stored before figures could be chosen say nothing about any of them,
+ * and what those vaults have always done is write all nine.
+ */
+export type StatsWrite = Partial<Record<StatsFigure, boolean>>;
+
+export function writesFigure(figure: StatsFigure, written: StatsWrite = {}): boolean {
+	return written[figure] !== false;
+}
+
 /** One note property derived from a track's figures; `null` for a figure the file never recorded. */
 export interface StatsProperty {
 	/** Which figure this is, so a caller can say what clashed by name. */
@@ -350,11 +361,19 @@ function normalizePrefix(prefix: string): string {
  * A track's figures as note properties, in a fixed order, each under the name
  * `statsPropertyName` resolves for it.
  *
- * Every entry is returned every time. A `null` value means the file recorded
- * nothing behind that figure, and what that does to an existing property is the
+ * Every figure the reader has chosen is returned every time, and one they have
+ * not is not here at all — which is the whole of how a figure is left alone: a
+ * name that never reaches the caller is one it cannot write, cannot remove, and
+ * cannot find a clash for. A `null` value means the file recorded nothing behind
+ * a figure that *is* chosen, and what that does to an existing property is the
  * caller's business rather than this function's.
  */
-export function statsProperties(stats: TrackStats, prefix: string, names: StatsNames = {}): StatsProperty[] {
+export function statsProperties(
+	stats: TrackStats,
+	prefix: string,
+	names: StatsNames = {},
+	written: StatsWrite = {}
+): StatsProperty[] {
 	const name = (figure: StatsFigure) => statsPropertyName(figure, prefix, names);
 	const climb = (value: number | null) => (value === null ? null : metric(value, 0));
 	const minutes = (ms: number | null) => (ms === null ? null : metric(ms / 60000, 0));
@@ -369,7 +388,11 @@ export function statsProperties(stats: TrackStats, prefix: string, names: StatsN
 		speed: stats.speed === null ? null : metric((stats.speed * 3600) / 1000, 1),
 		start: stats.start === null ? null : localStamp(stats.start),
 	};
-	return STATS_FIGURES.map((figure) => ({ figure, key: name(figure), value: values[figure] }));
+	return STATS_FIGURES.filter((figure) => writesFigure(figure, written)).map((figure) => ({
+		figure,
+		key: name(figure),
+		value: values[figure],
+	}));
 }
 
 /** The first two figures configured to one property name, or null when every name is its own. */

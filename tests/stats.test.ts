@@ -13,9 +13,11 @@ import {
 	nearestByDistance,
 	nearestByPosition,
 	duplicateStatsName,
+	STATS_FIGURES,
 	statsProperties,
 	statsPropertyName,
 	trackStats,
+	writesFigure,
 	type StatsProperty,
 	type TrackStats,
 } from '../src/stats';
@@ -847,6 +849,58 @@ describe('statsProperties', () => {
 	it('carries which figure each property came from, so a clash can be named', () => {
 		expect(statsProperties(watch, 'track')[0].figure).toBe('distance');
 		expect(statsProperties(watch, 'track').at(-1)?.figure).toBe('start');
+	});
+
+	it('returns only the figures switched on, in the same order', () => {
+		const chosen = statsProperties(watch, 'track', {}, { distance: true, start: true, ascent: false });
+		expect(chosen.map(({ figure }) => figure)).toEqual([
+			'distance',
+			'descent',
+			'lowest',
+			'highest',
+			'duration',
+			'moving',
+			'speed',
+			'start',
+		]);
+	});
+
+	it('leaves a figure switched off out entirely, rather than writing it as nothing', () => {
+		const keys = statsProperties(watch, 'track', {}, { ascent: false }).map(({ key }) => key);
+		// Absent, not null: a null is what tells the caller to remove a property,
+		// and a figure nobody asked for must not be removed either.
+		expect(keys).not.toContain('track-ascent-m');
+		expect(keys).toContain('track-descent-m');
+	});
+
+	it('writes every figure when the record says nothing about any of them', () => {
+		// What a data.json written before figures could be chosen amounts to.
+		expect(statsProperties(watch, 'track', {}, {})).toEqual(statsProperties(watch, 'track'));
+		expect(statsProperties(watch, 'track', {}, { distance: true })).toEqual(statsProperties(watch, 'track'));
+	});
+
+	it('can be asked for nothing at all', () => {
+		const none = Object.fromEntries(STATS_FIGURES.map((figure) => [figure, false]));
+		expect(statsProperties(watch, 'track', {}, none)).toEqual([]);
+	});
+
+	it('keeps a figure that is off out of the clash it would otherwise cause', () => {
+		const names = { ascent: 'climb', descent: 'climb' };
+		expect(duplicateStatsName(statsProperties(watch, 'track', names))).not.toBeNull();
+		expect(duplicateStatsName(statsProperties(watch, 'track', names, { descent: false }))).toBeNull();
+	});
+});
+
+describe('writesFigure', () => {
+	it('is true for a figure nothing has been said about', () => {
+		expect(writesFigure('distance')).toBe(true);
+		expect(writesFigure('distance', {})).toBe(true);
+		expect(writesFigure('distance', { ascent: false })).toBe(true);
+	});
+
+	it('is false only for one explicitly switched off', () => {
+		expect(writesFigure('distance', { distance: false })).toBe(false);
+		expect(writesFigure('distance', { distance: true })).toBe(true);
 	});
 });
 
