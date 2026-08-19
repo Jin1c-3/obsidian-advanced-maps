@@ -64,6 +64,12 @@ beforeAll(() => {
 	proto.detach = function (this: HTMLElement) {
 		this.remove();
 	};
+	proto.empty = function (this: HTMLElement) {
+		this.replaceChildren();
+	};
+	proto.hasClass = function (this: HTMLElement, cls: string) {
+		return this.classList.contains(cls);
+	};
 	vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
 		const id = nextFrame++;
 		frames.set(id, cb);
@@ -223,17 +229,27 @@ const B: [number, number] = [121.4952, 31.2455];
 let map: FakeMap;
 let system: CoordSystem;
 let told: boolean[];
+/** The second half of what the button is told: whether the readout is showing. */
+let opened: boolean[];
 let tool: MeasureTool;
+/** Stands in for the drawer the measuring button opens beside itself. */
+let drawerEl: HTMLElement;
 
 beforeEach(() => {
 	frames.clear();
 	map = new FakeMap();
 	system = 'wgs84';
 	told = [];
+	opened = [];
+	drawerEl = map.containerEl.createDiv('advanced-maps-measure-drawer');
 	tool = new MeasureTool(
 		map.asMap(),
 		() => system,
-		(on) => told.push(on)
+		(active, open) => {
+			told.push(active);
+			opened.push(open);
+		},
+		() => drawerEl
 	);
 });
 
@@ -254,23 +270,25 @@ describe('taking the tape out and putting it away', () => {
 	});
 
 	it('claims the map, and says so to the button', () => {
-		tool.toggle();
+		tool.press();
 		expect(tool.isActive()).toBe(true);
 		expect(told).toEqual([true]);
 		expect(map.layers).toEqual([MEASURE_LINE_LAYER, MEASURE_DRAFT_LAYER, MEASURE_POINT_LAYER, MEASURE_SNAP_LAYER]);
 		expect(map.canvasEl.classList.contains(MEASURING_CLASS)).toBe(true);
 		expect(map.doubleClickZoomOn).toBe(false);
-		expect(map.controls).toHaveLength(1);
+		// The readout is in the button's drawer rather than in a corner of its own.
+		expect(map.controls).toEqual([]);
+		expect(drawerEl.hasClass('is-open')).toBe(true);
 		expect(readout()).not.toBe('');
 	});
 
 	it('hands everything back on the way out', () => {
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		clickAt(map, system, ...B);
 		expect(map.bound()).toBeGreaterThan(0);
 
-		tool.toggle();
+		tool.stop();
 		expect(tool.isActive()).toBe(false);
 		expect(told).toEqual([true, false]);
 		// Every `on` paired with its `off`, or a put-away tape wakes up on the
@@ -280,31 +298,104 @@ describe('taking the tape out and putting it away', () => {
 		expect(map.getSource(MEASURE_SRC)).toBeUndefined();
 		expect(map.canvasEl.classList.contains(MEASURING_CLASS)).toBe(false);
 		expect(map.doubleClickZoomOn).toBe(true);
-		expect(map.controls).toEqual([]);
+		// The drawer is emptied and closed; the element itself belongs to the
+		// button, which the tape never owned and must leave standing.
+		expect(drawerEl.parentElement).toBe(map.containerEl);
+		expect(drawerEl.hasClass('is-open')).toBe(false);
+		expect(drawerEl.childElementCount).toBe(0);
 		expect(labels()).toEqual([]);
+	});
+
+	it('folds the readout away and back without ending the measurement', () => {
+		tool.press();
+		clickAt(map, system, ...A);
+		clickAt(map, system, ...B);
+		const measured = readout();
+		expect(measured).not.toBe('');
+
+		// The button no longer ends a measurement, so a drawer that is open can be
+		// closed — which is the whole difference between a drawer and a panel.
+		tool.press();
+		expect(tool.isActive()).toBe(true);
+		expect(drawerEl.hasClass('is-open')).toBe(false);
+		expect(readout()).toBe('');
+		// Everything the measurement is remains on the map.
+		expect(labels()).toHaveLength(1);
+		expect(map.layers).toEqual([MEASURE_LINE_LAYER, MEASURE_DRAFT_LAYER, MEASURE_POINT_LAYER, MEASURE_SNAP_LAYER]);
+		expect(told).toEqual([true, true]);
+		expect(opened).toEqual([true, false]);
+
+		// Opened again on what is measured now, not on the zero it started at.
+		tool.press();
+		expect(drawerEl.hasClass('is-open')).toBe(true);
+		expect(readout()).toBe(measured);
+		expect(opened).toEqual([true, false, true]);
+	});
+
+	it('keeps measuring while its readout is folded away', () => {
+		tool.press();
+		clickAt(map, system, ...A);
+		tool.press();
+		// A click with the drawer closed is still a point, and the label beside it
+		// is where the figure is until the drawer comes back.
+		clickAt(map, system, ...B);
+		expect(labels()).toHaveLength(1);
+		tool.press();
+		expect(readout()).toBe(labels()[0]);
+	});
+
+	it('ends the measurement from the readout rather than from the button', () => {
+		tool.press();
+		clickAt(map, system, ...A);
+		const done = [...map.containerEl.querySelectorAll('.advanced-maps-measure-action')].at(-1);
+		done?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(tool.isActive()).toBe(false);
+		expect(map.layers).toEqual([]);
+		expect(drawerEl.hasClass('is-open')).toBe(false);
+	});
+
+	it('measures on with no drawer to draw a readout into', () => {
+		// The button can be taken off the map — its setting switched off — while
+		// this tool is still being disposed, and a tape with no readout still has
+		// its labels.
+		const orphan = new MeasureTool(
+			map.asMap(),
+			() => system,
+			(active, open) => {
+				told.push(active);
+				opened.push(open);
+			},
+			() => null
+		);
+		orphan.press();
+		clickAt(map, system, ...A);
+		clickAt(map, system, ...B);
+		expect(labels()).toHaveLength(1);
+		expect(() => orphan.dispose()).not.toThrow();
+		expect(map.bound()).toBe(0);
 	});
 
 	it('leaves a double-click zoom the reader had already turned off alone', () => {
 		map.doubleClickZoomOn = false;
-		tool.toggle();
+		tool.press();
 		expect(map.doubleClickZoomOn).toBe(false);
-		tool.toggle();
+		tool.stop();
 		// Turned back *on* would be this plugin changing a native setting behind them.
 		expect(map.doubleClickZoomOn).toBe(false);
 	});
 
 	it('forgets the measurement between one use and the next', () => {
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		clickAt(map, system, ...B);
-		tool.toggle();
-		tool.toggle();
+		tool.stop();
+		tool.press();
 		expect(labels()).toEqual([]);
 		expect(map.data?.features).toEqual([]);
 	});
 
 	it('is disposed of by putting it away', () => {
-		tool.toggle();
+		tool.press();
 		tool.dispose();
 		expect(tool.isActive()).toBe(false);
 		expect(map.bound()).toBe(0);
@@ -314,7 +405,7 @@ describe('taking the tape out and putting it away', () => {
 
 describe('measuring', () => {
 	it('says what to do until there are two points to measure between', () => {
-		tool.toggle();
+		tool.press();
 		const hint = readout();
 		clickAt(map, system, ...A);
 		expect(readout()).toBe(hint);
@@ -326,7 +417,7 @@ describe('measuring', () => {
 	});
 
 	it('previews the leg under the pointer without counting it', () => {
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		// The preview is coalesced into a frame; run it rather than wait for it.
 		map.fire('mousemove', { lngLat: { lng: B[0], lat: B[1] } });
@@ -338,7 +429,7 @@ describe('measuring', () => {
 	});
 
 	it('draws nothing for a pointer over open ground before the first point', () => {
-		tool.toggle();
+		tool.press();
 		map.fire('mousemove', { lngLat: { lng: B[0], lat: B[1] } });
 		frame();
 		expect(labels()).toEqual([]);
@@ -346,7 +437,7 @@ describe('measuring', () => {
 	});
 
 	it('takes back the last point, and stops at an empty tape', () => {
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		clickAt(map, system, ...B);
 		tool.undo();
@@ -358,14 +449,14 @@ describe('measuring', () => {
 	});
 
 	it('refuses a click the map could not place', () => {
-		tool.toggle();
+		tool.press();
 		map.fire('click', { lngLat: { lng: Number.NaN, lat: 31 } });
 		map.fire('click', {});
 		expect(map.data?.features).toEqual([]);
 	});
 
 	it('puts the tape away on Escape and takes a point back on Backspace', () => {
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		clickAt(map, system, ...B);
 
@@ -379,7 +470,7 @@ describe('measuring', () => {
 	});
 
 	it('leaves every other key to the map and to Obsidian', () => {
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		const ev = new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true });
 		map.containerEl.dispatchEvent(ev);
@@ -391,7 +482,7 @@ describe('measuring', () => {
 describe('the datum the tape holds', () => {
 	it('measures the world even where the tiles are offset from it', () => {
 		system = 'gcj02';
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		clickAt(map, system, ...B);
 		// The same two places, so the same answer as on a WGS-84 background —
@@ -401,7 +492,7 @@ describe('the datum the tape holds', () => {
 
 	it('redraws the same places where the new tiles put them', () => {
 		system = 'gcj02';
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		clickAt(map, system, ...B);
 		const before = JSON.parse(JSON.stringify(map.data)) as FeatureCollection;
@@ -420,7 +511,7 @@ describe('the datum the tape holds', () => {
 
 describe('the labels over the canvas', () => {
 	it('places each one at its own vertex, and flips one near the top edge', () => {
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		clickAt(map, system, ...B);
 		const label = map.containerEl.querySelector('.advanced-maps-measure-label') as HTMLElement;
@@ -431,7 +522,7 @@ describe('the labels over the canvas', () => {
 	});
 
 	it('moves them with the camera', () => {
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		clickAt(map, system, ...B);
 		const label = map.containerEl.querySelector('.advanced-maps-measure-label') as HTMLElement;
@@ -442,7 +533,7 @@ describe('the labels over the canvas', () => {
 	});
 
 	it('goes quiet when the pointer leaves the map', () => {
-		tool.toggle();
+		tool.press();
 		clickAt(map, system, ...A);
 		map.fire('mousemove', { lngLat: { lng: B[0], lat: B[1] } });
 		frame();
@@ -496,7 +587,7 @@ function draw(layer: string, lng: number, lat: number): void {
 describe('taking a point already on the map', () => {
 	it('takes a pin the pointer is near, rather than the pixel beside it', () => {
 		draw(MARKER_LAYER, ...Q);
-		tool.toggle();
+		tool.press();
 		map.fire('click', sampleAt(...P));
 		// A shade off the pin: 0.8 px in the fake projection, well inside the box.
 		map.fire('click', sampleAt(3.08, 0));
@@ -507,7 +598,7 @@ describe('taking a point already on the map', () => {
 		system = 'gcj02';
 		const beijing: [number, number] = [116.3975, 39.9087];
 		draw(MARKER_LAYER, ...beijing);
-		tool.toggle();
+		tool.press();
 		map.fire('click', sampleAt(116.44, 39.9087));
 		// The note's own WGS-84 coordinate, not the offset copy its pin is drawn at.
 		expect(placed()[0][0]).toBeCloseTo(beijing[0], 9);
@@ -516,7 +607,7 @@ describe('taking a point already on the map', () => {
 
 	it('offers the point before the click that takes it, and stops offering it', () => {
 		draw(ENDPOINT_LAYER, ...Q);
-		tool.toggle();
+		tool.press();
 		map.fire('mousemove', sampleAt(3.05, 0));
 		frame();
 		expect(ringed()).toBe(true);
@@ -528,13 +619,13 @@ describe('taking a point already on the map', () => {
 	it('offers the nearer of two points within range', () => {
 		draw(MARKER_LAYER, 3.1, 0);
 		draw(ENDPOINT_LAYER, ...Q);
-		tool.toggle();
+		tool.press();
 		map.fire('click', sampleAt(3.02, 0));
 		expect(placed()[0]).toEqual(Q);
 	});
 
 	it('closes a measurement on the point it started at', () => {
-		tool.toggle();
+		tool.press();
 		map.fire('click', sampleAt(...P));
 		map.fire('click', sampleAt(...Q));
 		map.fire('click', sampleAt(...R));
@@ -543,7 +634,7 @@ describe('taking a point already on the map', () => {
 	});
 
 	it('does not offer the point just placed', () => {
-		tool.toggle();
+		tool.press();
 		map.fire('click', sampleAt(...P));
 		map.fire('click', sampleAt(...Q));
 		map.fire('mousemove', sampleAt(3.02, 0));
@@ -554,14 +645,14 @@ describe('taking a point already on the map', () => {
 
 	it('takes the bare pixel while the bypass key is held', () => {
 		draw(MARKER_LAYER, ...Q);
-		tool.toggle();
+		tool.press();
 		map.fire('click', sampleAt(3.08, 0, true));
 		expect(placed()[0][0]).toBeCloseTo(3.08, 9);
 		expect(map.queries).toBe(0);
 	});
 
 	it('asks nothing of a map that has drawn none of those layers', () => {
-		tool.toggle();
+		tool.press();
 		map.fire('click', sampleAt(...P));
 		expect(map.queries).toBe(0);
 		expect(placed()).toEqual([P]);
@@ -570,14 +661,14 @@ describe('taking a point already on the map', () => {
 	it('places the pixel when the style goes away under the query', () => {
 		draw(MARKER_LAYER, ...Q);
 		map.queryThrows = true;
-		tool.toggle();
+		tool.press();
 		map.fire('click', sampleAt(3.08, 0));
 		expect(placed()[0][0]).toBeCloseTo(3.08, 9);
 	});
 
 	it('asks once a frame however often the pointer moves', () => {
 		draw(MARKER_LAYER, ...Q);
-		tool.toggle();
+		tool.press();
 		map.fire('click', sampleAt(...P));
 		const before = map.queries;
 		for (let i = 0; i < 8; i++) map.fire('mousemove', sampleAt(1 + i / 100, 0));

@@ -384,6 +384,11 @@ export default class AdvancedMapsPlugin extends Plugin {
 		for (const embed of this.embeds) embed.refreshBasemap();
 	}
 
+	/** Add or remove this plugin's own map buttons wherever a map is open. */
+	refreshControls(): void {
+		for (const layer of this.layers) layer.refreshControls();
+	}
+
 	refreshTracks(): void {
 		// `showPhotos` changes link eligibility without replacing CachedMetadata.
 		this.trackLinks = new WeakMap();

@@ -26,7 +26,7 @@ Base or Around map without creating another map in the note.
 
 ## Where the settings live
 
-**Settings → Community plugins → Advanced Maps** opens on nine entries, one per
+**Settings → Community plugins → Advanced Maps** opens on ten entries, one per
 topic. Open one to reach its rows; the entry states what it is set to, so the
 pane answers the common questions without being opened.
 
@@ -34,7 +34,8 @@ pane answers the common questions without being opened.
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Coordinate system    | The default datum for inline maps and for views that set none                                                                                            |
 | Offline basemap      | A folder of tiles on disk to draw as the background, and the zoom levels it holds                                                                        |
-| Open in map          | Base file, view name, target, coordinate and place properties, zoom, follow, Around view name, menu label                                                |
+| Open in map          | Base file, view name, target, coordinate and place properties, zoom, Around view name, menu label                                                        |
+| Map buttons          | Whether a map carries the follow and measure buttons, and which way follow starts                                                                        |
 | Open in external map | The built-in map apps and your own                                                                                                                       |
 | Place search         | Search source and, for Amap, where its key is kept                                                                                                       |
 | Location             | Device location and the automatic coordinate fill                                                                                                        |

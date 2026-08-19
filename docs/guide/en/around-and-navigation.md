@@ -84,20 +84,32 @@ but has nowhere to write a change back to.
 Press the ⊹ control beside zoom-to-fit and that map follows notes as you switch
 between them. It keeps the current zoom and never rewrites the Base query.
 
+**New maps start following** under settings → **Map buttons** decides which way
+that button points on a map that has just opened; it is never remembered when a
+map is closed. Switch **Follow the active note** off on the same page and the
+button goes, on every map already open as well as the next one.
+
 ![A note beside its Base map, with the map following the note and its popup open](../../images/follow-active-note.png)
 
 ## Measure a distance
 
 Press the ruler control under ⊹ and the map becomes a measuring surface. Click to
 drop a point, and each one after the first is labelled with the distance from
-where you started; a dashed leg follows the pointer with the running total, and
-the readout in the bottom-left corner shows what has actually been placed.
+where you started; a dashed leg follows the pointer with the running total, while
+the readout that opens beside the ruler shows what has actually been placed.
 
-Take back the last point with ↺ or **Backspace**, and put the tape away with ✕,
-**Escape**, or the ruler control again. Nothing is written to any note, and the
+Take back the last point with ↺ or **Backspace**. Press the ruler again and the
+readout folds away, leaving the measurement itself on the map — press it once more
+to bring the readout back on whatever you have measured by then. Points can still
+be placed while it is folded.
+
+Put the tape away with ✕ or **Escape**. Nothing is written to any note, and the
 measurement is gone as soon as you stop.
 
-![A Base map with a three-point measurement drawn across it, each point labelled with the distance from the start](../../images/measure-distance.png)
+Never measure anything? Switch **Measure distance** off under settings →
+**Map buttons** and the ruler goes with it.
+
+![A Base map with a three-point measurement drawn across it, each point labelled with the distance from the start and the running total open beside the ruler](../../images/measure-distance.png)
 
 While the tape is out, clicks belong to it: a click on a pin adds a point rather
 than opening that note, and no popup covers the ground you are measuring across.

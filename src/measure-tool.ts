@@ -27,7 +27,7 @@ import {
 	type SnapCandidate,
 } from './measure';
 import { formatDistance } from './stats';
-import type { MapControl, MapLibreMap, MapMouseEvent } from './types/obsidian-internals';
+import type { MapLibreMap, MapMouseEvent } from './types/obsidian-internals';
 
 /** Above this many pixels from the top edge, a label sits above its vertex. */
 const LABEL_FLIP_PX = 28;
@@ -46,33 +46,30 @@ const SNAP_LAYERS = [MARKER_LAYER, ENDPOINT_LAYER, POINT_LAYER, PHOTO_DOT_LAYER]
 /**
  * The readout: what the tape currently says, and the two things to do about it.
  *
- * A control rather than a box of this plugin's own, so MapLibre places it in a
- * corner it manages and keeps clicks on it off the map underneath.
+ * Drawn into the drawer the measuring button opens beside itself, which is a
+ * MapLibre control already — so clicks on the readout stay off the map
+ * underneath — and which is somewhere the host cannot cover. A corner of its
+ * own was free on the desktop and under Obsidian's navigation bar on a phone.
  */
-class MeasurePanel implements MapControl {
-	private readonly containerEl = createDiv(
-		'maplibregl-ctrl maplibregl-ctrl-group canvas-control-group mod-raised advanced-maps-measure-panel'
-	);
-	private valueEl: HTMLElement | null = null;
-	private undoEl: HTMLElement | null = null;
+class MeasureReadout {
+	private readonly valueEl: HTMLElement;
+	private readonly undoEl: HTMLElement;
 
 	constructor(
-		private readonly onUndo: () => void,
-		private readonly onDone: () => void
-	) {}
-
-	onAdd(): HTMLElement {
-		this.valueEl = this.containerEl.createDiv('advanced-maps-measure-value');
-		this.undoEl = this.action('undo-2', t('measure.undo'), this.onUndo);
-		this.action('x', t('measure.done'), this.onDone);
-		this.setDistance(0, 0);
-		return this.containerEl;
+		private readonly hostEl: HTMLElement,
+		onUndo: () => void,
+		onDone: () => void
+	) {
+		hostEl.addClass('is-open');
+		this.valueEl = hostEl.createDiv('advanced-maps-measure-value');
+		this.undoEl = this.action('undo-2', t('measure.undo'), onUndo);
+		this.action('x', t('measure.done'), onDone);
 	}
 
-	onRemove(): void {
-		this.valueEl = null;
-		this.undoEl = null;
-		this.containerEl.detach();
+	/** Close the drawer, leaving the button that owns it exactly as it was. */
+	remove(): void {
+		this.hostEl.removeClass('is-open');
+		this.hostEl.empty();
 	}
 
 	/**
@@ -80,16 +77,14 @@ class MeasurePanel implements MapControl {
 	 * do instead of showing a zero that never moves.
 	 */
 	setDistance(metres: number, points: number): void {
-		const value = this.valueEl;
-		if (!value) return;
 		const measured = points > 1;
-		value.setText(measured ? formatDistance(metres) : t('measure.hint'));
-		value.toggleClass('is-hint', !measured);
-		this.undoEl?.toggleClass('is-disabled', points === 0);
+		this.valueEl.setText(measured ? formatDistance(metres) : t('measure.hint'));
+		this.valueEl.toggleClass('is-hint', !measured);
+		this.undoEl.toggleClass('is-disabled', points === 0);
 	}
 
 	private action(icon: string, label: string, onClick: () => void): HTMLElement {
-		const el = this.containerEl.createDiv({
+		const el = this.hostEl.createDiv({
 			cls: 'canvas-control-item advanced-maps-measure-action',
 			attr: { 'aria-label': label },
 		});
@@ -115,7 +110,7 @@ export class MeasureTool {
 	private overlayEl: HTMLElement | null = null;
 	private readonly labelEls: HTMLElement[] = [];
 	private labels: MeasureLabel[] = [];
-	private panel: MeasurePanel | null = null;
+	private readout: MeasureReadout | null = null;
 	/** A pending coalesced redraw; see `schedule()`. */
 	private frame: number | null = null;
 	/** Null when the double-click zoom was already off, or cannot be reached. */
@@ -124,17 +119,37 @@ export class MeasureTool {
 	constructor(
 		private readonly map: MapLibreMap,
 		private readonly system: () => CoordSystem,
-		/** Told which way the button that owns this tool should point. */
-		private readonly onChange: (active: boolean) => void
+		/** Told that the tape is out, and whether its readout is showing — which
+		 *  are the two things the button says. */
+		private readonly onChange: (active: boolean, open: boolean) => void,
+		/** That same button's drawer, which is where the readout goes. Asked for
+		 *  rather than held, because the button may be taken off the map and put
+		 *  back while this tool lives on. */
+		private readonly drawer: () => HTMLElement | null
 	) {}
 
 	isActive(): boolean {
 		return this.active;
 	}
 
-	toggle(): void {
-		if (this.active) this.stop();
-		else this.start();
+	/**
+	 * What the button does: take the tape out, or fold the readout away and back
+	 * while it stays out.
+	 *
+	 * Only the readout's own ✕ and Escape end a measurement. A button that ended
+	 * it would leave the drawer with no way to close, and a drawer that cannot
+	 * close is a panel.
+	 */
+	press(): void {
+		// `start` announces for itself, and announcing twice would say the tape came
+		// out and then that its drawer changed, which is one event.
+		if (!this.active) {
+			this.start();
+			return;
+		}
+		if (this.readout) this.closeDrawer();
+		else this.openDrawer();
+		this.announce();
 	}
 
 	/**
@@ -157,14 +172,7 @@ export class MeasureTool {
 		while (this.labelEls.length > 0) this.labelEls.pop()?.remove();
 		this.overlayEl?.remove();
 		this.overlayEl = null;
-		if (this.panel) {
-			try {
-				this.map.removeControl(this.panel);
-			} catch {
-				/* the map went away first */
-			}
-			this.panel = null;
-		}
+		this.closeDrawer();
 		this.restoreDoubleClick?.();
 		this.restoreDoubleClick = null;
 		try {
@@ -172,7 +180,32 @@ export class MeasureTool {
 		} catch {
 			/* the canvas went with the map */
 		}
-		this.onChange(false);
+		this.announce();
+	}
+
+	/**
+	 * Open the drawer on whatever is already measured, rather than on zero: this
+	 * runs mid-measurement as well as at the start.
+	 */
+	private openDrawer(): void {
+		const host = this.drawer();
+		if (!host || this.readout) return;
+		this.readout = new MeasureReadout(
+			host,
+			() => this.undo(),
+			() => this.stop()
+		);
+		this.readout.setDistance(measuredDistance(this.points), this.points.length);
+	}
+
+	private closeDrawer(): void {
+		this.readout?.remove();
+		this.readout = null;
+	}
+
+	/** Tell the button both of the things it shows: pressed, and pointing which way. */
+	private announce(): void {
+		this.onChange(this.active, this.readout !== null);
 	}
 
 	dispose(): void {
@@ -203,7 +236,7 @@ export class MeasureTool {
 		this.labels = drawing.labels;
 		this.renderLabels();
 		this.place();
-		this.panel?.setDistance(measuredDistance(this.points), this.points.length);
+		this.readout?.setDistance(measuredDistance(this.points), this.points.length);
 		// Last, because the DOM above cannot fail and this can: a style swapped out
 		// mid-draw is recovered by the `style.load` that follows it.
 		drawMeasure(this.map, drawing.data);
@@ -237,16 +270,13 @@ export class MeasureTool {
 		// the map — which is also when they have started measuring.
 		if (container) this.events.dom(container, 'keydown', (ev) => this.onKey(ev));
 
-		this.panel = new MeasurePanel(
-			() => this.undo(),
-			() => this.stop()
-		);
-		// Bottom left: the native view stacks its own controls, and this plugin's
-		// three buttons, in the top-right corner, and MapLibre's attribution sits
-		// bottom right. This corner is free, and is where a scale readout lives.
-		this.map.addControl(this.panel, 'bottom-left');
+		// Beside the button that turned the tape on. A control taken off the map
+		// between one measurement and the next leaves nowhere to draw, and a tape
+		// with no readout is still a tape: the labels on the map say the same
+		// figures.
+		this.openDrawer();
 
-		this.onChange(true);
+		this.announce();
 		this.redraw();
 	}
 
