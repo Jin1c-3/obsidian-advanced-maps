@@ -60,6 +60,16 @@ class ControlButton implements MapControl {
 		this.buttonEl = null;
 		this.containerEl.detach();
 	}
+
+	/** The group this control draws into, so its owner can order the stack. */
+	element(): HTMLElement {
+		return this.containerEl;
+	}
+
+	/** The button's accessible name, which says what pressing it does next. */
+	protected setLabel(label: string): void {
+		this.buttonEl?.setAttribute('aria-label', label);
+	}
 }
 
 /** A zoom-to-fit button. */
@@ -93,7 +103,7 @@ class ToggleControl extends ControlButton {
 		btn.setAttribute('aria-pressed', String(on));
 		// The label says what the button does next, which is the half a reader
 		// cannot get from the pressed look alone.
-		btn.setAttribute('aria-label', on ? this.labelOn : this.labelOff);
+		this.setLabel(on ? this.labelOn : this.labelOff);
 	}
 }
 
@@ -104,10 +114,55 @@ export class FollowControl extends ToggleControl {
 	}
 }
 
-/** Per-map measuring toggle; what it turns on is `MeasureTool`. */
+/**
+ * Per-map measuring toggle; what it turns on is `MeasureTool`.
+ *
+ * The tape's readout is drawn into a drawer this button opens beside itself,
+ * rather than into a corner of the map. A corner that is free on the desktop is
+ * not free on a phone — Obsidian's own navigation bar sits over the bottom of
+ * the map — and the button is where the reader is already looking. Empty while
+ * the tape is away, which costs the group no width at all.
+ */
 export class MeasureControl extends ToggleControl {
-	constructor(onToggle: () => void) {
-		super('ruler', t('control.measure'), t('control.measureOff'), onToggle);
+	/** Null until `onAdd`, and again after `onRemove`; see `ControlButton`. */
+	private drawerEl: HTMLElement | null = null;
+
+	constructor(onPress: () => void) {
+		super('ruler', t('control.measure'), t('control.measure.hide'), onPress);
+	}
+
+	/**
+	 * Pressed for as long as a measurement is out, whatever the drawer is doing:
+	 * the look says "measuring", and the label says what pressing does next.
+	 *
+	 * Three states rather than two, because this button no longer ends a
+	 * measurement — the readout's own ✕ and Escape do. See `MeasureTool.press`.
+	 */
+	setState(active: boolean, open: boolean): void {
+		this.setActive(active);
+		if (active && !open) this.setLabel(t('control.measure.show'));
+	}
+
+	override onAdd(): HTMLElement {
+		const el = super.onAdd();
+		el.addClass('advanced-maps-measure-group');
+		// Beside the button rather than inside its box: the corner these groups
+		// stack in is a column that stretches every group to the width of the
+		// widest, so a group that grew would widen the native buttons above it.
+		// The drawer is taken out of flow, and carries the group look itself.
+		this.drawerEl = createDiv('canvas-control-group mod-raised advanced-maps-measure-drawer');
+		el.prepend(this.drawerEl);
+		return el;
+	}
+
+	override onRemove(): void {
+		this.drawerEl = null;
+		super.onRemove();
+	}
+
+	/** Where the tape draws its readout; null while this control is off a map. */
+	drawer(): HTMLElement | null {
+		return this.drawerEl;
 	}
 }
 

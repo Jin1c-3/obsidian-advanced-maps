@@ -37,8 +37,9 @@ const en = {
 	'control.follow': 'Follow the active note',
 	'control.followOff': 'Stop following the active note',
 	'control.measure': 'Measure distance',
-	'control.measureOff': 'Stop measuring',
-	'measure.hint': 'Click two points on the map',
+	'control.measure.hide': 'Hide the readout',
+	'control.measure.show': 'Show the readout',
+	'measure.hint': 'Pick two places',
 	'measure.undo': 'Take back the last point',
 	'measure.done': 'Done measuring',
 	'embed.failed': 'Could not draw {file}: {message}',
@@ -373,15 +374,29 @@ const en = {
 	'settings.open.placeProperty.desc': 'The property "Fill place name from coordinates" writes its result into.',
 	'settings.open.zoom.name': 'Zoom level',
 	'settings.open.zoom.desc': 'How close the map lands when it opens on a note. Following keeps the zoom you set.',
-	'settings.open.follow.name': 'New maps follow the active note',
-	'settings.open.follow.desc':
-		'A following map pans to the note you switch to and opens its popup — the query is never touched, only the ' +
-		'camera. Every map has its own ⊹ button for this, wherever it is open; this only sets which way that button ' +
-		'starts. It is not remembered when a map is closed.',
 	'settings.open.aroundView.name': '"Around this note" view name',
 	'settings.open.aroundView.desc':
 		'The view added to that base for maps of the notes around a note. Renaming it here does not repoint maps ' +
 		'already inserted — their links name the old one.',
+
+	/* ---- settings: map buttons ----
+	 * What this plugin adds to the map's own corner. Zoom-to-fit has no switch:
+	 * it is the only way back to the whole collection once the camera has
+	 * wandered, so there is nothing to weigh against keeping it. */
+	'settings.controls.heading': 'Map buttons',
+	'settings.controls.intro':
+		'The buttons this plugin adds to a map view, beside the native ones. Zoom-to-fit is always there.',
+	'settings.controls.follow.name': 'Follow the active note',
+	'settings.controls.follow.desc':
+		'Adds the ⊹ button. A following map pans to the note you switch to and opens its popup, leaving the query ' +
+		'and the zoom alone.',
+	'settings.controls.followStart.name': 'New maps start following',
+	'settings.controls.followStart.desc':
+		'Which way ⊹ points on a map that has just opened. It is not remembered when a map is closed.',
+	'settings.controls.measure.name': 'Measure distance',
+	'settings.controls.measure.desc':
+		'Adds the ruler button. Its readout opens beside it for as long as you are measuring.',
+	'settings.controls.count': '{on} of {total} on',
 
 	/* ---- settings: pins ----
 	 * The notes' own markers, which belong to the native Maps view rather than
@@ -515,8 +530,9 @@ const zh: Record<TranslationKey, string> = {
 	'control.follow': '跟随当前笔记',
 	'control.followOff': '停止跟随当前笔记',
 	'control.measure': '测距',
-	'control.measureOff': '结束测距',
-	'measure.hint': '在地图上点两个点',
+	'control.measure.hide': '收起读数',
+	'control.measure.show': '展开读数',
+	'measure.hint': '点两个位置',
 	'measure.undo': '撤销上一个点',
 	'measure.done': '结束测距',
 	'embed.failed': '无法绘制 {file}：{message}',
@@ -760,13 +776,20 @@ const zh: Record<TranslationKey, string> = {
 	'settings.open.placeProperty.desc': '「从坐标填写地名」命令写入结果的属性名。',
 	'settings.open.zoom.name': '缩放级别',
 	'settings.open.zoom.desc': '打开到某篇笔记时放大到的级别。跟随时不动缩放，保持你自己调的。',
-	'settings.open.follow.name': '新地图默认跟随当前笔记',
-	'settings.open.follow.desc':
-		'跟随中的地图会跟着切换的笔记移动，并弹出它的气泡——只动镜头，不动查询条件。每张地图不论开在哪里都有自己的 ⊹ ' +
-		'按钮，这里只决定按钮的初始状态；地图关掉后不会记住。',
 	'settings.open.aroundView.name': '「周围」视图名称',
 	'settings.open.aroundView.desc':
 		'为「本篇相关笔记的地图」在该 base 中添加的视图。在这里改名不会改已经插入的地图——它们的链接指向旧名字。',
+
+	'settings.controls.heading': '地图按钮',
+	'settings.controls.intro': '本插件加在地图视图上的按钮，和原生那几个排在一起。「缩放到全部」不可关闭。',
+	'settings.controls.follow.name': '跟随当前笔记',
+	'settings.controls.follow.desc':
+		'显示 ⊹ 按钮。跟随中的地图会跟着切换的笔记移动，并弹出它的气泡；不动查询条件，也不动缩放。',
+	'settings.controls.followStart.name': '新地图默认跟随',
+	'settings.controls.followStart.desc': '刚打开的地图上 ⊹ 的初始状态。地图关掉后不会记住。',
+	'settings.controls.measure.name': '测距',
+	'settings.controls.measure.desc': '显示尺子按钮。测量期间，读数就在按钮旁边展开。',
+	'settings.controls.count': '{total} 个开了 {on} 个',
 
 	'settings.pins.heading': '图钉',
 	'settings.pins.intro': '笔记自身的标记在地图视图里的行为。',

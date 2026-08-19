@@ -83,7 +83,13 @@ export interface AdvancedMapsSettings {
 	menuLabel: string;
 	/** Whether that map is the base file itself, or a pop-up embedding it. */
 	openIn: OpenTarget;
-	/** Initial follow state for each newly opened map. */
+	/** Whether a map offers the follow-the-active-note button and the measuring
+	 *  tape at all. Off takes the button off every map and nothing else with it;
+	 *  zoom-to-fit has no switch, being the only way back to the whole
+	 *  collection. */
+	follow: boolean;
+	measure: boolean;
+	/** Initial follow state for each newly opened map, once following is on. */
 	followActiveNote: boolean;
 	/** The view added to the base for "a map of the notes around this one". */
 	aroundViewName: string;
@@ -143,6 +149,8 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	menuLabel: '',
 	// Default to the only target whose view-option edits persist.
 	openIn: 'tab',
+	follow: true,
+	measure: true,
 	// Off: a camera that moves on its own is a surprise, and this one moves
 	// because of something happening in another pane entirely.
 	followActiveNote: false,
@@ -240,7 +248,17 @@ export function fallsBackToDefault(key: string): key is PlaceholderDefaultKey {
 
 /** The pane's topics, each a page reached from its root; `trackProps` nests inside `tracks`. */
 type PageKey =
-	'coord' | 'tiles' | 'open' | 'external' | 'search' | 'locate' | 'pins' | 'tracks' | 'photos' | 'trackProps';
+	| 'coord'
+	| 'tiles'
+	| 'open'
+	| 'controls'
+	| 'external'
+	| 'search'
+	| 'locate'
+	| 'pins'
+	| 'tracks'
+	| 'photos'
+	| 'trackProps';
 
 /** Indexed entry keys keep list rows on the declarative settings read/write seam. */
 type EntryKey = `externalMaps.${number}.on` | `customMaps.${number}.${'name' | 'url' | 'datum'}`;
@@ -856,7 +874,6 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 						placeholder: DEFAULT_SETTINGS.placeProperty,
 					}),
 					this.slider('settings.open.zoom.name', 'settings.open.zoom.desc', 'openZoom', 1, 18, 1),
-					this.toggle('settings.open.follow.name', 'settings.open.follow.desc', 'followActiveNote'),
 					this.text('settings.open.aroundView.name', 'settings.open.aroundView.desc', 'aroundViewName', {
 						placeholder: t('view.around'),
 					}),
@@ -868,6 +885,30 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				// The base everything on this page hangs off, named rather than
 				// summarized: what the row stores is the path, extension and all.
 				() => this.plugin.settings.basePath || t('settings.state.unset')
+			),
+
+			// The buttons this plugin puts in the map's own corner, and the one piece
+			// of state that only means anything while one of them is there.
+			this.page(
+				'controls',
+				[
+					this.toggle('settings.controls.follow.name', 'settings.controls.follow.desc', 'follow'),
+					{
+						...this.toggle(
+							'settings.controls.followStart.name',
+							'settings.controls.followStart.desc',
+							'followActiveNote'
+						),
+						// Nothing to start when there is no button to press.
+						visible: () => this.plugin.settings.follow,
+					},
+					this.toggle('settings.controls.measure.name', 'settings.controls.measure.desc', 'measure'),
+				],
+				() =>
+					t('settings.controls.count', {
+						on: String([this.plugin.settings.follow, this.plugin.settings.measure].filter(Boolean).length),
+						total: '2',
+					})
 			),
 
 			this.page(
@@ -1173,6 +1214,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			case 'locate':
 				// Turning it on is a fresh statement of intent; forget any refusal.
 				this.plugin.resetLocator();
+				break;
+			case 'follow':
+			case 'measure':
+				// The button appears on, or leaves, every map already open. The
+				// re-render is for the follow page's own second row, which is there
+				// only while the first is on.
+				this.plugin.refreshControls();
+				this.update();
 				break;
 			case 'spreadMarkers':
 				// Not on the track-refresh list below: the fan is stamped on the pins

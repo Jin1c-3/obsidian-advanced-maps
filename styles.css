@@ -304,13 +304,40 @@
 	color: var(--text-on-accent);
 }
 
-/* A row, not the column the control group it borrows its look from is: this is
- * one readout with its two actions beside it, rather than a stack of buttons. */
-.advanced-maps-measure-panel {
+/* The drawer hangs outside this group's own box, and a control group clips to
+ * its rounded corners — measured: `overflow: hidden` with a 4px radius, which
+ * dropped the drawer from the frame while `getBoundingClientRect` still
+ * reported it. Unclipped here, and the radius the group was providing is given
+ * to the button itself so its pressed and hovered fill stays rounded. */
+.advanced-maps-measure-group {
+	position: relative;
+	overflow: visible;
+}
+
+.advanced-maps-measure-group .canvas-control-item {
+	border-radius: var(--radius-s);
+}
+
+/* Nothing at all while the tape is away — not an empty box, which would still
+ * paint the raised group look it borrows. */
+.advanced-maps-measure-drawer {
+	display: none;
+}
+
+/* Out of flow, and leftward: the corner these groups stack in is a column that
+ * stretches every group to the width of the widest one, so a drawer left in
+ * flow would stretch the native buttons above it into bars. A row rather than
+ * the column a control group normally is — one readout with its two actions
+ * beside it, rather than a stack of buttons. */
+.advanced-maps-measure-drawer.is-open {
+	position: absolute;
+	top: 0;
+	right: 100%;
 	display: flex;
 	flex-direction: row;
 	align-items: center;
 	gap: var(--size-2-1);
+	margin: 0 var(--size-2-1) 0 0;
 	padding-left: var(--size-2-2);
 }
 

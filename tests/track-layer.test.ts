@@ -33,7 +33,10 @@ function mapAt(
 		addControl(control: unknown) {
 			controls.push(control);
 		},
-		removeControl: () => undefined,
+		removeControl(control: unknown) {
+			const at = controls.indexOf(control);
+			if (at >= 0) controls.splice(at, 1);
+		},
 		on: () => undefined,
 		off: () => undefined,
 		getCenter: () => center,
@@ -79,7 +82,7 @@ function view(map: MapLibreMap | null): BasesMapView {
 
 function plugin(pack: ReturnType<AdvancedMapsPlugin['offlineBasemap']> = null): AdvancedMapsPlugin {
 	return {
-		settings: { followActiveNote: false, coordSystem: 'gcj02' },
+		settings: { follow: true, measure: true, followActiveNote: false, coordSystem: 'gcj02' },
 		layers: new Set(),
 		resolveTracks: () => [],
 		offlineBasemap: () => pack,
@@ -111,6 +114,50 @@ describe('native map lifecycle', () => {
 				['lat', wgs2gcj(116.397428, 39.90923)[1]],
 			])
 		);
+	});
+
+	it('adds only the buttons whose settings switch them on', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const map = mapAt();
+		const host = plugin();
+		host.settings.follow = false;
+		host.settings.measure = false;
+		const layer = new TrackLayer(host, view(map), true).attach();
+		layer.onMapCreated(map, 'adopted');
+		// Zoom to fit has no switch; the other two are switched off.
+		expect(map.controls).toHaveLength(1);
+
+		// A button switched on reaches a map that is already open, and switching it
+		// off again takes it back off.
+		host.settings.measure = true;
+		layer.refreshControls();
+		expect(map.controls).toHaveLength(2);
+		host.settings.measure = false;
+		layer.refreshControls();
+		expect(map.controls).toHaveLength(1);
+	});
+
+	it('stops a following map when the button that stops it is taken away', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const map = mapAt();
+		const host = plugin();
+		host.settings.followActiveNote = true;
+		const layer = new TrackLayer(host, view(map), true).attach();
+		layer.onMapCreated(map, 'adopted');
+		expect(layer.isFollowing()).toBe(true);
+
+		host.settings.follow = false;
+		layer.refreshControls();
+		// Left following with no button to press, this map would follow forever.
+		expect(layer.isFollowing()).toBe(false);
+		expect(map.controls).toHaveLength(2);
+	});
+
+	it('never starts a new map following where following is switched off', () => {
+		const host = plugin();
+		host.settings.follow = false;
+		host.settings.followActiveNote = true;
+		expect(new TrackLayer(host, view(mapAt()), true).isFollowing()).toBe(false);
 	});
 
 	it('re-adopts a surviving plugin-shifted map without converting its camera twice', () => {
@@ -278,7 +325,14 @@ describe('bounded attachment reads', () => {
 
 	function syncPlugin(tracks: unknown, resolveTracks: () => TFile[]): AdvancedMapsPlugin {
 		return {
-			settings: { followActiveNote: false, coordSystem: 'gcj02', photoDatum: 'auto', trackColor: '#ff0000' },
+			settings: {
+				follow: true,
+				measure: true,
+				followActiveNote: false,
+				coordSystem: 'gcj02',
+				photoDatum: 'auto',
+				trackColor: '#ff0000',
+			},
 			layers: new Set(),
 			resolveTracks,
 			tracks,

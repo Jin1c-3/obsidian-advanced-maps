@@ -73,6 +73,7 @@ import type {
 	BasesMapView,
 	LngLat,
 	LngLatBounds,
+	MapControl,
 	MapLibreMap,
 	MapConfig,
 	MapMarker,
@@ -216,8 +217,10 @@ export class TrackLayer {
 		this.adoptingInitialMap = adopted;
 		// Read once, here, rather than consulted on every `file-open`: the setting
 		// is the state a *new* map starts in, so changing it must not reach across
-		// and re-arm a map whose button the reader has since pressed.
-		this.following = plugin.settings.followActiveNote;
+		// and re-arm a map whose button the reader has since pressed. A map cannot
+		// start following where following is switched off, since it would then have
+		// no button to stop it with.
+		this.following = plugin.settings.follow && plugin.settings.followActiveNote;
 	}
 
 	/** Whether this map is one of the ones that follows. Read by the plugin's `file-open`. */
@@ -231,6 +234,91 @@ export class TrackLayer {
 		this.followControl?.setActive(this.following);
 		if (this.following) this.plugin.followNow(this);
 		else this.held = null;
+	}
+
+	/** Reconcile this map's buttons with the settings that switch them on. */
+	refreshControls(): void {
+		const map = this.createdMap;
+		if (this.detached || !map) return;
+		this.applyControls(map);
+	}
+
+	/**
+	 * Put this plugin's buttons on the map, or take them off again.
+	 *
+	 * Zoom-to-fit is always there — it is the only way back to the whole
+	 * collection once the camera has wandered — while following and the measuring
+	 * tape are each behind a setting. Called at map creation and again whenever
+	 * one of those settings changes, so a button appears on a map already open
+	 * rather than waiting for it to be reopened.
+	 */
+	private applyControls(map: NonNullable<BasesMapView['map']>): void {
+		const { follow, measure } = this.plugin.settings;
+		if (!this.fitControl) {
+			this.fitControl = new FitControl(() => this.fit(true));
+			map.addControl(this.fitControl, 'top-right');
+		}
+		if (follow && !this.followControl) {
+			this.followControl = new FollowControl(() => this.toggleFollow());
+			map.addControl(this.followControl, 'top-right');
+			// `addControl` calls `onAdd` synchronously, so the button exists by now
+			// and can be told which way it is pointing.
+			this.followControl.setActive(this.following);
+		} else if (!follow && this.followControl) {
+			this.removeControl(map, this.followControl);
+			this.followControl = null;
+			// A map left following with no button to stop it would follow forever.
+			this.following = false;
+			this.held = null;
+		}
+		if (measure && !this.measureControl) {
+			this.measureControl = new MeasureControl(() => this.measure?.press());
+			map.addControl(this.measureControl, 'top-right');
+			this.measureControl.setState(false, false);
+			// The tape starts away, and tells the button whenever that changes —
+			// including when Escape ends it. Its readout draws into the drawer that
+			// button owns, which is why the button is added first.
+			this.measure = new MeasureTool(
+				map,
+				() => this.system(),
+				(active, open) => this.measureControl?.setState(active, open),
+				() => this.measureControl?.drawer() ?? null
+			);
+		} else if (!measure && this.measureControl) {
+			// Put the tape away before the button goes: it draws into that button's
+			// drawer, and everything it took from the map is given back by `stop()`.
+			this.measure?.dispose();
+			this.measure = null;
+			this.removeControl(map, this.measureControl);
+			this.measureControl = null;
+		}
+		this.orderControls();
+	}
+
+	/**
+	 * Fit, follow, tape — in that order however they were switched on.
+	 *
+	 * `addControl` appends, so a button switched on after the map opened would
+	 * otherwise sit below ones that were added before it. Only this plugin's own
+	 * groups are moved, and only among themselves: they are already last in the
+	 * corner, under the native view's.
+	 */
+	private orderControls(): void {
+		const controls = [this.fitControl, this.followControl, this.measureControl].filter(
+			(control) => control !== null
+		);
+		const parent = controls[0]?.element().parentElement;
+		if (!parent) return;
+		for (const control of controls) parent.appendChild(control.element());
+	}
+
+	/** A control handed back to a map that may already have been torn down. */
+	private removeControl(map: NonNullable<BasesMapView['map']>, control: MapControl): void {
+		try {
+			map.removeControl(control);
+		} catch {
+			/* map already gone */
+		}
 	}
 
 	private wrap<T extends object, K extends keyof T>(obj: T, key: K, make: (orig: T[K]) => T[K]): void {
@@ -672,12 +760,7 @@ export class TrackLayer {
 		this.restoreSpread();
 		this.spread = null;
 		for (const control of [this.fitControl, this.followControl, this.measureControl]) {
-			if (!control || !view.map) continue;
-			try {
-				view.map.removeControl(control);
-			} catch {
-				/* map already gone */
-			}
+			if (control && view.map) this.removeControl(view.map, control);
 		}
 		this.fitControl = null;
 		this.followControl = null;
@@ -708,22 +791,7 @@ export class TrackLayer {
 		this.stopAdoptionWatcher();
 		this.createdMap = map;
 		this.adoptingInitialMap = false;
-		this.fitControl = new FitControl(() => this.fit(true));
-		map.addControl(this.fitControl, 'top-right');
-		this.followControl = new FollowControl(() => this.toggleFollow());
-		map.addControl(this.followControl, 'top-right');
-		this.measureControl = new MeasureControl(() => this.measure?.toggle());
-		map.addControl(this.measureControl, 'top-right');
-		// `addControl` calls `onAdd` synchronously, so both buttons exist by now and
-		// can be told which way they are pointing. The tape itself starts away, and
-		// tells the button whenever that changes — including when Escape ends it.
-		this.followControl.setActive(this.following);
-		this.measure = new MeasureTool(
-			map,
-			() => this.system(),
-			(on) => this.measureControl?.setActive(on)
-		);
-		this.measureControl.setActive(false);
+		this.applyControls(map);
 		this.locate ??= guardLocateControl(map, () => this.system());
 		this.appliedSystem = initialSystem === 'current' ? this.system() : (recordedCameraSystem(map) ?? 'wgs84');
 		this.realignCamera();
