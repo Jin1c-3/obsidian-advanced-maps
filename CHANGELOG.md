@@ -4,6 +4,52 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [1.18.1]
+
+### Changed
+
+- **The measuring tape now takes the point you are pointing at.** Bring the
+  pointer within a short distance of something already on the map — a note's
+  pin, a track's waypoint or its start and end pins, a photo's position, or a
+  point you placed earlier in this same measurement — and a ring appears on it.
+  Click, and the point lands on that thing's own coordinate rather than on the
+  pixel you managed to hit.
+
+  What that buys is a measurement that is exact rather than approximately aimed.
+  A pixel is worth about 4 m at zoom 15 and about 33 m at zoom 12, so a small
+  miss at each end used to be a hundred metres the readout stated to the metre
+  without admitting to. "How far is this note from that photo" is now the
+  distance between the two coordinates themselves, on a mainland background as
+  much as anywhere else, and a route can be closed exactly on the place it
+  started.
+
+  The ring is shown before the click that takes it, including before the first
+  point of a measurement exists, so nothing moves without saying so first. Hold
+  **Alt** while pointing and clicking to ignore all of it and measure the bare
+  ground. The point you placed last is never offered, since a leg from a point
+  to itself measures nothing, and a route or an area boundary is never offered
+  either — a drawn line is simplified for drawing, so its vertices are not the
+  coordinates any file recorded.
+
+- **You now choose which figures Write track statistics writes.** Settings →
+  **Tracks** → **Track properties** has a switch per figure, all of them on to
+  begin with, so nothing changes until you turn one off. A walking log can keep
+  distance and start time and leave the other seven out of every note it
+  touches, instead of taking all nine into the note, the property autocomplete
+  and every base's column list.
+
+  A figure that is off is not written — and not removed either. The command
+  simply stops reaching that name, exactly as renaming a figure has always left
+  the property under its old name where it was. Turning a figure off is a
+  decision about the next write, not permission to delete what a note already
+  carries.
+
+  A figure that is off also cannot collide: the checks that make the command
+  refuse rather than overwrite now consider only the figures being written. With
+  every figure off there is nothing to write, and the command says so rather
+  than reporting that it wrote nothing. Settings written before this existed
+  read as every figure on, which is what those vaults have been doing all along.
+
 ## [1.18.0]
 
 ### Added
@@ -996,6 +1042,7 @@ one vault; the behaviour is unchanged, everything around it is new.
   base's first map view, and the menu label falls back to the localized default.
 
 [Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.1...HEAD
+[1.18.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.0...1.18.1
 [1.18.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.2...1.18.0
 [1.17.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.1...1.17.2
 [1.17.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.17.0...1.17.1
