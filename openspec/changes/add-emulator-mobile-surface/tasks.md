@@ -20,4 +20,4 @@
 
 - [x] 3.1 Branch from an updated `main`, commit, and push
 - [x] 3.2 Open the pull request, link this OpenSpec change, and state that no plugin behavior changes
-- [ ] 3.3 Wait for `CI / format · lint · types · tests · build` to pass
+- [x] 3.3 Wait for `CI / format · lint · types · tests · build` to pass
