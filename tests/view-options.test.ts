@@ -36,9 +36,12 @@ describe('groupIndexByKey', () => {
 	});
 });
 
+/** A reader with offline basemaps on and nothing named that is gone. */
+const PICKER = { backgrounds: [], missing: [] };
+
 describe('appendTrackOptions', () => {
 	it('slots each group in behind the one it belongs with', () => {
-		const list = appendTrackOptions(NATIVE);
+		const list = appendTrackOptions(NATIVE, PICKER);
 		const names = list.map((g) => g.displayName);
 		// Where a background is chosen, then what it is made of, then the datum it
 		// implies — and the track knobs behind the markers they sit beside.
@@ -52,19 +55,33 @@ describe('appendTrackOptions', () => {
 
 	it('leaves the list it was given alone', () => {
 		const before = NATIVE.map((g) => g.displayName);
-		appendTrackOptions(NATIVE);
+		appendTrackOptions(NATIVE, PICKER);
 		expect(NATIVE.map((g) => g.displayName)).toEqual(before);
 	});
 
 	it('appends when the built-in wording — and its anchors — have moved on', () => {
-		const list = appendTrackOptions([group('Something else', ['unrelated'])]);
+		const list = appendTrackOptions([group('Something else', ['unrelated'])], PICKER);
 		expect(list).toHaveLength(4);
 		expect(list[0].displayName).toBe('Something else');
 	});
 
 	it('copes with no options at all', () => {
-		expect(appendTrackOptions(undefined)).toHaveLength(3);
-		expect(appendTrackOptions([])).toHaveLength(3);
+		expect(appendTrackOptions(undefined, PICKER)).toHaveLength(3);
+		expect(appendTrackOptions([], PICKER)).toHaveLength(3);
+	});
+
+	it('offers no background of ours while offline basemaps are switched off', () => {
+		const names = appendTrackOptions(NATIVE, null).map((g) => g.displayName);
+		// The coordinate system still sits behind Background, since the datum is
+		// asked about wherever the tiles come from; only the picker is gone.
+		expect(names).not.toContain(basemapOptionGroup().displayName);
+		expect(names.indexOf(coordOptionGroup().displayName)).toBe(1);
+		expect(names.indexOf(trackOptionGroup().displayName)).toBe(3);
+		expect(names).toHaveLength(5);
+	});
+
+	it('leaves the picker out by default, so a caller must say a reader has one', () => {
+		expect(appendTrackOptions(NATIVE).map((g) => g.displayName)).not.toContain(basemapOptionGroup().displayName);
 	});
 });
 

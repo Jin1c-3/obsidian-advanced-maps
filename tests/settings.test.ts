@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	basemapStartsOn,
 	DEFAULT_SETTINGS,
 	dropLegacyBasemap,
 	excludedFragments,
@@ -173,5 +174,42 @@ describe('the one pack that had no name', () => {
 	it('starts a fresh install with no packs and no default', () => {
 		expect(DEFAULT_SETTINGS.tilePacks).toEqual([]);
 		expect(DEFAULT_SETTINGS.defaultBasemap).toBe('');
+	});
+});
+
+describe('the switches a feature carries', () => {
+	it('leaves every feature that exists today on, so an upgrade changes nothing', () => {
+		for (const key of [
+			'openInMap',
+			'nearbyMap',
+			'stampNote',
+			'placeExchange',
+			'inlineMaps',
+			'externalLinks',
+		] as const) {
+			expect(DEFAULT_SETTINGS[key]).toBe(true);
+		}
+	});
+
+	it('starts offline basemaps off, because on is what costs a reader who has no pack', () => {
+		expect(DEFAULT_SETTINGS.offlineBasemap).toBe(false);
+	});
+});
+
+describe('basemapStartsOn', () => {
+	const PACK = { name: 'City', path: 'a/{z}/{x}/{y}.png', minZoom: 0, maxZoom: 16 };
+
+	it('switches a reader who already has a pack on, so they keep their background', () => {
+		expect(basemapStartsOn({ tilePacks: [PACK] }, [PACK])).toBe(true);
+	});
+
+	it('leaves a reader who has none off', () => {
+		expect(basemapStartsOn({}, [])).toBe(false);
+		expect(basemapStartsOn(null, [])).toBe(false);
+	});
+
+	it('says nothing about settings that already answer, either way', () => {
+		expect(basemapStartsOn({ offlineBasemap: false }, [PACK])).toBeNull();
+		expect(basemapStartsOn({ offlineBasemap: true }, [])).toBeNull();
 	});
 });

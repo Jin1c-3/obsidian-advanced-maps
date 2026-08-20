@@ -11,6 +11,7 @@ import {
 	DEFAULT_BACKGROUND,
 	nativeTileSets,
 	packBackgroundId,
+	packBackgroundName,
 	resolveBackground,
 	restyleForBasemap,
 	type OfflineBasemap,
@@ -459,8 +460,15 @@ export class TrackLayer {
 			// the host's own, and the host resolves that itself — from the argument,
 			// which is what is being overridden here. Passing the caller's instead
 			// would let a stale `currentTileSetId` outvote what the reader picked.
-			const native =
-				pack === null && background !== DEFAULT_BACKGROUND && background !== '' ? background : undefined;
+			//
+			// A `pack:` id is ours whether or not a pack answers to it: with the
+			// feature switched off, or with that pack removed since the base file
+			// was written, `basemapFor` answers null and the id would otherwise be
+			// handed to the host as one of its own tile sets, which it has never
+			// heard of. The default background is what both of those fall back to.
+			const ours =
+				background === '' || background === DEFAULT_BACKGROUND || packBackgroundName(background) !== null;
+			const native = pack === null && !ours ? background : undefined;
 			const config = orig.call(view, native ?? tileSetId);
 			if (applyOfflineTiles(config, pack)) {
 				// So the host's own control shows this pack checked: it is handed
@@ -640,6 +648,7 @@ export class TrackLayer {
 	 * have moved.
 	 */
 	private addStampNoteItem(ev: MouseEvent, point: [number, number]): void {
+		if (!this.plugin.settings.stampNote) return;
 		const [lng, lat] = point;
 		// 'action' is the section the native items use — measured on a live menu,
 		// where New note, Copy coordinates and the two defaults all carry it. This
@@ -656,6 +665,7 @@ export class TrackLayer {
 
 	/** Append to the event-keyed native menu, falling back to flat items without `setSubmenu`. */
 	private addExternalMapItems(ev: MouseEvent, point: [number, number]): void {
+		if (!this.plugin.settings.externalLinks) return;
 		const [lng, lat] = point;
 
 		const items = this.externalMapItems(lat, lng);
@@ -707,6 +717,7 @@ export class TrackLayer {
 	 * file. Its own menu section, since it is not one of the point actions above.
 	 */
 	private addExportPlacesItem(ev: MouseEvent): void {
+		if (!this.plugin.settings.placeExchange) return;
 		const places = this.mapPlaces('file');
 		if (places.length === 0) return;
 		Menu.forEvent(ev).addItem((item) =>
@@ -1110,6 +1121,11 @@ export class TrackLayer {
 	 * the one this expects. The packs stay reachable from the view's own setting.
 	 */
 	private offerPacks(): () => void {
+		// Nothing at all while offline basemaps are off, which is the whole point
+		// of the switch: the host's control is built holding the host's own array
+		// and keeps its live reference to it, so a background the reader adds in
+		// the Maps settings tab is in that menu the next time it is opened.
+		if (!this.plugin.settings.offlineBasemap) return () => {};
 		const settings = this.host()?.settings;
 		const own = settings?.tileSets;
 		if (!settings || !Array.isArray(own)) return () => {};

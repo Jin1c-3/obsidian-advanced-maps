@@ -11,6 +11,14 @@ export interface BackgroundChoice {
 	name: string;
 }
 
+/** What a map can be put on, and what its open views name that is gone. Null
+ *  where offline basemaps are switched off: there is then no background of this
+ *  plugin's to pick, so a map's options are offered none. */
+export interface BackgroundPicker {
+	backgrounds: readonly BackgroundChoice[];
+	missing: readonly string[];
+}
+
 /** The slider for one track knob, with its range read from the one table that states it. */
 function knobSlider(key: TrackKnob, displayName: string) {
 	const { min, max, step, def } = TRACK_KNOBS[key];
@@ -107,20 +115,26 @@ export function groupIndexByKey(list: ViewOptionGroup[], key: string): number {
 }
 
 /**
- * Slot our three groups into the built-in list: Tracks behind Markers, and — in
- * this order — the basemap picker and the coordinate system behind Background,
- * which is where a background is chosen and where the datum it implies is asked
- * about. Each is located by option key so the built-in wording can change freely.
+ * Slot our groups into the built-in list: Tracks behind Markers, and — in this
+ * order — the basemap picker and the coordinate system behind Background, which
+ * is where a background is chosen and where the datum it implies is asked about.
+ * Each is located by option key so the built-in wording can change freely.
+ *
+ * The basemap picker is there only while offline basemaps are on. Off, a map's
+ * options carry nothing of this feature's, and a value a base file already holds
+ * under that key is left in the file untouched, to be read again if the reader
+ * switches back on.
  */
 export function appendTrackOptions(
 	options: ViewOptionGroup[] | undefined,
-	backgrounds: readonly BackgroundChoice[] = [],
-	missing: readonly string[] = []
+	picker: BackgroundPicker | null = null
 ): ViewOptionGroup[] {
 	const list = Array.isArray(options) ? options.slice() : [];
 
 	const background = groupIndexByKey(list, 'mapTiles');
-	const afterBackground = [basemapOptionGroup(backgrounds, missing), coordOptionGroup()];
+	const afterBackground = picker
+		? [basemapOptionGroup(picker.backgrounds, picker.missing), coordOptionGroup()]
+		: [coordOptionGroup()];
 	if (background === -1) list.push(...afterBackground);
 	else list.splice(background + 1, 0, ...afterBackground);
 

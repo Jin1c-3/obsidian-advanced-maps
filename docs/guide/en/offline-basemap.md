@@ -40,10 +40,10 @@ tiles/
       50.png
 ```
 
-Anything that unpacks into that shape works. What does **not** work is a
-single-file `.mbtiles` or `.pmtiles` archive — reading one needs a hook into the
-map library that this plugin does not bundle. Unpack it into a directory tree
-once and the result is a tile pack.
+Anything that unpacks into that shape works. A single-file `.mbtiles` or
+`.pmtiles` archive does not, yet. `.pmtiles` is being worked on; what is holding
+it up is a bug in Obsidian on Android, not the format. Until that lands, unpack
+the archive into a directory tree once and the result is a tile pack.
 
 Keep each pack **out of the vault's index** — a regional pack is easily a hundred
 thousand files, and an indexed one slows down search, links and every Base you
@@ -68,8 +68,15 @@ there.
 
 ## Add a pack
 
-**Settings → Community plugins → Advanced Maps → Offline basemap → Tile packs.**
-**Add tile pack** gives you a row with four boxes:
+**Settings → Community plugins → Advanced Maps → Offline basemap.**
+
+**Use offline basemaps** is the first row, and it starts **off** unless you had a
+pack configured before this version. Switch it on first: with it off the packs
+below it are shown but cannot be typed into, because a pack nothing draws from is
+a pack the page has no business collecting. Switching it off later keeps every
+pack exactly as you left it.
+
+Under it, **Add tile pack** gives you a row with four boxes:
 
 | Box                | What to put there                                                         |
 | ------------------ | ------------------------------------------------------------------------- |
@@ -203,6 +210,24 @@ in order:
    the camera; a highest level set to 0 leaves one tile for the whole world.
 4. **Which pack.** The map may be on a different one — open the layers button and
    see what is checked, or read the view's **This map opens on** row.
+
+## With it switched off
+
+Off is the state a vault with no pack is in, and it is a real off: nothing of
+this feature reaches a map. The Maps plugin's own background button lists exactly
+what Maps itself has, because the list it is holding is Maps' own — putting your
+packs in that menu means handing the button a list this plugin maintains, and a
+background you add in the Maps settings tab then reaches an open map on its next
+configuration reload rather than the next time you open the menu. That is the
+trade this switch exists to let you decline.
+
+A map's own options lose their **This map opens on** row too. A Base file that
+already names a pack keeps the name written in it, unread, and means it again the
+moment you switch back on.
+
+Switching it on reaches a map that is already open through that row. The
+background button on that map catches up when you open the map again — a button
+is handed its list once, when the map is built.
 
 ## What this touches
 

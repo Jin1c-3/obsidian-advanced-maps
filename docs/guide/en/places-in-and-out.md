@@ -15,6 +15,11 @@ A saved-places file can become notes, and the notes a Base matched can become a
 file again. Both directions stay inside your vault, and both are WGS-84 whatever
 basemap you are looking at.
 
+Both are one feature and one switch. Turn **Exchange places with files** off
+under settings → **Places in and out** and a track file's ⋮ menu offers no
+import and a map's menu no export; notes you have already imported and files you
+have already exported are ordinary vault files and are untouched.
+
 ## Import a file's saved places as notes
 
 Right-click a `.kml`, `.gpx`, or `.geojson` file — in the file explorer, or from

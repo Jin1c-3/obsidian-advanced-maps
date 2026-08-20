@@ -237,6 +237,9 @@ const en = {
 	'settings.external.heading': 'Open in external map',
 	'settings.external.intro':
 		'What the map offers when you right-click a spot on it. Order the built-in apps, switch off the ones you never use, and add any app that takes a coordinate in a URL.',
+	'settings.external.enable.name': 'Offer external maps',
+	'settings.external.enable.desc':
+		'Off, right-clicking a map offers no external app at all. Everything arranged below is kept.',
 	'settings.external.builtin.heading': 'Built-in',
 	'settings.external.custom.heading': 'Your own',
 	'settings.external.custom.empty': 'Nothing added. The six above need no setting up.',
@@ -293,6 +296,14 @@ const en = {
 		'Nothing skipped — a blank coordinate in a template will be filled like any other.',
 	'settings.locate.exclude.add': 'Add a folder',
 
+	/* ---- settings: places in and out ---- */
+	'settings.places.heading': 'Places in and out',
+	'settings.places.intro':
+		'Places carried between files and notes: the places saved in a track file become notes, and the places a map matched are written back out to a file.',
+	'settings.places.enable.name': 'Exchange places with files',
+	'settings.places.enable.desc':
+		"Off, a track file's ⋮ menu offers no import and a map's menu no export. Notes already imported and files already exported are untouched.",
+
 	/* ---- settings: what a page entry states ----
 	 * A page shows no control of its own, so the entry says what is behind it. */
 	'settings.state.on': 'On',
@@ -319,6 +330,9 @@ const en = {
 	'settings.tiles.heading': 'Offline basemap',
 	'settings.tiles.intro':
 		'Folders of tiles already on your disk become backgrounds every map can be put on, with nothing asked of the network. The tiles are only ever read.',
+	'settings.tiles.enable.name': 'Use offline basemaps',
+	'settings.tiles.enable.desc':
+		'Off, no map is drawn on a pack and the background button lists only what Maps itself has. Your packs are kept. Switching it on reaches an open map through its own options, and that map’s background button once you open the map again.',
 	'settings.tiles.packs.heading': 'Tile packs',
 	'settings.tiles.packs.empty': 'Add a folder of tiles already on your disk.',
 	'settings.tiles.packs.add': 'Add tile pack',
@@ -345,6 +359,12 @@ const en = {
 	'settings.open.heading': 'Open in map',
 	'settings.open.intro':
 		'Opens a map view on the note you are in, from its ⋮ menu or the command palette. It appears on notes whose coordinate property holds a value.',
+	'settings.open.enable.name': 'Open a note in map',
+	'settings.open.enable.desc':
+		'Off, no note carries the ⋮ item and the command leaves the palette. The base file below is shared with the map of nearby notes and stays as it is.',
+	'settings.open.nearby.name': 'Insert a map of nearby notes',
+	'settings.open.nearby.desc':
+		"Off, the editor's right-click menu carries no item and its command leaves the palette. Maps already inserted into notes go on drawing.",
 	'settings.open.label.name': 'Menu item label',
 	'settings.open.label.desc':
 		'Blank for the default. The ⋮ menu follows at once, the command palette after a reload.',
@@ -376,13 +396,14 @@ const en = {
 	'settings.open.aroundView.desc':
 		'The view added to that base for maps of the notes around a note. Renaming it here does not repoint maps already inserted.',
 
-	/* ---- settings: map buttons ----
-	 * What this plugin adds to the map's own corner. Zoom-to-fit has no switch:
-	 * it is the only way back to the whole collection once the camera has
-	 * wandered, so there is nothing to weigh against keeping it. */
-	'settings.controls.heading': 'Map buttons',
+	/* ---- settings: map buttons and menu ----
+	 * What this plugin adds to a map view: its own corner, and the map's own
+	 * right-click menu. Zoom-to-fit has no switch: it is the only way back to the
+	 * whole collection once the camera has wandered, so there is nothing to weigh
+	 * against keeping it. */
+	'settings.controls.heading': 'Map buttons and menu',
 	'settings.controls.intro':
-		'The buttons this plugin adds to a map view, beside the native ones. Zoom-to-fit is always there.',
+		"What this plugin adds to a map view: buttons beside the native ones, and items on the map's own right-click menu. Zoom-to-fit is always there.",
 	'settings.controls.follow.name': 'Follow the active note',
 	'settings.controls.follow.desc':
 		'Adds the ⊹ button. A following map pans to the note you switch to and opens its popup, leaving the query and the zoom alone.',
@@ -391,6 +412,9 @@ const en = {
 		'Which way ⊹ points on a map that has just opened. It is not remembered when a map is closed.',
 	'settings.controls.measure.name': 'Measure distance',
 	'settings.controls.measure.desc': 'Adds the ruler button. Its readout opens beside it while you measure.',
+	'settings.controls.stamp.name': "Set a note's coordinates from the map",
+	'settings.controls.stamp.desc':
+		"Adds the item to the map's right-click menu. It asks which note, and confirms before replacing a coordinate.",
 	'settings.controls.count': '{on} of {total} on',
 
 	/* ---- settings: pins ----
@@ -415,6 +439,9 @@ const en = {
 	/* The same knob as `options.fitMaxZoom`, so it carries the same name. */
 	'settings.tracks.fitMaxZoom.name': 'Max zoom when fitting',
 	'settings.tracks.fitMaxZoom.desc': 'How far auto-framing may zoom in.',
+	'settings.tracks.inline.name': 'Inline route maps',
+	'settings.tracks.inline.desc':
+		'Turns an embedded ![[route.gpx]] into a map. Off, this plugin claims no track file and the embed is the one Obsidian makes of it; a note already on screen shows that after you open it again.',
 	'settings.tracks.embedHeight.name': 'Inline map height',
 	'settings.tracks.embedHeight.desc': 'Height in pixels of an inline ![[track.gpx]] map.',
 	'settings.tracks.stats.name': 'Show track statistics',
@@ -661,6 +688,8 @@ const zh: Record<TranslationKey, string> = {
 	'settings.external.heading': '用外部地图打开',
 	'settings.external.intro':
 		'在地图上右键一个位置时给出的选项。可以给内置的几个排序、把用不上的关掉，也可以添加任何用 URL 接收坐标的地图应用。',
+	'settings.external.enable.name': '提供外部地图',
+	'settings.external.enable.desc': '关掉后，在地图上右键不会给出任何外部应用。下面排好的顺序和开关都留着。',
 	'settings.external.builtin.heading': '内置',
 	'settings.external.custom.heading': '自定义',
 	'settings.external.custom.empty': '还没有添加。上面那六个不用配置就能用。',
@@ -699,6 +728,12 @@ const zh: Record<TranslationKey, string> = {
 	'settings.locate.exclude.empty': '没有跳过任何路径——模板里空着的坐标也会照常被填。',
 	'settings.locate.exclude.add': '添加文件夹',
 
+	'settings.places.heading': '地点的导入导出',
+	'settings.places.intro': '地点在文件和笔记之间来回：轨迹文件里存的地点变成笔记，地图匹配到的地点写回成一个文件。',
+	'settings.places.enable.name': '与文件交换地点',
+	'settings.places.enable.desc':
+		'关掉后，轨迹文件的 ⋮ 菜单里没有导入，地图右键菜单里也没有导出。已经导入的笔记和已经导出的文件都不受影响。',
+
 	'settings.state.on': '已开启',
 	'settings.state.off': '已关闭',
 	'settings.state.unset': '未设置',
@@ -718,6 +753,9 @@ const zh: Record<TranslationKey, string> = {
 	'settings.tiles.heading': '离线底图',
 	'settings.tiles.intro':
 		'磁盘上现成的瓦片可以当地图底图，直接从文件系统读，不走网络。可以配多套，每套一个名字。瓦片只读不写。',
+	'settings.tiles.enable.name': '使用离线底图',
+	'settings.tiles.enable.desc':
+		'关掉后，没有地图会画在瓦片包上，底图按钮里也只剩 Maps 自己那几个。已配好的瓦片包留着不动。重新打开时，已经开着的地图在自己的视图设置里立刻能选，地图上的底图按钮要重开这张图才跟上。',
 	'settings.tiles.packs.heading': '瓦片包',
 	'settings.tiles.packs.empty': '添加一套磁盘上现成的瓦片。',
 	'settings.tiles.packs.add': '添加瓦片包',
@@ -741,6 +779,12 @@ const zh: Record<TranslationKey, string> = {
 	'settings.open.heading': '在地图中打开',
 	'settings.open.intro':
 		'从笔记的 ⋮ 菜单或命令面板，把地图视图打开到当前笔记。只有坐标属性有值的笔记才会出现这一项。',
+	'settings.open.enable.name': '在地图中打开笔记',
+	'settings.open.enable.desc':
+		'关掉后笔记 ⋮ 菜单里没有这一项，命令也从命令面板消失。下面的 base 文件是和「插入相关笔记的地图」共用的，不受影响。',
+	'settings.open.nearby.name': '插入相关笔记的地图',
+	'settings.open.nearby.desc':
+		'关掉后编辑器右键菜单里没有这一项，命令也从命令面板消失。已经插进笔记里的地图照常绘制。',
 	'settings.open.label.name': '菜单项名称',
 	'settings.open.label.desc': '留空用默认名称。⋮ 菜单立即生效，命令面板要重载插件。',
 	'settings.open.basePath.name': 'Base 文件',
@@ -763,8 +807,9 @@ const zh: Record<TranslationKey, string> = {
 	'settings.open.aroundView.name': '「周围」视图名称',
 	'settings.open.aroundView.desc': '为「本篇相关笔记的地图」在该 base 中添加的视图。在这里改名不会改已经插入的地图。',
 
-	'settings.controls.heading': '地图按钮',
-	'settings.controls.intro': '本插件加在地图视图上的按钮，和原生那几个排在一起。「缩放到全部」不可关闭。',
+	'settings.controls.heading': '地图按钮和菜单',
+	'settings.controls.intro':
+		'本插件加在地图视图上的东西：和原生排在一起的按钮，以及地图自己的右键菜单项。「缩放到全部」不可关闭。',
 	'settings.controls.follow.name': '跟随当前笔记',
 	'settings.controls.follow.desc':
 		'显示 ⊹ 按钮。跟随中的地图会跟着切换的笔记移动，并弹出它的气泡；不动查询条件，也不动缩放。',
@@ -772,6 +817,8 @@ const zh: Record<TranslationKey, string> = {
 	'settings.controls.followStart.desc': '刚打开的地图上 ⊹ 的初始状态。地图关掉后不会记住。',
 	'settings.controls.measure.name': '测距',
 	'settings.controls.measure.desc': '显示尺子按钮。测量期间，读数就在按钮旁边展开。',
+	'settings.controls.stamp.name': '把笔记的坐标设成地图上某处',
+	'settings.controls.stamp.desc': '在地图右键菜单里加这一项。它会问写进哪篇笔记，覆盖已有坐标前还会再确认一次。',
 	'settings.controls.count': '{total} 个开了 {on} 个',
 
 	'settings.pins.heading': '图钉',
@@ -788,6 +835,9 @@ const zh: Record<TranslationKey, string> = {
 	'settings.tracks.opacity.name': '线条透明度',
 	'settings.tracks.fitMaxZoom.name': '自动缩放上限',
 	'settings.tracks.fitMaxZoom.desc': '自动框选时最多放大到的级别。',
+	'settings.tracks.inline.name': '内联轨迹地图',
+	'settings.tracks.inline.desc':
+		'把嵌入的 ![[route.gpx]] 变成一张地图。关掉后本插件不再接管任何轨迹文件，嵌入就是 Obsidian 自己的样子；已经打开的笔记要重新打开才会变。',
 	'settings.tracks.embedHeight.name': '内联地图高度',
 	'settings.tracks.embedHeight.desc': '内联 ![[track.gpx]] 地图的高度（像素）。',
 	'settings.tracks.stats.name': '显示轨迹统计',

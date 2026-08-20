@@ -13,6 +13,7 @@ import {
 	PHOTO_LAYER,
 	POINT_LAYER,
 	READ_CONCURRENCY,
+	TRACK_EXTS,
 	USER_GESTURE_EVENTS,
 } from './constants';
 import { resolveSystem, toTileSpace, toWgs84, type CoordSystem } from './coords';
@@ -49,6 +50,17 @@ import type { BasesMapView, MapLibreMap, MapMouseEvent } from './types/obsidian-
 
 /** One of the host note's photos, and what its EXIF head parsed to. */
 type PhotoEntry = { file: TFile; rec: TrackRecord };
+
+/**
+ * The track extensions no other embed handler owns.
+ *
+ * Asked afresh at every claim rather than once at load: inline maps can be
+ * switched back on long after this plugin started, and by then another plugin
+ * may own one of these. Leaving that one alone is what lets both coexist.
+ */
+export function claimableExtensions(isRegistered: (extension: string) => boolean): string[] {
+	return [...TRACK_EXTS].filter((extension) => !isRegistered(extension));
+}
 
 export class TrackEmbed extends Component {
 	private rootEl: HTMLElement | null = null;
