@@ -1,6 +1,7 @@
 ---
 title: 'Advanced Maps user guide'
-description: 'Photo albums, linked tracks and areas, Around views, navigation, and coordinate tools on top of Obsidian native Maps view.'
+description: "Photo albums, linked tracks and areas, Around views, navigation, and coordinate tools on top of Obsidian's native Maps view."
+tagline: "Turn Obsidian's native Maps view into a photo atlas and route viewer, or use it to see the notes connected to the one you're reading."
 ---
 
 # Advanced Maps user guide
@@ -31,6 +32,7 @@ the topic pages below as recipes and reference.
 | Draw the basemap from tile packs already on disk, picked from the map, with no network at all            | [Offline basemap](offline-basemap.md)                   |
 | Align mainland basemaps, parse map links, search places, or open another map app                         | [Coordinates and services](coordinates-and-services.md) |
 | Check supported files, option ownership, privacy, operational limits, or attribution                     | [Reference and privacy](reference-and-privacy.md)       |
+| Find out why a map is empty, why a note shows two maps, or where a command went                          | [Common questions](common-questions.md)                 |
 
 The workflows compose. A single Base can show place notes, a multi-day route,
 and every geotagged photo along it.

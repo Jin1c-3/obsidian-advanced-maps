@@ -13,12 +13,12 @@ description: 'Install Advanced Maps from the community store, learn how a Base b
 
 ## Requirements
 
-Advanced Maps requires Obsidian 1.13.1 or newer with **Bases** enabled and the
-first-party **Maps** plugin installed. It extends that native registration
-instead of replacing it: MapLibre, backgrounds, controls, markers, popups, and
-built-in map options remain native. If the expected Maps view is unavailable,
-Advanced Maps reports or skips the unavailable enhancement and leaves Obsidian
-usable.
+> [!IMPORTANT]
+> Advanced Maps requires Obsidian 1.13.1 or newer with **Bases** enabled and the
+> first-party **Maps** plugin installed. It adds to that native view instead of
+> replacing it: Maps still supplies MapLibre, backgrounds, controls, markers,
+> popups, and its built-in options. If the Maps view is unavailable, Advanced
+> Maps skips the affected enhancements and leaves Obsidian usable.
 
 ## Install
 

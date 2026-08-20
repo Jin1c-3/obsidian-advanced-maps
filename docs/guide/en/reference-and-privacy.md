@@ -98,8 +98,9 @@ switching it back on hands you.
 
 ## What leaves your vault
 
-Notes, tracks, and photo contents do not leave on their own. The plugin has no
-telemetry, update ping, or server.
+> [!NOTE]
+> Notes, tracks, and photo contents do not leave on their own. The plugin has no
+> telemetry, update ping, or server.
 
 | When                     | What leaves                                      | Destination                   |
 | ------------------------ | ------------------------------------------------ | ----------------------------- |

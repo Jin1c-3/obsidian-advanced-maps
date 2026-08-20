@@ -37,10 +37,11 @@ om://map?v=1&ll={lat},{lng}                             WGS-84
 right-clicking a map then offers no external app, and the order you arranged and
 the ones you already switched off are kept for when you want them back.
 
-App schemes such as `waze://` or `iosamap://` work on a device that has the app.
-State the datum instead of guessing it: a mirror of a mainland provider looks
-like any other host, and a wrong guess does not fail—it places the pin a few
-streets away.
+> [!WARNING]
+> App schemes such as `waze://` or `iosamap://` work only when the corresponding
+> app is installed. Set the datum explicitly instead of guessing: a mirror of a
+> mainland provider looks like any other host, and a wrong choice does not
+> fail—it puts the pin a few streets away.
 
 ![The map context menu with external-map destinations](../../images/external-map.png)
 

@@ -13,10 +13,11 @@ description: '从社区插件市场安装 Advanced Maps，理解 Base 如何变�
 
 ## 环境要求
 
-需要 Obsidian 1.13.1 或更高版本，并启用 **Bases** 和第一方 **Maps** 插件。Advanced
-Maps 扩展这个原生注册，而不是替换它；MapLibre、底图、控件、图钉、气泡和内置地图选
-项仍由原生视图提供。找不到预期的 Maps 视图时，Advanced Maps 会说明或跳过不可用的增
-强，让 Obsidian 保持可用，而不是加载一半。
+> [!IMPORTANT]
+> 需要 Obsidian 1.13.1 或更高版本，并启用 **Bases** 和第一方 **Maps** 插件。
+> Advanced Maps 只在原生地图视图上做增强，不会替换它；MapLibre、底图、控件、图钉、
+> 气泡和内置地图选项仍由 Maps 提供。如果找不到 Maps 视图，Advanced Maps 会跳过相关
+> 增强，Obsidian 仍可正常使用。
 
 ## 安装
 

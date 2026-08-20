@@ -36,29 +36,30 @@ formula works as long as its value reads as plain text.
 A note with neither property still gets a marker: a small dot on a circle filled
 with `--bases-map-marker-background`, the map's default marker color.
 
-## Icon names that work, and names that quietly do not
+## Icon names that render, and names that go blank
 
-An icon name has to match Lucide's own spelling exactly. When it does not, the
-marker is **not** an error and **not** a fallback dot — it is a filled circle
-with nothing inside it, and nothing is written to the console.
+> [!WARNING]
+> An icon name has to match Lucide's own spelling exactly. When it does not, the
+> marker is **not** an error and **not** a fallback dot—it is a filled circle
+> with no icon inside, and nothing is written to the console.
 
-![Three columns of real map markers: five that render an icon, four that render as empty circles, and two that fall back to a dot](../../images/marker-icon-names.png)
+![Three columns of real map markers: five that render an icon, four that render as filled circles with no icon, and two that fall back to a dot](../../images/marker-icon-names.png)
 
-| Value in the property                  | What you get                                                  |
-| -------------------------------------- | ------------------------------------------------------------- |
-| `star`                                 | the Lucide `star` icon                                        |
-| `lucide-star`                          | the same icon — the `lucide-` prefix is accepted              |
-| `map-pin`                              | the Lucide `map-pin` icon                                     |
-| a YAML list whose one item is `star`   | the `star` icon — a single-item list reads as its own text    |
-| `Star`                                 | **empty circle** — names are case-sensitive                   |
-| `map_pin`                              | **empty circle** — Lucide separates words with `-`, never `_` |
-| `🌲`                                   | **empty circle** — emoji are not icon names                   |
-| any name Lucide does not have          | **empty circle**                                              |
-| the property is absent or empty        | the default dot                                               |
-| the literal text `null` or `undefined` | the default dot                                               |
+| Value in the property                  | What you get                                                                |
+| -------------------------------------- | --------------------------------------------------------------------------- |
+| `star`                                 | the Lucide `star` icon                                                      |
+| `lucide-star`                          | the same icon — the `lucide-` prefix is accepted                            |
+| `map-pin`                              | the Lucide `map-pin` icon                                                   |
+| a YAML list whose one item is `star`   | the `star` icon — a single-item list reads as its own text                  |
+| `Star`                                 | **filled circle with no icon** — names are case-sensitive                   |
+| `map_pin`                              | **filled circle with no icon** — Lucide separates words with `-`, never `_` |
+| `🌲`                                   | **filled circle with no icon** — emoji are not icon names                   |
+| any name Lucide does not have          | **filled circle with no icon**                                              |
+| the property is absent or empty        | the default dot                                                             |
+| the literal text `null` or `undefined` | the default dot                                                             |
 
-An empty circle is therefore the symptom of a misspelled name, and a dot is the
-symptom of a missing value. Reading the marker tells you which mistake you made.
+A filled circle with no icon therefore points to a misspelled name, while a dot
+means the value is missing. The marker itself tells you which one to check.
 
 ## Colors
 
@@ -75,11 +76,12 @@ A `var()` color is resolved against the current theme, so it follows light and
 dark mode by itself. Obsidian's own accent and color variables are the easiest
 way to stay consistent with the rest of the app.
 
-A value CSS cannot parse is not reported either. `not-a-color`, `#zzz`, and a
-`var()` naming a variable that does not exist all resolve to the **theme's text
-color** — a near-black marker in a light theme, a near-white one in a dark theme.
-A marker in an unexpected flat color is the sign of a typo, not of a missing
-property; a missing property gives you the default blue instead.
+> [!WARNING]
+> A value CSS cannot parse is not reported either. `not-a-color`, `#zzz`, and a
+> `var()` naming a variable that does not exist all resolve to the **theme's
+> text color** — a near-black marker in a light theme, a near-white one in a
+> dark theme. An unexpected flat color usually means the value is invalid; a
+> missing property is different and gives you the default blue instead.
 
 The glyph _inside_ the marker is not per-note. Every icon is drawn in
 `--bases-map-marker-icon-color`, one value for the whole map, which a CSS snippet

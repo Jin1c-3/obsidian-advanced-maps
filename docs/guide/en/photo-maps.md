@@ -53,11 +53,13 @@ New-Item -ItemType Junction `
 
 Reload the vault and use the linked vault path in the Base.
 
-This is a desktop filesystem setup. Create an equivalent link on each desktop
-that should see the album; mobile devices cannot reuse a desktop link. Keep
-cloud files locally readable, avoid link loops, and treat the source as external:
-verify your backup and sync provider's link behavior instead of assuming the
-vault covers it. Advanced Maps reads photos but never modifies them.
+> [!IMPORTANT]
+> This is a desktop filesystem setup. Create an equivalent link on each desktop
+> that should see the album; mobile devices cannot reuse a desktop link. Keep
+> cloud files available offline and avoid link loops. The source directory is
+> still outside the vault, so check whether your backup and sync tools follow
+> the link instead of assuming the photos are covered. Advanced Maps reads the
+> photos but never modifies them.
 
 ## Map only photos linked from matched notes
 

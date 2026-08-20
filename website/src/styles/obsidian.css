@@ -96,6 +96,23 @@
 	font-weight: 600;
 }
 
+/* A sidebar entry that leaves the guide — the community store, or Obsidian
+ * itself — says so, instead of reading as one more page of the guide. */
+.sidebar-content a[href^='http']::after,
+.sidebar-content a[href^='obsidian:']::after {
+	content: '';
+	display: inline-block;
+	width: 0.8em;
+	height: 0.8em;
+	margin-inline-start: 0.35em;
+	vertical-align: -0.05em;
+	background-color: var(--sl-color-gray-3);
+	/* Drawn rather than typed: U+2197 renders as an emoji on several platforms. */
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M14 3a1 1 0 0 0 0 2h3.6l-8.3 8.3a1 1 0 1 0 1.4 1.4L19 6.4V10a1 1 0 0 0 2 0V4a1 1 0 0 0-1-1h-6Z'/%3E%3Cpath d='M5 5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 1 0-2 0v5H5V7h5a1 1 0 1 0 0-2H5Z'/%3E%3C/svg%3E");
+	mask-repeat: no-repeat;
+	mask-size: 100%;
+}
+
 /* A link is accent-coloured and only underlines under the pointer, as in a note. */
 .sl-markdown-content a:not(:where(.not-content *)) {
 	text-decoration: none;
@@ -152,4 +169,66 @@
 /* Headings sit slightly tighter than Starlight's default, as Obsidian's do. */
 .sl-markdown-content :is(h2, h3, h4) {
 	margin-top: 1.5em;
+}
+
+/*
+ * A figure opens at the size it was captured. The trigger is a button so the
+ * keyboard reaches it; it must not look like one. See src/scripts/image-zoom.js.
+ */
+.am-zoom-trigger {
+	display: inline-block;
+	max-width: 100%;
+	padding: 0;
+	border: 0;
+	background: none;
+	cursor: zoom-in;
+	line-height: 0;
+}
+
+dialog.am-zoom {
+	max-width: min(96vw, 1600px);
+	max-height: 96vh;
+	margin: auto;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--sl-color-gray-1);
+	cursor: zoom-out;
+}
+
+dialog.am-zoom::backdrop {
+	background-color: rgb(0 0 0 / 0.7);
+}
+
+dialog.am-zoom img {
+	display: block;
+	max-width: 100%;
+	max-height: 86vh;
+	margin-inline: auto;
+	border-radius: var(--am-radius-m);
+}
+
+.am-zoom-caption {
+	margin: 0.75rem auto 0;
+	max-width: 60ch;
+	font-size: var(--sl-text-sm);
+	text-align: center;
+	text-wrap: pretty;
+}
+
+/*
+ * The landing page's hero carries no picture of its own: the guide's first
+ * figure sits directly below it. Keep one column and centre, rather than
+ * leaving the column Starlight reserves for an image empty on a wide screen.
+ */
+.hero:not(:has(> img, > .hero-html)) {
+	grid-template-columns: 100%;
+	padding-block: clamp(2rem, 1rem + 6vmin, 5rem);
+	text-align: center;
+}
+
+.hero:not(:has(> img, > .hero-html)) .stack {
+	align-items: center;
+	max-width: 46rem;
+	margin-inline: auto;
 }

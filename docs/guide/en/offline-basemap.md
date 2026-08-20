@@ -45,10 +45,11 @@ Anything that unpacks into that shape works. A single-file `.mbtiles` or
 it up is a bug in Obsidian on Android, not the format. Until that lands, unpack
 the archive into a directory tree once and the result is a tile pack.
 
-Keep each pack **out of the vault's index** — a regional pack is easily a hundred
-thousand files, and an indexed one slows down search, links and every Base you
-have. Two layouts do that, and which one you want turns on a single question:
-do your plugin settings sync between devices?
+> [!WARNING]
+> Keep each pack **out of the vault's index** — a regional pack is easily a
+> hundred thousand files, and an indexed one slows down search, links and every
+> Base you have. The two layouts below both avoid that cost; choose based on
+> whether your plugin settings sync between devices.
 
 | Your settings        | Put the pack                  | And type                 |
 | -------------------- | ----------------------------- | ------------------------ |
@@ -88,9 +89,11 @@ Under it, **Add tile pack** gives you a row with four boxes:
 The path may be absolute, or relative to your vault. `{z}`, `{x}` and `{y}` are
 filled in per tile; `{-y}` works too, for packs laid out in TMS row order.
 
-Type a filesystem path, not a URL. The plugin turns it into one when it builds a
-map, because the prefix that URL needs is regenerated every time Obsidian starts
-— a URL written down by hand works until the next restart and then stops.
+> [!WARNING]
+> Type a filesystem path, not a URL. The plugin turns it into one when it builds
+> a map, because the prefix that URL needs is regenerated every time Obsidian
+> starts — a URL written down by hand works until the next restart and then
+> stops.
 
 **Default background** below the list is what every map opens on unless it says
 otherwise. Leave it at _None_ and your packs stay configured and stay pickable

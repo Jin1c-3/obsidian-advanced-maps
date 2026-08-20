@@ -67,6 +67,8 @@ docs/
 website/
   astro.config.mjs               Starlight, both locales, sidebar, base path
   scripts/sync-docs.mjs          copies docs/guide into the content collection
+  scripts/make-social-card.mjs   redraws the committed link-preview card
+  src/scripts/image-zoom.js      a figure opened at the size it was captured
   src/styles/obsidian.css        Starlight tuned to look like Obsidian
 ```
 

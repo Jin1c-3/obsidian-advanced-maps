@@ -155,10 +155,11 @@ and with seconds on the end it would be plain text.
 
 ![A Bases table of seven walks and rides, sorted by track-distance-km, with columns for ascent, elapsed and moving minutes, pace and start time, and Sum totals under distance and ascent](../../images/track-stats-properties.png)
 
-Only what the file recorded is written. A GeoJSON route with no elevation and no
-timestamps leaves one property; a GPX from a watch leaves all nine. A figure with
-nothing behind it this run is removed rather than left saying something the file
-no longer says.
+> [!WARNING]
+> Only what the file recorded is written. A GeoJSON route with no elevation and
+> no timestamps leaves one property; a GPX with elevations and timestamps can
+> fill all nine. If an enabled figure can no longer be calculated on a later
+> run, the command removes its old property instead of leaving a stale value.
 
 Three things worth knowing:
 
