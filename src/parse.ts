@@ -73,8 +73,22 @@ function byLocalName(parent: Document | Element, name: string): Element[] {
 	return out;
 }
 
+/**
+ * The first match, without collecting the rest.
+ *
+ * Its own scan rather than `byLocalName(...)[0]`: this is asked four times per
+ * `<trkpt>` and five times per `<Trackpoint>`, and each of those built an array
+ * of every match only to read its first element. `parent` is the point element
+ * itself, so both walk the same handful of children — what this saves is one
+ * array per call and a scan that stops at the hit, times the point count, on
+ * the hottest path in the reader.
+ */
 function firstByLocalName(parent: Document | Element, name: string): Element | undefined {
-	return byLocalName(parent, name)[0];
+	const all = parent.getElementsByTagName('*');
+	for (let i = 0; i < all.length; i++) {
+		if (all[i].localName === name) return all[i];
+	}
+	return undefined;
 }
 
 /** The text of the first matching descendant, whatever namespace it carries. */

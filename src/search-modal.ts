@@ -3,17 +3,21 @@
 import { getLanguage, Notice, SuggestModal, requestUrl } from 'obsidian';
 import type { App } from 'obsidian';
 import { formatLatLng, toWgs84 } from './coords';
-import { geocodeRequest, GeocodeError, parseGeocode, type GeocodeProvider, type Place } from './geocode';
+import {
+	awaitRateLimit,
+	geocodeRequest,
+	GeocodeError,
+	parseGeocode,
+	type GeocodeProvider,
+	type Place,
+} from './geocode';
 import { t } from './i18n';
 
 /** Long enough to outlast typing, short enough not to feel broken. */
 export const QUIET_MS = 450;
-/** Nominatim's public service asks clients to stay at or below one request/second. */
-export const NOMINATIM_INTERVAL_MS = 1000;
+/** Re-exported from the module that owns the policy, so this one keeps naming it. */
+export { NOMINATIM_INTERVAL_MS } from './geocode';
 const MIN_QUERY = 2;
-/** Provider-wide rather than per modal: closing/reopening the search box must
- *  not reset Nominatim's one-request-per-second interval. */
-let nextNominatimAt = 0;
 
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -49,12 +53,9 @@ export class PlaceSearchModal extends SuggestModal<Place> {
 		await delay(QUIET_MS);
 		if (revision !== this.revision) return [];
 
-		if (this.provider === 'nominatim') {
-			const wait = Math.max(0, nextNominatimAt - Date.now());
-			if (wait > 0) await delay(wait);
-			if (revision !== this.revision) return [];
-			nextNominatimAt = Date.now() + NOMINATIM_INTERVAL_MS;
-		}
+		// The slot is claimed only if this keystroke is still the newest one; a
+		// superseded query leaves it for the query that replaced it.
+		if (!(await awaitRateLimit(this.provider, () => revision === this.revision))) return [];
 
 		try {
 			// Ask for names in the reader's own language: Nominatim will answer

@@ -20,8 +20,10 @@ import {
 	disposePhotoImages,
 	drawTracks,
 	ensurePhotoImages,
+	removeGroup,
 	PHOTO_DECODE_CONCURRENCY,
 	photoIconSource,
+	resolveMarkerColor,
 	selectPhotoIconIds,
 	type PhotoIconSource,
 } from '../src/layers';
@@ -135,6 +137,89 @@ describe('drawTracks', () => {
 			PHOTO_DOT_LAYER,
 			PHOTO_LAYER,
 		]);
+	});
+});
+
+describe('a theme colour through the host', () => {
+	const manager = (resolve: (c: string) => string) =>
+		({ resolveColor: resolve }) as unknown as Parameters<typeof resolveMarkerColor>[0];
+
+	it('answers what the host resolves it to', () => {
+		expect(
+			resolveMarkerColor(
+				manager(() => 'rgb(1, 2, 3)'),
+				'var(--x)'
+			)
+		).toBe('rgb(1, 2, 3)');
+	});
+
+	it('hands back the colour when the host throws', () => {
+		expect(
+			resolveMarkerColor(
+				manager(() => {
+					throw new Error('internal changed shape');
+				}),
+				'var(--background-primary)'
+			)
+		).toBe('var(--background-primary)');
+	});
+
+	it('hands back the colour when the method is not there at all', () => {
+		// `resolveColor` is an undocumented internal, so a host that no longer has
+		// it must cost a default colour rather than the whole map.
+		expect(resolveMarkerColor({} as Parameters<typeof resolveMarkerColor>[0], '#abc')).toBe('#abc');
+		expect(resolveMarkerColor(null, '#abc')).toBe('#abc');
+		expect(resolveMarkerColor(undefined, '#abc')).toBe('#abc');
+	});
+});
+
+describe('taking an owned group off a map', () => {
+	/** Records every removal in the order it was asked for. */
+	function recorder(present: { layers: string[]; sources: string[]; images: string[] }) {
+		const order: string[] = [];
+		const map = {
+			getStyle: () => ({}),
+			getLayer: (id: string) => (present.layers.includes(id) ? {} : undefined),
+			getSource: (id: string) => (present.sources.includes(id) ? {} : undefined),
+			hasImage: (id: string) => present.images.includes(id),
+			removeLayer: (id: string) => order.push(`layer:${id}`),
+			removeSource: (id: string) => order.push(`source:${id}`),
+			removeImage: (id: string) => order.push(`image:${id}`),
+		} as unknown as MapLibreMap;
+		return { map, order };
+	}
+
+	it('removes layers, then sources, then images', () => {
+		const { map, order } = recorder({ layers: ['l1', 'l2'], sources: ['s1'], images: ['i1'] });
+		removeGroup(map, ['l1', 'l2'], ['s1'], ['i1']);
+		// The order is the whole content of this function: removeImage throws while
+		// a live layer still references the image, and removeSource throws while a
+		// layer still reads from it.
+		expect(order).toEqual(['layer:l1', 'layer:l2', 'source:s1', 'image:i1']);
+	});
+
+	it('asks only for what the map actually has', () => {
+		const { map, order } = recorder({ layers: ['l1'], sources: [], images: [] });
+		removeGroup(map, ['l1', 'gone'], ['missing'], ['absent']);
+		expect(order).toEqual(['layer:l1']);
+	});
+
+	it('stands down on a map whose style has gone', () => {
+		const bare = {} as unknown as MapLibreMap;
+		// No `getStyle` at all is a map already torn down; reaching further would
+		// throw during the teardown this is part of.
+		expect(() => removeGroup(bare, ['l1'], ['s1'])).not.toThrow();
+	});
+
+	it('swallows a style torn down mid-removal', () => {
+		const map = {
+			getStyle: () => ({}),
+			getLayer: () => ({}),
+			removeLayer: () => {
+				throw new Error('style is gone');
+			},
+		} as unknown as MapLibreMap;
+		expect(() => removeGroup(map, ['l1'], ['s1'])).not.toThrow();
 	});
 });
 

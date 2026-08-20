@@ -1,11 +1,23 @@
 /* Saved places: reading them out of parsed geometry, and writing them back out as files. */
 
 import type { Feature, Geometry } from 'geojson';
-import { COORD_DIGITS } from './coords';
+import { formatCoord as fmt } from './coords';
 import { pointsOf } from './geometry';
 
 /** Longest note name an imported place is given, before the collision suffix. */
 const MAX_NAME = 80;
+
+/**
+ * What a place with nothing to be called by is called.
+ *
+ * Deliberately not translated. This string is written into a GPX/KML/CSV file
+ * that outlives the session and is read by other software, so the same base
+ * exported on a Chinese and an English install must produce the same bytes —
+ * a localized fallback made the file's content depend on the reader's UI
+ * language. Reached only when a marker has neither a displayed property value
+ * nor a file name.
+ */
+export const UNNAMED_PLACE = 'Place';
 
 /**
  * One saved place, in WGS-84, as both directions of the interchange see it.
@@ -164,8 +176,6 @@ export function valueText(value: unknown): string {
 	const text = held.toString().trim();
 	return text === 'null' || text === 'undefined' ? '' : text;
 }
-
-const fmt = (n: number): string => n.toFixed(COORD_DIGITS);
 
 /** `&` first, or the entities this introduces get escaped a second time. */
 function xml(text: string): string {

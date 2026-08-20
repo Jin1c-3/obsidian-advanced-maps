@@ -24,11 +24,13 @@ import {
 	cancelPhotoImages,
 	applyPhotoIcons,
 	drawTracks,
-	ensurePhotoImages,
+	reselectPhotoIcons,
 	fitTo,
 	guardLocateControl,
 	photoIconSource,
+	removeGroup,
 	removeTrackLayers,
+	resolveMarkerColor,
 	type LocateGuard,
 	type PhotoIconSource,
 } from './layers';
@@ -439,7 +441,7 @@ export class TrackEmbed extends Component {
 		// style that replaced it and is about to put the owned content back.
 		this.styleDrawPending = false;
 
-		const color = view.markerManager.resolveColor(this.plugin.settings.trackColor);
+		const color = resolveMarkerColor(view.markerManager, this.plugin.settings.trackColor);
 		// An embed has one owning note, so every feature uses index 0.
 		const system = this.system();
 		const trackData: FeatureCollection<Geometry, TrackFeatureProps> = {
@@ -459,7 +461,7 @@ export class TrackEmbed extends Component {
 
 		const settings = this.plugin.settings;
 		const weight = trackKnob('trackWeight', settings.trackWeight);
-		const stroke = view.markerManager.resolveColor('var(--background-primary)');
+		const stroke = resolveMarkerColor(view.markerManager, 'var(--background-primary)');
 		applyTrackPaint(
 			map,
 			weight,
@@ -532,10 +534,7 @@ export class TrackEmbed extends Component {
 
 	/** Reselect cached icon candidates after camera movement. */
 	private reselectPhotoIcons(): void {
-		// Deliberately not `applyPhotoIcons`; see the twin in track-layer.ts.
-		if (!this.map || this.photoIcons.length === 0) return;
-		if (!this.plugin.settings.photoThumbnails) return;
-		ensurePhotoImages(this.map, this.photoIcons);
+		reselectPhotoIcons(this.map, this.photoIcons, this.plugin.settings.photoThumbnails);
 	}
 
 	/**
@@ -955,6 +954,10 @@ const cursorLayerSpec = {
 /** Ensure both hover layers after style changes and size the hit corridor. */
 function ensureHoverLayers(map: MapLibreMap, weight: number): void {
 	try {
+		// Deliberately not `drawGroup`: these two are added if missing and
+		// otherwise left alone. Handing them data the way a redraw does would
+		// clear the hit corridor and the hover dot on every style reload, which is
+		// exactly when this runs.
 		if (!map.getSource(HIT_SRC)) {
 			map.addSource(HIT_SRC, { type: 'geojson', data: EMPTY_COLLECTION });
 			map.addLayer(hitLayerSpec);
@@ -964,6 +967,10 @@ function ensureHoverLayers(map: MapLibreMap, weight: number): void {
 			map.addLayer(cursorLayerSpec);
 		}
 	} catch (e) {
+		// The rollback the owned groups in layers.ts have always had: a source
+		// left behind without its layer makes every later call take the
+		// "already there" branch, so the layer could never come back.
+		removeHoverLayers(map);
 		console.warn('Advanced Maps: deferring the elevation-profile hover link —', e instanceof Error ? e.message : e);
 		return;
 	}
@@ -1003,14 +1010,5 @@ function applyCursorPaint(map: MapLibreMap, color: string, stroke: string): void
 
 /** Torn down alongside the four track layers on refresh() — see refresh()'s own comment for why both must go together. */
 function removeHoverLayers(map: MapLibreMap): void {
-	if (!map.getStyle) return;
-	try {
-		for (const id of [CURSOR_LAYER, HIT_LAYER]) {
-			if (map.getLayer(id)) map.removeLayer(id);
-		}
-		if (map.getSource(CURSOR_SRC)) map.removeSource(CURSOR_SRC);
-		if (map.getSource(HIT_SRC)) map.removeSource(HIT_SRC);
-	} catch {
-		/* style already torn down */
-	}
+	removeGroup(map, [CURSOR_LAYER, HIT_LAYER], [CURSOR_SRC, HIT_SRC]);
 }

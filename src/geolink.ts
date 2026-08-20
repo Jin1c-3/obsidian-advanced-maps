@@ -92,17 +92,25 @@ function chinaAware(lat: number, lng: number): CoordSystem {
  */
 function readAmap(url: URL): ParsedPoint | null {
 	const q = url.searchParams;
+	// `coordinate` is part of the 高德 URI spec and has two legal values, which
+	// is why this plugin writes it explicitly on the way out. Believed when
+	// present and GCJ-02 assumed when absent, that being 高德's own default —
+	// the same shape `readBaidu` reads `coord_type` in. Reading it as GCJ-02
+	// unconditionally shifted an already-WGS-84 link a second time, silently
+	// landing the note ~500 m away.
+	const declared = (q.get('coordinate') ?? '').trim().toLowerCase();
+	const system: CoordSystem = declared.startsWith('wgs84') ? 'wgs84' : 'gcj02';
 
 	const position = pair(firstParam(q, 'position', 'to', 'from'));
-	if (position) return point(position[1], position[0], 'gcj02', 'amap');
+	if (position) return point(position[1], position[0], system, 'amap');
 
 	const lat = numParam(q, 'lat');
 	const lng = numParam(q, 'lng', 'lon');
-	if (lat !== null && lng !== null) return point(lat, lng, 'gcj02', 'amap');
+	if (lat !== null && lng !== null) return point(lat, lng, system, 'amap');
 
 	// The web map keeps its camera in the fragment: #/map?...&center=lng,lat
 	const centre = pair(new URLSearchParams(url.hash.replace(/^#\/?[^?]*\??/, '')).get('center'));
-	if (centre) return point(centre[1], centre[0], 'gcj02', 'amap');
+	if (centre) return point(centre[1], centre[0], system, 'amap');
 
 	return null;
 }

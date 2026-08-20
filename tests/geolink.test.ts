@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseGeoLink, shortLink, type ParsedPoint } from '../src/geolink';
+import { externalMapUrl } from '../src/maplinks';
 import { wgs2gcj, gcj2bd, toWgs84 } from '../src/coords';
 
 /** The same point in WGS-84 — what the modal writes after the reader has run. */
@@ -68,6 +69,30 @@ describe('parseGeoLink: 高德', () => {
 	it('falls back to the camera in the fragment', () => {
 		const p = parseGeoLink('https://www.amap.com/#/map?center=120.1517,30.2586&zoom=15');
 		expect(p).toMatchObject({ provider: 'amap', lat: 30.2586, lng: 120.1517 });
+	});
+
+	it('believes the datum the link declares', () => {
+		const declared = parseGeoLink(`https://uri.amap.com/marker?position=${WGS[1]},${WGS[0]}&coordinate=wgs84`);
+		expect(declared?.system).toBe('wgs84');
+		// Already WGS-84, so reading it must leave it where it is rather than
+		// shifting a second time.
+		const w = toWgs(declared!);
+		near(w.lat, WGS[0], 1e-9);
+		near(w.lng, WGS[1], 1e-9);
+	});
+
+	it('assumes GCJ-02 when the link declares 高德 or says nothing', () => {
+		expect(parseGeoLink(`https://uri.amap.com/marker?position=${GCJ[0]},${GCJ[1]}&coordinate=gaode`)?.system).toBe(
+			'gcj02'
+		);
+		expect(parseGeoLink(`https://uri.amap.com/marker?position=${GCJ[0]},${GCJ[1]}`)?.system).toBe('gcj02');
+	});
+
+	it('reads back what this plugin writes', () => {
+		const p = parseGeoLink(externalMapUrl('amap', WGS[0], WGS[1]));
+		const w = toWgs(p!);
+		near(w.lat, WGS[0], 1e-5);
+		near(w.lng, WGS[1], 1e-5);
 	});
 });
 

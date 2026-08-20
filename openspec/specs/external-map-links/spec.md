@@ -80,17 +80,15 @@ Custom URL validation SHALL reject `javascript:`, `data:`, `vbscript:`, `blob:`,
 
 ### Requirement: External destinations can be switched off
 
-The reader SHALL be able to switch external map destinations off in one move,
-above the arrangement of individual providers that already exists. With the
-feature off, no external destination SHALL be added to the map's context menu,
-neither built-in nor custom, and no external application SHALL be reachable from
-a map click.
+Switched off under the shared policy in the feature-switches capability, which states what a switch takes away, what it keeps, and how it defaults. What follows is only what is specific to this feature.
 
-The setting SHALL default to on, so a reader who never opens it keeps the plugin
-they had. Switching it SHALL reach maps that are already open, on the next menu
-opened rather than after a restart. Which providers are on and in what order, and
-every custom destination, SHALL be kept while the feature is off and SHALL stay
-on screen where they are configured, stating what they hold.
+The switch SHALL sit above the arrangement of individual providers that already
+exists, turning the feature off in one move rather than by emptying that
+arrangement — so the providers that were on, the order they were in, and every
+custom destination survive the flip and are what comes back. With the feature
+off, no external destination SHALL be added to the map's context menu, neither
+built-in nor custom, and no external application SHALL be reachable from a map
+click.
 
 #### Scenario: External destinations are switched off
 

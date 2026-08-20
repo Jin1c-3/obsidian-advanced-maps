@@ -119,16 +119,12 @@ The Around command SHALL add, at most once, a map view copied from an existing m
 
 ### Requirement: Open in map can be switched off
 
-The reader SHALL be able to switch open-in-map off. With it off, no item SHALL be
-added to a note's menu and the open-in-map command SHALL be unavailable, so a
-note carrying a coordinate property offers nothing of this plugin's where the
-host offers its own actions. Everything else the plugin draws SHALL be unchanged,
-including the coordinate property itself, which other features read and write.
+Switched off under the shared policy in the feature-switches capability, which states what a switch takes away, what it keeps, and how it defaults. What follows is only what is specific to this feature.
 
-The setting SHALL default to on, so a reader who never opens it keeps the plugin
-they had. Switching it SHALL reach menus opened after that without a restart, and
-the label the item carries SHALL stay configured while stating that nothing shows
-it.
+With it off, no item SHALL be added to a note's menu and the open-in-map command
+SHALL be unavailable, so a note carrying a coordinate property offers nothing of
+this plugin's where the host offers its own actions. The coordinate property
+itself SHALL be untouched, other features reading and writing it.
 
 #### Scenario: Open in map is switched off
 
@@ -145,15 +141,13 @@ it.
 
 ### Requirement: The nearby-notes map can be switched off
 
-The reader SHALL be able to switch the nearby-notes map off. With it off, no item
-SHALL be added to the editor's own menu and its command SHALL be unavailable, so
-a note being edited carries nothing of this plugin's. An Around view already
-written into a base SHALL be left exactly as it is, and an embed already in a
-note SHALL go on drawing, because what is switched off is the offer to write one,
-not the views and notes that were written.
+Switched off under the shared policy in the feature-switches capability, which states what a switch takes away, what it keeps, and how it defaults. What follows is only what is specific to this feature.
 
-The setting SHALL default to on. Switching it SHALL reach menus opened after that
-without a restart, and the view name it would use SHALL stay configured.
+With it off, no item SHALL be added to the editor's own menu and its command SHALL
+be unavailable, so a note being edited carries nothing of this plugin's. What is
+switched off is the offer to write one of these maps, not the maps already
+written: an Around view already in a base SHALL be left exactly as it is, and an
+embed already in a note SHALL go on drawing.
 
 #### Scenario: The nearby-notes map is switched off
 

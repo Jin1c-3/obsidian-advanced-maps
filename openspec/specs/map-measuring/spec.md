@@ -228,6 +228,30 @@ the one offered. Where the map cannot answer what it has drawn, no point SHALL
 be offered and the click SHALL place the coordinate under the pointer, exactly
 as it did before anything was on offer.
 
+Where a point is drawn away from the coordinate it stands for — a pin moved by
+pin spreading, or a pin whose shape is drawn above the coordinate it marks —
+what is drawn SHALL decide whether it is a candidate, since that is what the
+reader aimed at, while the coordinate it stands for SHALL be what is offered,
+what is measured, and what the offer is ranked and drawn by. A measurement SHALL
+therefore never take the drawn position of a spread pin for the position of the
+note it stands for.
+
+The reader SHALL be able to bypass the offer and take the ground under the
+pointer instead, for the times the ground is the point and not the thing
+standing on it.
+
+#### Scenario: A pin the map has moved to keep it apart from its neighbours
+
+- **WHEN** the pointer comes within range of a pin that pin spreading has drawn
+  away from its note's own coordinate, and the reader clicks
+- **THEN** the point is placed at the note's own coordinate rather than at the
+  position the pin is drawn in, and the offer was marked at that same coordinate
+
+#### Scenario: The reader wants the ground, not the thing on it
+
+- **WHEN** the reader takes a point with the bypass held while a point is on offer
+- **THEN** the coordinate under the pointer is placed, and nothing is snapped to
+
 #### Scenario: A point is placed near a note's pin
 
 - **WHEN** the pointer comes within range of a pin and the reader clicks
@@ -272,15 +296,14 @@ as it did before anything was on offer.
 
 ### Requirement: Measuring can be switched off
 
-The reader SHALL be able to switch measuring off. With it off, a map view SHALL
-offer no measuring control and no measurement SHALL be possible on it, while
-everything else the map draws SHALL be unchanged. The setting SHALL default to
-on, so a reader who never opens it keeps the map they had.
+Switched off under the shared policy in the feature-switches capability, which states what a switch takes away, what it keeps, and how it defaults. What follows is only what is specific to this feature.
 
-Switching it SHALL reach maps that are already open rather than only maps opened
-afterwards. Switching it off while a measurement is on screen SHALL put that
-measurement away first, leaving the map exactly as the reader stopping by hand
-would have left it.
+With it off, a map view SHALL offer no measuring control and no measurement SHALL
+be possible on it, while everything else the map draws SHALL be unchanged.
+
+Switching it off while a measurement is on screen SHALL put that measurement away
+first, leaving the map exactly as the reader stopping by hand would have left it
+— the one thing this switch must do that taking a control away does not.
 
 #### Scenario: Measuring is switched off
 

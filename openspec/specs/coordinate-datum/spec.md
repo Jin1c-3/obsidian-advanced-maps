@@ -86,6 +86,26 @@ Coordinates read from the map for copy, note creation, default-center storage, e
 - **WHEN** the places a base matched are exported to a file while that map draws GCJ-02 or BD-09 tiles
 - **THEN** the written coordinates are the notes' own WGS-84 values, identical to what the same base exports over WGS-84 tiles, rather than the shifted positions the markers were drawn at
 
+### Requirement: A longitude that leaves this plugin is in the ordinary range
+
+A map's camera can be carried any number of turns past the antimeridian, and the
+longitude it then reports grows without bound. Any longitude this plugin hands
+back — written to a note, copied, shown, exported, put in a provider's URL, or
+measured against — SHALL first be brought into the ordinary −180 to 180 range, so
+that a value read after three turns east is the value read before them.
+
+This is the range rule for values leaving the plugin. Drawn geometry is the one
+thing exempt: a route that runs past the antimeridian is drawn where it lies,
+which the track-map-rendering capability states, because breaking a line back
+into range would draw it across the whole world.
+
+#### Scenario: A coordinate is taken from a wrapped camera
+
+- **WHEN** any coordinate is read from a map the reader has panned past ±180°,
+  by whatever feature reads it
+- **THEN** the longitude written, shown or sent is in the −180 to 180 range and
+  names the same place as the same point read before the map was wrapped
+
 ### Requirement: Camera position realigns across datum changes
 
 Switching between backgrounds with different datums SHALL preserve the real-world location currently under the camera.

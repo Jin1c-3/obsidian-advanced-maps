@@ -112,6 +112,7 @@ both `docs/guide/en/` and `docs/guide/zh-cn/`, link it from each locale's
 
 - [Native map integration](openspec/specs/native-map-integration/spec.md)
 - [Track map rendering](openspec/specs/track-map-rendering/spec.md)
+- [Track statistics](openspec/specs/track-statistics/spec.md)
 - [Photo map rendering](openspec/specs/photo-map-rendering/spec.md)
 - [Pin spreading](openspec/specs/pin-spreading/spec.md)
 - [Map measuring](openspec/specs/map-measuring/spec.md)
@@ -122,6 +123,7 @@ both `docs/guide/en/` and `docs/guide/zh-cn/`, link it from each locale's
 - [Inline track maps](openspec/specs/inline-track-maps/spec.md)
 - [External map links](openspec/specs/external-map-links/spec.md)
 - [Place interchange](openspec/specs/place-interchange/spec.md)
+- [Feature switches](openspec/specs/feature-switches/spec.md)
 - [Published documentation](openspec/specs/published-documentation/spec.md)
 - [Maintainer workflow](openspec/specs/maintainer-workflow/spec.md)
 

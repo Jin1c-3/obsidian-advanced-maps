@@ -61,29 +61,20 @@ If a live embed's refreshed track cannot be parsed, the map and last good track 
 - **WHEN** a previously valid open embed receives invalid intermediate file contents
 - **THEN** the existing map and route remain visible with an error message, and restoring valid contents replaces the error with current route data and statistics
 
-### Requirement: Statistics use unshifted route data
+### Requirement: An inline map reports its route's figures
 
-Distance, ascent, elapsed time, moving time, speed, and elevation profiles SHALL be calculated from raw WGS-84 route features, not coordinates transformed for the current tile datum. Distance covered during an interval whose timestamp does not advance SHALL be carried into the next interval that does, rather than discarded. Geometry that is not a route SHALL contribute nothing to these figures, and an embed left with no route SHALL still draw what its file contains.
-
-#### Scenario: Same route uses different map backgrounds
-
-- **WHEN** one route is displayed on WGS-84 and Chinese-datum tiles
-- **THEN** both embeds report the same statistics
-
-#### Scenario: Elevation contains consumer noise
-
-- **WHEN** elevation changes fail to exceed the configured ascent hysteresis or movement stays below the moving-speed threshold
-- **THEN** the corresponding noise is not counted as committed ascent or moving time
-
-#### Scenario: A timestamp runs backwards
-
-- **WHEN** a merged export contains a point whose timestamp is not later than the previous one
-- **THEN** that interval contributes no moving time, and the ground it covered still counts toward the next interval's implied speed
+An inline route map SHALL show the figures of the route it draws — a statistics
+bar and, where the file carries elevation, a profile — and SHALL show neither
+where the file yields no route to measure. What those figures mean and what they
+are measured from is stated by the track-statistics capability; what this
+capability states is that an inline map shows them, and how.
 
 #### Scenario: An embedded file contains only areas
 
 - **WHEN** a note embeds a file whose geometry is entirely areas
-- **THEN** the inline map draws those areas and frames them, and shows no statistics bar and no elevation profile rather than reporting a zero-length route
+- **THEN** the inline map draws those areas and frames them, and shows no
+  statistics bar and no elevation profile rather than reporting a zero-length
+  route
 
 ### Requirement: Elevation profile and map hover are linked
 
@@ -115,7 +106,7 @@ When route markers are enabled, inline maps SHALL show distinct start and end sy
 
 ### Requirement: Host-note photos complement rather than modify the route
 
-An inline track map SHALL resolve supported photos from the note containing the embed, draw them using the photo-map behavior, and exclude them from route data and statistics. When the host note's own references change which photos it resolves to, the inline map SHALL redraw with the new set; an edit that does not change that set SHALL NOT cause a redraw.
+An inline track map SHALL resolve supported photos from the note containing the embed and draw them using the photo-map behavior; that they are excluded from route data and statistics is a property of photo points, stated by the photo-map-rendering capability. When the host note's own references change which photos it resolves to, the inline map SHALL redraw with the new set; an edit that does not change that set SHALL NOT cause a redraw.
 
 #### Scenario: Host note has one track and several photos
 
@@ -181,23 +172,19 @@ The elevation profile's vertical scale and its accessible description SHALL be d
 
 ### Requirement: Inline route maps can be switched off
 
-The reader SHALL be able to switch inline route maps off. With them off, this
-plugin SHALL claim no track extension at all, so an embed of a track file is the
-embed the host makes of it with no plugin installed, and SHALL release the
-extensions it had claimed rather than holding them inert — an extension this
-plugin is not drawing is one another plugin may own.
+Switched off under the shared policy in the feature-switches capability, which states what a switch takes away, what it keeps, and how it defaults. What follows is only what is specific to this feature.
 
-The setting SHALL default to on, so a reader who never opens it keeps the plugin
-they had. Switching it off SHALL take down the inline maps that are on screen,
-releasing each one's map and event resources the way closing the note does, so
-that no graphics context is left held by a feature that is off. Switching it on
-SHALL claim the extensions again, taking only those no other embed handler owns
-by then, and SHALL state where an already-rendered note has to be reopened for
-its embed to become a map.
+With them off, this plugin SHALL claim no track extension at all, so an embed of
+a track file is the embed the host makes of it with no plugin installed, and
+SHALL release the extensions it had claimed rather than holding them inert — an
+extension this plugin is not drawing is one another plugin may own.
 
-Everything an inline map is configured with SHALL be kept while the feature is
-off, and SHALL stay on screen where it is configured, so a reader can see what
-they will get back.
+Switching it off SHALL take down the inline maps that are on screen, releasing
+each one's map and event resources the way closing the note does, so that no
+graphics context is left held by a feature that is off. Switching it on SHALL
+claim the extensions again, taking only those no other embed handler owns by
+then, and SHALL state where an already-rendered note has to be reopened for its
+embed to become a map.
 
 #### Scenario: Inline maps are switched off
 

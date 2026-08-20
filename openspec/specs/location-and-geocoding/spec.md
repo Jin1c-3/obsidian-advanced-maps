@@ -50,7 +50,7 @@ The plugin SHALL parse supported full map links and coordinate text using provid
 
 ### Requirement: Place search respects provider contracts
 
-Place search SHALL support Nominatim without a key and Gaode with a Web-service key, normalize result coordinates to WGS-84, debounce typing, reject superseded responses, cache answers for the modal lifetime, and honor Nominatim's provider-wide request interval. Writing the chosen place into the note SHALL report its own failure rather than announcing a write that did not happen.
+Place search SHALL support Nominatim without a key and Gaode with a Web-service key, normalize result coordinates to WGS-84, debounce typing, reject superseded responses, and cache answers for the modal lifetime. The request interval it keeps to is the provider's, stated below, not this feature's. Writing the chosen place into the note SHALL report its own failure rather than announcing a write that did not happen.
 
 #### Scenario: User types several revisions quickly
 
@@ -71,6 +71,59 @@ Place search SHALL support Nominatim without a key and Gaode with a Web-service 
 
 - **WHEN** writing the chosen coordinate into the note fails
 - **THEN** the user is told the write failed instead of being shown the success notice, and the failure does not escape as an unhandled rejection
+
+### Requirement: Nominatim's usage policy is kept by every request
+
+Nominatim's usage policy SHALL be kept by every request this plugin sends to it,
+whichever feature sends it. Both halves belong to the provider rather than to one
+caller: requests SHALL identify the plugin with the supported user-agent header,
+and SHALL be spaced by at least the provider's published minimum interval.
+
+The interval SHALL be counted across the plugin as a whole and SHALL outlive any
+one caller, so that two features cannot each keep to it separately and together
+exceed it — a search box left open and a command bound to a hotkey draw on one
+budget. A request abandoned before it was sent SHALL NOT consume the interval it
+was waiting for.
+
+A provider the policy is not about SHALL NOT be delayed by it.
+
+#### Scenario: Two features ask in the same second
+
+- **WHEN** a reverse-geocode request is made within the interval of a place-search
+  request, or the other way round
+- **THEN** the second request waits out the remainder of the interval before it is
+  sent, rather than being sent because the feature sending it had not asked before
+
+#### Scenario: A request is superseded while it waits
+
+- **WHEN** a request waiting out the interval is superseded before it is sent
+- **THEN** it is abandoned without claiming the interval, and the request that
+  replaced it is not made to wait for one it never used
+
+### Requirement: A stored setting outside its own list is read as the default
+
+A setting whose value must be one of a fixed list SHALL be read as its default
+whenever the stored value is not on that list. What is on disk outlives the
+build that wrote it: a settings file may have been hand-edited, restored from a
+backup, or synced from a build that knows one more provider than the one reading
+it. The reader SHALL stand down onto the default rather than carry an
+unrecognized value into code entitled to assume the list.
+
+The correction SHALL be made in memory and SHALL NOT be written back, so that a
+value this build cannot name is still there for a build that can.
+
+#### Scenario: Stored provider is one this build does not know
+
+- **WHEN** the settings file names a search provider outside the supported list
+- **THEN** searching and reverse geocoding use the default provider and report
+  what they normally would, rather than the command failing with nothing shown
+
+#### Scenario: The unknown value is left where it was found
+
+- **WHEN** a setting has been read as its default because the stored value was
+  not on the list
+- **THEN** the settings file still holds what it held, and a later build that
+  recognizes the value reads it back unchanged
 
 ### Requirement: Gaode credentials follow the chosen storage policy
 
@@ -222,15 +275,12 @@ the note and the value that reached it.
 
 ### Requirement: Writing a clicked point into a note can be switched off
 
-The reader SHALL be able to switch off the map menu's offer to write a clicked
-coordinate into a note. With it off, that item SHALL NOT be added to the map's
-menu, and no other item on that menu SHALL move or change — the clicked
-coordinate is still read once for the items that remain.
+Switched off under the shared policy in the feature-switches capability, which states what a switch takes away, what it keeps, and how it defaults. What follows is only what is specific to this feature.
 
-The setting SHALL default to on, so a reader who never opens it keeps the plugin
-they had. Switching it SHALL reach maps that are already open, on the next menu
-opened rather than after a restart. Switching it off SHALL NOT change the
-coordinate property it would have written, which other features read and write.
+With it off, that item SHALL NOT be added to the map's menu, and no other item on
+that menu SHALL move or change — the clicked coordinate is still read once for the
+items that remain. The coordinate property it would have written SHALL be
+untouched, other features reading and writing it.
 
 #### Scenario: The item is switched off
 

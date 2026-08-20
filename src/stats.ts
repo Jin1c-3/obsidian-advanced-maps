@@ -464,12 +464,19 @@ export function elevationProfile(features: Features, samples = 160): ProfileSamp
 	return out;
 }
 
-/** Closest cumulative-distance sample; bounded linear scan, first match wins ties. */
-export function nearestByDistance(samples: ProfileSample[], targetD: number): number {
+/**
+ * The index of the lowest-cost sample; bounded linear scan, first match wins
+ * ties.
+ *
+ * The cost is whatever the caller measures, so "nearest" can be along the
+ * profile or across the map without the tie-breaking rule being written twice
+ * and drifting apart.
+ */
+function nearestBy(samples: ProfileSample[], cost: (sample: ProfileSample) => number): number {
 	let best = 0;
 	let bestDist = Infinity;
 	for (let i = 0; i < samples.length; i++) {
-		const dist = Math.abs(samples[i].d - targetD);
+		const dist = cost(samples[i]);
 		if (dist < bestDist) {
 			bestDist = dist;
 			best = i;
@@ -478,18 +485,16 @@ export function nearestByDistance(samples: ProfileSample[], targetD: number): nu
 	return best;
 }
 
+/** Closest cumulative-distance sample; bounded linear scan, first match wins ties. */
+export function nearestByDistance(samples: ProfileSample[], targetD: number): number {
+	return nearestBy(samples, (sample) => Math.abs(sample.d - targetD));
+}
+
 /** Closest WGS-84 sample by squared degree-space distance; first match wins ties. */
 export function nearestByPosition(samples: ProfileSample[], lng: number, lat: number): number {
-	let best = 0;
-	let bestDist = Infinity;
-	for (let i = 0; i < samples.length; i++) {
-		const dLng = samples[i].lng - lng;
-		const dLat = samples[i].lat - lat;
-		const dist = dLng * dLng + dLat * dLat;
-		if (dist < bestDist) {
-			bestDist = dist;
-			best = i;
-		}
-	}
-	return best;
+	return nearestBy(samples, (sample) => {
+		const dLng = sample.lng - lng;
+		const dLat = sample.lat - lat;
+		return dLng * dLng + dLat * dLat;
+	});
 }

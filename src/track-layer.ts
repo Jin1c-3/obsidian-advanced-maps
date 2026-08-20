@@ -52,7 +52,7 @@ import {
 	applyPhotoIcons,
 	disposePhotoImages,
 	drawTracks,
-	ensurePhotoImages,
+	reselectPhotoIcons,
 	fitTo,
 	FitControl,
 	FollowControl,
@@ -60,12 +60,13 @@ import {
 	MeasureControl,
 	photoIconSource,
 	removeTrackLayers,
+	resolveMarkerColor,
 	type LocateGuard,
 	type PhotoIconSource,
 } from './layers';
 import { customMapLabel, customMapUrl, customMaps, enabledBuiltins, externalMapUrl, resolveBuiltins } from './maplinks';
 import { PhotoModal } from './photo-modal';
-import { valueText, type Place } from './places';
+import { UNNAMED_PLACE, valueText, type Place } from './places';
 import { ExportPlacesModal, exportStem, type ExportSource } from './places-modal';
 import { iconOffsetExpression, spreadFactor, spreadPins, type SpreadPin, type SpreadPlan } from './spread';
 import { appendDetail, statsSummary, type PointedDetail } from './popup-rows';
@@ -565,41 +566,11 @@ export class TrackLayer {
 		});
 
 		this.wrap(view, 'destroyMap', (orig) => () => {
-			this.syncRevision++;
-			this.stopAdoptionWatcher();
-			this.createdMap = null;
-			this.adoptingInitialMap = false;
-			if (view.map) cancelPhotoImages(view.map);
-			// MapLibre listeners belong to the map, not to the wrapped view methods.
-			// Remove them before the native view tears the map down; on recreation,
-			// onMapCreated() registers one fresh set against the new instance.
-			this.mapEvents.clear();
-			// Before the controls: putting the tape away removes its own readout
-			// control and the listeners it put on this map.
-			this.measure?.dispose();
-			this.measure = null;
-			this.fitControl = null;
-			this.followControl = null;
-			this.measureControl = null;
-			this.interactionsBound = false;
-			this.handledClick = null;
-			this.handledHover = null;
-			this.shownPopup = null;
-			this.userMoved = false;
-			this.data = null;
-			this.photoIcons = [];
-			this.drawn = null;
-			this.markerFeatures = null;
-			this.spread = null;
-			// The layer this was set on goes with the map, so there is nothing to
-			// put back — only the memory of having set it.
-			this.spreadApplied = null;
-			this.appliedSystem = null;
-			this.pendingFocus = null;
-			this.pendingPopup = null;
-			this.held = null;
-			this.locate?.restore();
-			this.locate = null;
+			// Nothing is handed back or taken off here, unlike `detach()`: the map
+			// is going, and everything this layer put on it goes with it. On
+			// recreation, onMapCreated() builds a fresh set against the new map.
+			this.releaseMap();
+			this.forgetMap();
 			orig.call(view);
 		});
 
@@ -765,8 +736,10 @@ export class TrackLayer {
 			}
 			out.push({
 				// Never nameless: an empty property falls back to the file name, and a
-				// file name is the one thing every row has.
-				name: name || fallback || t('places.export.defaultName'),
+				// file name is the one thing every row has. The last resort is a
+				// constant rather than a translated string — this is file content, not
+				// interface text; see `UNNAMED_PLACE`.
+				name: name || fallback || UNNAMED_PLACE,
 				description: '',
 				lat,
 				lng,
@@ -812,10 +785,72 @@ export class TrackLayer {
 		).open();
 	}
 
+	/**
+	 * Let go of everything this layer put on one map.
+	 *
+	 * The half of teardown that touches the map, shared by the two ways a map
+	 * goes: the native view destroying it — this layer lives on and adopts the
+	 * next one — and this layer detaching from a view that may outlive it.
+	 *
+	 * Order is the content of it. MapLibre listeners belong to the map, not to
+	 * the wrapped view methods, and layer-scoped ones survive `removeLayer()`, so
+	 * they go before anything recreates those layer ids. The tape goes before the
+	 * controls, because putting it away removes its own readout — which is drawn
+	 * inside the measure control — and the listeners it put on this map.
+	 */
+	private releaseMap(): void {
+		this.syncRevision++;
+		this.stopAdoptionWatcher();
+		this.createdMap = null;
+		this.adoptingInitialMap = false;
+		// Async photo decodes need their own cancellation: the map may remain alive.
+		if (this.view.map) cancelPhotoImages(this.view.map);
+		this.mapEvents.clear();
+		this.measure?.dispose();
+		this.measure = null;
+	}
+
+	/**
+	 * Forget everything this layer knew about one map.
+	 *
+	 * The half of teardown that touches no map, so a caller may do its own
+	 * map work in between — `detach()` hands native things back and takes owned
+	 * things off, all of which read fields cleared here and so must run first.
+	 *
+	 * One list rather than two. These were written out in both teardowns and kept
+	 * in step by hand: sixteen fields agreed, eight had drifted apart, and every
+	 * one of those was invisible until the one moment it mattered.
+	 */
+	private forgetMap(): void {
+		this.fitControl = null;
+		this.followControl = null;
+		this.measureControl = null;
+		this.interactionsBound = false;
+		this.handledClick = null;
+		this.handledHover = null;
+		this.shownPopup = null;
+		this.pointed = null;
+		this.userMoved = false;
+		this.data = null;
+		this.photoIcons = [];
+		this.drawn = null;
+		this.markerFeatures = null;
+		this.spread = null;
+		// Only the memory of having set it: where the layer survives, `detach()`
+		// has already handed the offset back through `restoreSpread()`, and where
+		// it does not, the layer goes with the map.
+		this.spreadApplied = null;
+		this.appliedSystem = null;
+		this.pendingFocus = null;
+		this.pendingPopup = null;
+		this.held = null;
+		this.locate?.restore();
+		this.locate = null;
+	}
+
 	detach(): void {
 		if (this.detached) return;
 		this.detached = true;
-		this.syncRevision++;
 		// A pick belongs to one map on screen. This one is going, and the wrappers
 		// that read this are about to be put back.
 		this.chosen = null;
@@ -823,44 +858,26 @@ export class TrackLayer {
 		this.retireOffer = null;
 		const view = this.view;
 
-		// A native Bases map can stay alive while this plugin instance goes away.
-		// Layer-scoped MapLibre listeners survive removeLayer(), so remove them
-		// before a later plugin instance recreates the same layer ids. Async photo
-		// decodes need their own cancellation because the map remains alive.
-		this.mapEvents.clear();
-		this.measure?.dispose();
-		this.measure = null;
+		// A native Bases map can stay alive while this plugin instance goes away,
+		// so everything this layer put on it has to come back off by hand.
+		this.releaseMap();
 		const map = view.map;
-		if (map) cancelPhotoImages(map);
 		this.removeLayers();
 		// Photo thumbnails are intentionally retained by ordinary refreshes. On
 		// terminal detach, remove them only after every referencing layer is gone.
 		if (map) disposePhotoImages(map);
-		// A native layer, so this one is handed back rather than removed.
+		// A native layer, so this one is handed back rather than removed. Reads
+		// `spreadApplied`, which is why it runs before `forgetMap()` clears it.
 		this.restoreSpread();
-		this.spread = null;
 		for (const control of [this.fitControl, this.followControl, this.measureControl]) {
 			if (control && view.map) this.removeControl(view.map, control);
 		}
-		this.fitControl = null;
-		this.followControl = null;
-		this.measureControl = null;
 
 		for (const restore of this.restorers.splice(0)) restore();
 		delete view.__advancedMapsLayer;
 		this.origShowPopup = null;
-		this.locate?.restore();
-		this.locate = null;
-		this.interactionsBound = false;
-		this.handledClick = null;
-		this.handledHover = null;
-		this.shownPopup = null;
-		this.pointed = null;
-		this.pendingFocus = null;
-		this.pendingPopup = null;
-		this.held = null;
-		this.stopAdoptionWatcher();
-		this.createdMap = null;
+		// Last, because everything above reads the controls and the spread it clears.
+		this.forgetMap();
 
 		this.plugin.layers.delete(this);
 	}
@@ -1273,11 +1290,7 @@ export class TrackLayer {
 	}
 
 	private resolve(color: string): string {
-		try {
-			return this.view.markerManager.resolveColor(color);
-		} catch {
-			return color;
-		}
+		return resolveMarkerColor(this.view.markerManager, color);
 	}
 
 	/**
@@ -1479,12 +1492,16 @@ export class TrackLayer {
 		this.shownPopup = null;
 
 		const system = this.system();
-		this.data = this.build(items, system);
 
-		// Skip only expensive worker upload; paint/framing always run, and a style
-		// swap forces upload because it removed the source.
+		// Skip both the rebuild and the expensive worker upload; paint/framing
+		// always run, and a style swap forces upload because it removed the
+		// source. The signature states every input `build()` reads — system,
+		// photo datum, and each item's colour and track paths with their mtimes,
+		// in order — so an unchanged one means an identical feature collection,
+		// and the one already in hand is that collection.
 		const signature = this.signature(items, system);
-		if (signature !== this.drawn || !map.getSource(SRC)) {
+		if (signature !== this.drawn || !this.data || !map.getSource(SRC)) {
+			this.data = this.build(items, system);
 			if (!drawTracks(map, this.data)) return;
 			this.drawn = signature;
 		}
@@ -1541,13 +1558,7 @@ export class TrackLayer {
 
 	/** Camera movement reselects from cached candidates without walking base rows again. */
 	private reselectPhotoIcons(): void {
-		const map = this.view.map;
-		// Deliberately not `applyPhotoIcons`: with thumbnails off, the pass that
-		// built these candidates already released the images, so every camera move
-		// would re-release nothing.
-		if (!map || this.photoIcons.length === 0) return;
-		if (!this.plugin.settings.photoThumbnails) return;
-		ensurePhotoImages(map, this.photoIcons);
+		reselectPhotoIcons(this.view.map, this.photoIcons, this.plugin.settings.photoThumbnails);
 	}
 
 	/* ---- interaction ---- */

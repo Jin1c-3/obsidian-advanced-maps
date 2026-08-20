@@ -6,6 +6,7 @@ import { TrackLayer } from '../src/track-layer';
 import type AdvancedMapsPlugin from '../src/main';
 import type { TrackRecord } from '../src/track-cache';
 import type { OfflineBasemap } from '../src/basemap';
+import { UNNAMED_PLACE } from '../src/places';
 import type { BasesMapView, MapLibreMap, NativeMapsPlugin, NativeTileSet } from '../src/types/obsidian-internals';
 
 function mapAt(
@@ -190,6 +191,64 @@ describe('native map lifecycle', () => {
 		host.settings.follow = false;
 		host.settings.followActiveNote = true;
 		expect(new TrackLayer(host, view(mapAt()), true).isFollowing()).toBe(false);
+	});
+
+	it('takes its own controls off a map that outlives it', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const map = mapAt();
+		const surviving = view(map);
+		const layer = new TrackLayer(plugin(), surviving, true).attach();
+		layer.onMapCreated(map, 'adopted');
+		expect(map.controls).toHaveLength(3);
+
+		layer.detach();
+		// The ordering this pins: detach reads the three control fields to remove
+		// them and only then forgets them. Forgetting first leaves all three on a
+		// native map that is still on screen, with nothing left holding them.
+		expect(map.controls).toHaveLength(0);
+	});
+
+	it('leaves a surviving map one set of controls across a detach and a re-attach', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const map = mapAt();
+		const surviving = view(map);
+		const first = new TrackLayer(plugin(), surviving, true).attach();
+		first.onMapCreated(map, 'adopted');
+		first.detach();
+
+		const second = new TrackLayer(plugin(), surviving, true).attach();
+		second.onMapCreated(map, 'adopted');
+		expect(map.controls).toHaveLength(3);
+	});
+
+	it('ignores a second detach', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const map = mapAt();
+		const surviving = view(map);
+		const layer = new TrackLayer(plugin(), surviving, true).attach();
+		layer.onMapCreated(map, 'adopted');
+		layer.detach();
+		expect(() => layer.detach()).not.toThrow();
+		expect(map.controls).toHaveLength(0);
+	});
+
+	it('forgets a destroyed map so the next one is set up from nothing', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const first = mapAt();
+		const adopted = view(first);
+		const layer = new TrackLayer(plugin(), adopted, true).attach();
+		vi.spyOn(layer, 'reproject').mockResolvedValue();
+		layer.onMapCreated(first, 'adopted');
+		adopted.destroyMap();
+
+		// The same map object back again. Were the destroyed map still remembered,
+		// `onMapCreated` would answer false and set nothing up at all.
+		//
+		// Deliberately not asserting the control count here: unlike `detach()`,
+		// this teardown does not take controls off, because the native view is
+		// destroying the map they live on. The stub's `destroyMap` cannot model
+		// that, so the count is the stub's, not the plugin's.
+		expect(layer.onMapCreated(first, 'adopted')).toBe(true);
 	});
 
 	it('re-adopts a surviving plugin-shifted map without converting its camera twice', () => {
@@ -664,6 +723,22 @@ describe('the places a map can export', () => {
 
 		const empty = new TrackLayer(plugin(), withMarkers([])).attach();
 		expect((empty as unknown as Exporter).mapPlaces('file')).toEqual([]);
+	});
+
+	it('names a place with no file and no property without asking the interface', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		// A marker carrying neither a file nor a displayed value still has to be
+		// called something, and that something is written into an exported file.
+		const v = withMarkers([{ entry: {}, coordinates: [30.4, 120.4] }]);
+		const layer = new TrackLayer(plugin(), v).attach();
+		const names = (layer as unknown as Exporter).mapPlaces('file').map((p) => p.name);
+
+		expect(names).toEqual([UNNAMED_PLACE]);
+		// The point of the constant: file content must not change with the reader's
+		// language the way interface text does. Both translations of the string it
+		// used to reach for are named here, so restoring either fails this.
+		expect(names[0]).not.toBe('places');
+		expect(names[0]).not.toBe('地点');
 	});
 
 	it('skips a marker whose coordinate is not a pair of numbers', () => {

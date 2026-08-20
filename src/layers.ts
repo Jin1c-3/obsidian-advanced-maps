@@ -26,7 +26,29 @@ import type { ExifThumbnail } from './exif';
 import { t } from './i18n';
 import { override } from './map-events';
 import { photoImageId, projectedFeatures, type TrackRecord } from './track-cache';
-import type { LngLatBounds, LocateControl, MapControl, MapLibreMap } from './types/obsidian-internals';
+import type { LngLatBounds, LocateControl, MapControl, MapLibreMap, MarkerManager } from './types/obsidian-internals';
+
+/**
+ * A theme colour through the host's own resolver, or the CSS text unchanged.
+ *
+ * `resolveColor` is an undocumented internal, so it is treated as optional the
+ * way every other one is: a manager that has lost the method, or throws from
+ * it, gets the colour it was handed instead of taking the map down. Shared
+ * because both map owners ask the same question and one of them used to ask it
+ * bare — a guard that only one of two callers has is a guard that reports the
+ * host changed under exactly one kind of map.
+ *
+ * The CSS text is a usable answer on its own: MapLibre resolves a plain colour
+ * itself, and a `var(--…)` it cannot read simply draws the layer's default.
+ */
+export function resolveMarkerColor(manager: MarkerManager | null | undefined, color: string): string {
+	try {
+		if (typeof manager?.resolveColor !== 'function') return color;
+		return manager.resolveColor(color);
+	} catch {
+		return color;
+	}
+}
 
 /** Shared native-looking MapLibre control button. */
 class ControlButton implements MapControl {
@@ -451,25 +473,80 @@ function addTrackLayers(map: MapLibreMap): void {
  * not an error — `style.load` fires next and the caller draws again — which is
  * why it is a return value rather than a throw.
  */
-export function drawTracks(map: MapLibreMap, data: FeatureCollection): boolean {
+/**
+ * Take one owned source and its layers off a map, in the one order that works.
+ *
+ * Stated once for every group this plugin owns, because the order is the whole
+ * content of it and each group would otherwise restate it: layers before their
+ * source, and images last of all — `removeImage` throws while a live layer still
+ * references the image, and the layers that could are the ones just removed.
+ *
+ * Silent on failure by design: every caller reaches this while tearing down, and
+ * a style already gone is the ordinary way that happens, not a fault.
+ */
+export function removeGroup(
+	map: MapLibreMap,
+	layerIds: readonly string[],
+	srcIds: readonly string[],
+	imageIds: readonly string[] = []
+): void {
+	if (!map.getStyle) return;
 	try {
-		const source = map.getSource(SRC);
+		for (const id of layerIds) if (map.getLayer(id)) map.removeLayer(id);
+		for (const id of srcIds) if (map.getSource(id)) map.removeSource(id);
+		for (const id of imageIds) if (map.hasImage(id)) map.removeImage(id);
+	} catch {
+		/* style already torn down */
+	}
+}
+
+/**
+ * Put one owned group on a map, or hand new data to the one already there.
+ *
+ * The rollback is the reason this is shared rather than written per group:
+ * `addLayer` can lose a race with a style transition after `addSource`, or after
+ * only some of the layers. A source left behind with an incomplete set of layers
+ * makes every later call take the `setData` branch, so the missing layers can
+ * never come back — the group has to go back to one known state, and the next
+ * style event or sync rebuilds it from nothing.
+ *
+ * Answers whether the group is on the map, so a caller that draws into it can
+ * stand down rather than address layers that are not there.
+ */
+export function drawGroup(
+	map: MapLibreMap,
+	srcId: string,
+	data: FeatureCollection,
+	addLayers: () => void,
+	rollback: () => void,
+	label: string
+): boolean {
+	try {
+		const source = map.getSource(srcId);
 		if (source) source.setData(data);
 		else {
-			map.addSource(SRC, { type: 'geojson', data });
-			addTrackLayers(map);
+			map.addSource(srcId, { type: 'geojson', data });
+			addLayers();
 		}
 		return true;
 	} catch (e) {
-		// `addLayer` can lose a race with a style transition after addSource (or
-		// after only some of the seven layers). Leaving that prefix behind makes the
-		// next call take the setData-only branch forever, so the missing layers can
-		// never recover. Roll the whole owned group back to one known state; the
-		// next style event/sync then rebuilds it from scratch.
-		removeTrackLayers(map);
-		console.warn('Advanced Maps: deferring track layers —', e instanceof Error ? e.message : e);
+		rollback();
+		console.warn(`Advanced Maps: deferring ${label} —`, e instanceof Error ? e.message : e);
 		return false;
 	}
+}
+
+export function drawTracks(map: MapLibreMap, data: FeatureCollection): boolean {
+	return drawGroup(
+		map,
+		SRC,
+		data,
+		() => addTrackLayers(map),
+		// The whole group, images included: this is the one rollback that has
+		// icons to give back.
+		() => removeTrackLayers(map),
+		'track layers'
+	);
 }
 
 /** `animate: false` because this is a jump to a new subject, not a move around one. */
@@ -478,30 +555,14 @@ export function fitTo(map: MapLibreMap, bounds: LngLatBounds, padding: number, m
 }
 
 export function removeTrackLayers(map: MapLibreMap): void {
-	if (!map.getStyle) return;
-	try {
-		for (const id of [
-			AREA_LAYER,
-			LINE_LAYER,
-			ARROW_LAYER,
-			POINT_LAYER,
-			ENDPOINT_LAYER,
-			PHOTO_DOT_LAYER,
-			PHOTO_LAYER,
-		]) {
-			if (map.getLayer(id)) map.removeLayer(id);
-		}
-		if (map.getSource(SRC)) map.removeSource(SRC);
-		// Layers first, images second: removeImage on an image a live layer still
-		// references throws, and every layer that could reference one of these
-		// three has just been removed above.
-		for (const id of [START_ICON, END_ICON, ARROW_ICON]) {
-			if (map.hasImage(id)) map.removeImage(id);
-		}
-		// Refresh removes layers but keeps decoded photo images for the immediate redraw.
-	} catch {
-		/* style already torn down */
-	}
+	// The three route icons go with the layers; decoded photo images deliberately
+	// do not, so a refresh can redraw them without decoding again.
+	removeGroup(
+		map,
+		[AREA_LAYER, LINE_LAYER, ARROW_LAYER, POINT_LAYER, ENDPOINT_LAYER, PHOTO_DOT_LAYER, PHOTO_LAYER],
+		[SRC],
+		[START_ICON, END_ICON, ARROW_ICON]
+	);
 }
 
 /* ---- the measuring tape ---- Its own source and layers, drawn over everything else while it is out. */
@@ -574,35 +635,22 @@ function measureLayerSpecs(): unknown[] {
  * it: `style.load` fires next and the tool draws again.
  */
 export function drawMeasure(map: MapLibreMap, data: FeatureCollection): boolean {
-	try {
-		const source = map.getSource(MEASURE_SRC);
-		if (source) source.setData(data);
-		else {
-			map.addSource(MEASURE_SRC, { type: 'geojson', data });
-			// No `before`: a tape is drawn over everything, native pins included,
-			// for as long as it is out.
+	return drawGroup(
+		map,
+		MEASURE_SRC,
+		data,
+		// No `before`: a tape is drawn over everything, native pins included, for
+		// as long as it is out.
+		() => {
 			for (const spec of measureLayerSpecs()) map.addLayer(spec);
-		}
-		return true;
-	} catch (e) {
-		// Roll the whole group back rather than leave a source with only some of
-		// its layers, which would take the setData-only branch forever after.
-		removeMeasureLayers(map);
-		console.warn('Advanced Maps: deferring the measuring tape —', e instanceof Error ? e.message : e);
-		return false;
-	}
+		},
+		() => removeMeasureLayers(map),
+		'the measuring tape'
+	);
 }
 
 export function removeMeasureLayers(map: MapLibreMap): void {
-	if (!map.getStyle) return;
-	try {
-		for (const id of [MEASURE_SNAP_LAYER, MEASURE_POINT_LAYER, MEASURE_DRAFT_LAYER, MEASURE_LINE_LAYER]) {
-			if (map.getLayer(id)) map.removeLayer(id);
-		}
-		if (map.getSource(MEASURE_SRC)) map.removeSource(MEASURE_SRC);
-	} catch {
-		/* style already torn down */
-	}
+	removeGroup(map, [MEASURE_SNAP_LAYER, MEASURE_POINT_LAYER, MEASURE_DRAFT_LAYER, MEASURE_LINE_LAYER], [MEASURE_SRC]);
 }
 
 /** Apply paint and visibility every sync so settings-only changes reach live maps. */
@@ -1002,6 +1050,24 @@ export function applyPhotoIcons(
 		disposePhotoImages(map);
 		return;
 	}
+	ensurePhotoImages(map, records);
+}
+
+/**
+ * The same candidates admitted again after the camera moved.
+ *
+ * Deliberately not `applyPhotoIcons`: with thumbnails off, the pass that built
+ * these candidates already released the images, so every camera move would
+ * re-release nothing. Stated once beside that function, because a base map and
+ * an inline embed reselect on the same events and must not diverge on it.
+ */
+export function reselectPhotoIcons(
+	map: MapLibreMap | null | undefined,
+	records: readonly PhotoIconSource[],
+	enabled: boolean
+): void {
+	if (!map || records.length === 0) return;
+	if (!enabled) return;
 	ensurePhotoImages(map, records);
 }
 

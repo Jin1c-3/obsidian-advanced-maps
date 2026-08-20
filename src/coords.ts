@@ -199,9 +199,20 @@ function numberish(value: unknown): number {
  */
 export const COORD_DIGITS = 6;
 
+/**
+ * One coordinate at the precision above.
+ *
+ * Exported beside the constant rather than re-spelled per writer: an exported
+ * place file and an external map URL round the same way because they call the
+ * same function, not because two copies happen to agree today.
+ */
+export function formatCoord(n: number): string {
+	return n.toFixed(COORD_DIGITS);
+}
+
 /** Canonical persisted coordinate shape: `lat,lng`, no space. */
 export function formatLatLng(lat: number, lng: number): string {
-	return `${lat.toFixed(COORD_DIGITS)},${lng.toFixed(COORD_DIGITS)}`;
+	return `${formatCoord(lat)},${formatCoord(lng)}`;
 }
 
 /**

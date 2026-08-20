@@ -1,4 +1,5 @@
-/* Pure forward/reverse request builders and response parsers; callers own network I/O. */
+/* Forward/reverse request builders, response parsers, and provider rate policy;
+ * callers own network I/O. */
 
 import { wgs2gcj, type CoordSystem } from './coords';
 
@@ -39,6 +40,67 @@ const LIMIT = 10;
  * two copies are exactly the kind of drift this file otherwise has no seam for.
  */
 const NOMINATIM_USER_AGENT = 'obsidian-advanced-maps (https://github.com/Jin1c-3/obsidian-advanced-maps)';
+
+/** Nominatim's public service asks clients to stay at or below one request/second. */
+export const NOMINATIM_INTERVAL_MS = 1000;
+
+/**
+ * When each provider may next be asked.
+ *
+ * Module-wide rather than per caller: a rate limit is a property of the
+ * provider, not of whichever feature happens to be asking, so closing and
+ * reopening the search box does not reset it and the search box and the
+ * reverse-geocode command draw on one budget instead of each keeping to a limit
+ * the other is free to exceed.
+ */
+const nextAllowedAt = new Map<GeocodeProvider, number>();
+
+/**
+ * The turn the last caller took, for each provider.
+ *
+ * Callers wait for the provider's slot one after another rather than all at
+ * once. Reading `nextAllowedAt` and writing it back straddles an `await`, so
+ * two callers that overlap there both read the same free-at time, sleep to the
+ * same instant, and send together — one budget kept twice over, which is the
+ * burst the interval exists to prevent. It takes only two features asking at
+ * once to reach: the search box has a query in flight when the
+ * reverse-geocode command is pressed.
+ */
+const turns = new Map<GeocodeProvider, Promise<void>>();
+
+/**
+ * Wait out the provider's rate limit, and claim the slot that follows.
+ *
+ * `alive` is the caller's "is this request still wanted?" answer, asked after
+ * the wait and before the slot is claimed — a superseded keystroke must not
+ * consume a slot the request that replaced it is about to need. Answers whether
+ * the caller may proceed; false only ever means `alive` said no.
+ *
+ * A caller that stands down advances nothing, so whoever is queued behind it
+ * finds the slot still free and goes at once rather than waiting out an
+ * interval nobody spent.
+ */
+export async function awaitRateLimit(provider: GeocodeProvider, alive?: () => boolean): Promise<boolean> {
+	const interval = PROVIDERS[provider].minIntervalMs;
+	if (interval <= 0) return true;
+	let proceed = false;
+	const turn = (turns.get(provider) ?? Promise.resolve()).then(async () => {
+		const wait = Math.max(0, (nextAllowedAt.get(provider) ?? 0) - Date.now());
+		if (wait > 0) await new Promise((resolve) => window.setTimeout(resolve, wait));
+		if (alive && !alive()) return;
+		nextAllowedAt.set(provider, Date.now() + interval);
+		proceed = true;
+	});
+	// The queue is handed the settled turn rather than the turn itself: `alive`
+	// belongs to the caller and may throw, and a rejection left in this map would
+	// strand every request that queued behind it. The caller still sees its own.
+	turns.set(
+		provider,
+		turn.catch(() => undefined)
+	);
+	await turn;
+	return proceed;
+}
 
 /** Identify Nominatim requests with User-Agent only; Electron blocks an explicit Referer. */
 export function nominatimRequest(query: string, language: string): GeocodeRequest {
@@ -217,17 +279,63 @@ export function parseAmapReverse(body: unknown): string {
 
 /* ---- routing ---- */
 
+/**
+ * Everything one provider answers for, in one place.
+ *
+ * A table rather than a `provider === 'amap' ? … : …` per question. Those read
+ * as a choice between two providers but are really "Gaode, or else whatever is
+ * left", so a third entry in `GEOCODE_PROVIDERS` compiled clean and had its
+ * queries sent to Nominatim's host and read by Nominatim's parser. Written this
+ * way, the same addition is a type error naming exactly what is missing, and
+ * everything a provider needs — including how fast it may be asked — is on one
+ * screen instead of spread over five functions and another module.
+ */
+interface ProviderContract {
+	request(query: string, options: RequestOptions): GeocodeRequest;
+	parse(body: unknown): Place[];
+	reverseRequest(lat: number, lng: number, options: RequestOptions): GeocodeRequest;
+	parseReverse(body: unknown): string;
+	/** Whether the provider cannot be used until something is configured. */
+	needsKey: boolean;
+	/**
+	 * Least time between two requests, from the provider's own usage policy; 0
+	 * where it publishes none. Counted across the plugin rather than per caller,
+	 * so two features cannot each keep to it and together exceed it.
+	 */
+	minIntervalMs: number;
+}
+
+interface RequestOptions {
+	key: string;
+	language: string;
+}
+
+const PROVIDERS: Record<GeocodeProvider, ProviderContract> = {
+	nominatim: {
+		request: (query, options) => nominatimRequest(query, options.language),
+		parse: parseNominatim,
+		reverseRequest: (lat, lng, options) => nominatimReverseRequest(lat, lng, options.language),
+		parseReverse: parseNominatimReverse,
+		needsKey: false,
+		minIntervalMs: NOMINATIM_INTERVAL_MS,
+	},
+	amap: {
+		request: (query, options) => amapRequest(query, options.key),
+		parse: parseAmap,
+		reverseRequest: (lat, lng, options) => amapReverseRequest(lat, lng, options.key),
+		parseReverse: parseAmapReverse,
+		needsKey: true,
+		minIntervalMs: 0,
+	},
+};
+
 /** The request for whichever provider is configured. */
-export function geocodeRequest(
-	provider: GeocodeProvider,
-	query: string,
-	options: { key: string; language: string }
-): GeocodeRequest {
-	return provider === 'amap' ? amapRequest(query, options.key) : nominatimRequest(query, options.language);
+export function geocodeRequest(provider: GeocodeProvider, query: string, options: RequestOptions): GeocodeRequest {
+	return PROVIDERS[provider].request(query, options);
 }
 
 export function parseGeocode(provider: GeocodeProvider, body: unknown): Place[] {
-	return provider === 'amap' ? parseAmap(body) : parseNominatim(body);
+	return PROVIDERS[provider].parse(body);
 }
 
 /** The reverse request for whichever provider is configured. Always WGS-84 in. */
@@ -235,18 +343,16 @@ export function reverseRequest(
 	provider: GeocodeProvider,
 	lat: number,
 	lng: number,
-	options: { key: string; language: string }
+	options: RequestOptions
 ): GeocodeRequest {
-	return provider === 'amap'
-		? amapReverseRequest(lat, lng, options.key)
-		: nominatimReverseRequest(lat, lng, options.language);
+	return PROVIDERS[provider].reverseRequest(lat, lng, options);
 }
 
 export function parseReverse(provider: GeocodeProvider, body: unknown): string {
-	return provider === 'amap' ? parseAmapReverse(body) : parseNominatimReverse(body);
+	return PROVIDERS[provider].parseReverse(body);
 }
 
-/** 高德 is the one provider that cannot be used until something is configured. */
+/** Whether this provider cannot be used until something is configured. */
 export function needsKey(provider: GeocodeProvider, key: string): boolean {
-	return provider === 'amap' && key.trim() === '';
+	return PROVIDERS[provider].needsKey && key.trim() === '';
 }
