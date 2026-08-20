@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+	activePacks,
 	applyOfflineTiles,
 	boundOfflineSource,
 	localResourcePrefix,
@@ -642,5 +643,28 @@ describe('restyleForBasemap', () => {
 		const { view, updateMapStyle } = harness({ map: {} as unknown as MapLibreMap });
 		expect(restyleForBasemap(view)).toBe(true);
 		expect(updateMapStyle).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('activePacks', () => {
+	const ROWS = [
+		{ name: 'City', path: 'a/{z}/{x}/{y}.png', minZoom: 0, maxZoom: 16 },
+		{ name: 'Trail', path: 'b/{z}/{x}/{y}.png', minZoom: 4, maxZoom: 17 },
+	];
+
+	it('answers with the usable packs while the feature is on', () => {
+		expect(activePacks(true, ROWS).map((pack) => pack.name)).toEqual(['City', 'Trail']);
+	});
+
+	it('answers with none at all while the feature is off, packs configured or not', () => {
+		expect(activePacks(false, ROWS)).toEqual([]);
+		expect(activePacks(false, [])).toEqual([]);
+	});
+
+	it('still drops what no map can be pointed at while the feature is on', () => {
+		expect(activePacks(true, [{ name: '', path: 'a/{z}/{x}/{y}.png' }, ...ROWS]).map((p) => p.name)).toEqual([
+			'City',
+			'Trail',
+		]);
 	});
 });

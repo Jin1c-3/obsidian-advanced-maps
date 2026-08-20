@@ -194,6 +194,20 @@ export function tilesProblem(template: string): TilesProblem | null {
 	return TILE_PLACEHOLDERS.every((forms) => forms.some((form) => text.includes(form))) ? null : 'placeholders';
 }
 
+/**
+ * The packs a map can be pointed at right now: the named, unique rows above —
+ * and none at all while offline basemaps are switched off.
+ *
+ * The one gate the whole feature passes through. What draws a background, what
+ * offers one, what resolves the default and what the host's own control is shown
+ * all ask this, so "off" is answered once rather than remembered in five places.
+ * The settings pane is the exception by design: it reads the stored rows, which
+ * is why a switched-off feature's packs are still on screen.
+ */
+export function activePacks(on: boolean, value: unknown): TilePack[] {
+	return on ? tilePacks(value) : [];
+}
+
 /** Everything one settings row can be wrong about: the two that keep it out of
  *  `tilePacks` entirely, and then what is wrong with its template. */
 export type PackProblem = TilesProblem | 'unnamed' | 'duplicate';

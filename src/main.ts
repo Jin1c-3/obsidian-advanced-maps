@@ -14,6 +14,7 @@ import {
 } from 'obsidian';
 import type { CachedMetadata, Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
 import {
+	activePacks,
 	DEFAULT_BACKGROUND,
 	findPack,
 	localResourcePrefix,
@@ -21,7 +22,6 @@ import {
 	packBackgroundId,
 	packBackgroundName,
 	packBasemap,
-	tilePacks,
 	tileSetLabel,
 	vaultBasePath,
 	type OfflineBasemap,
@@ -29,7 +29,7 @@ import {
 } from './basemap';
 import { FOCUS_RETRY_MS, FOCUS_TRIES, NATIVE_MAPS_ID, PHOTO_EXTS, TRACK_EXTS } from './constants';
 import { formatLatLng, parseLatLng } from './coords';
-import { TrackEmbed } from './embed';
+import { claimableExtensions, TrackEmbed } from './embed';
 import { t } from './i18n';
 import { GeocodeError, needsKey, parseReverse, reverseRequest } from './geocode';
 import { LinkModal } from './link-modal';
@@ -52,6 +52,7 @@ import { nativeBehind, ownedBy, stamp, type RegistrationOwner } from './registra
 import { PlaceSearchModal } from './search-modal';
 import {
 	AdvancedMapsSettingTab,
+	basemapStartsOn,
 	DEFAULT_SETTINGS,
 	dropLegacyBasemap,
 	isExcluded,
@@ -62,7 +63,7 @@ import {
 import { duplicateStatsName, formatDistance, hasStats, statsProperties, trackStats } from './stats';
 import { TrackCache, type TrackRecord } from './track-cache';
 import { TrackLayer, type FocusTarget } from './track-layer';
-import { appendTrackOptions, type BackgroundChoice } from './view-options';
+import { appendTrackOptions, type BackgroundChoice, type BackgroundPicker } from './view-options';
 import type {
 	BasesMapView,
 	BasesViewFactory,
@@ -194,11 +195,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		void this.photoIndex.flush();
 		this.unpatchMapsView();
 		// Explicitly release each embed's MapLibre/WebGL resources.
-		for (const embed of [...this.embeds]) embed.unload();
-		const registry = this.app.embedRegistry;
-		if (registry && this.ownedExtensions.length > 0) {
-			registry.unregisterExtensions(this.ownedExtensions);
-		}
+		this.dropInlineMaps();
 	}
 
 	/* ---- patching the built-in view ---- */
@@ -239,9 +236,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 		if (typeof nativeOptions === 'function') {
 			const options: BasesViewOptionsFn = () =>
-				owner.alive
-					? appendTrackOptions(nativeOptions(), this.backgroundChoices(), this.namedButGone())
-					: nativeOptions();
+				owner.alive ? appendTrackOptions(nativeOptions(), this.backgroundPicker()) : nativeOptions();
 			stamp(options, nativeOptions, owner);
 			entry.options = options;
 		}
@@ -376,9 +371,18 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	/* ---- basemaps already on disk ---- */
 
-	/** Every pack the reader has configured, in the order they configured them. */
+	/**
+	 * Every pack the reader has configured, in the order they configured them —
+	 * and none at all while offline basemaps are switched off.
+	 *
+	 * The one gate for nearly the whole feature: the default background, the
+	 * choices a view is offered, the substitution and what the host's control is
+	 * shown all ask this method which packs there are. What does not ask it is the
+	 * settings pane, which reads the stored rows directly, so the packs stay on
+	 * screen while the feature is off.
+	 */
 	tilePacks(): TilePack[] {
-		return tilePacks(this.settings.tilePacks);
+		return activePacks(this.settings.offlineBasemap, this.settings.tilePacks);
 	}
 
 	/**
@@ -392,6 +396,17 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// not on an id nothing answers to.
 		if (typeof name !== 'string' || findPack(this.tilePacks(), name) === null) return DEFAULT_BACKGROUND;
 		return packBackgroundId(name);
+	}
+
+	/**
+	 * What a map's options offer as its background, or null while offline
+	 * basemaps are switched off — where a map is offered no background of this
+	 * plugin's at all, not even the entry standing for the native one, because
+	 * that entry only means something beside a pack.
+	 */
+	backgroundPicker(): BackgroundPicker | null {
+		if (!this.settings.offlineBasemap) return null;
+		return { backgrounds: this.backgroundChoices(), missing: this.namedButGone() };
 	}
 
 	/**
@@ -567,14 +582,25 @@ export default class AdvancedMapsPlugin extends Plugin {
 		return out;
 	}
 
+	/**
+	 * Claim the track extensions, if inline maps are on and the host has a
+	 * registry to claim them in.
+	 *
+	 * The claim is the only gate this feature has: the host consults its registry
+	 * when it builds an embed and asks this plugin nothing at that moment, so
+	 * "off" can only mean an extension this plugin never took.
+	 */
 	private registerTrackEmbeds(): void {
+		if (!this.settings.inlineMaps) return;
 		const registry = this.app.embedRegistry;
 		if (!registry) {
 			console.warn('Advanced Maps: embed registry unavailable, ![[track.gpx]] embeds are disabled.');
 			return;
 		}
-		// Leave anything another plugin already owns alone, so both can coexist.
-		this.ownedExtensions = [...TRACK_EXTS].filter((ext) => !registry.isExtensionRegistered(ext));
+		// Leave anything another plugin already owns alone, so both can coexist —
+		// asked again at every claim, because the switch can be turned back on
+		// long after load, by which time another plugin may own one of these.
+		this.ownedExtensions = claimableExtensions((ext) => registry.isExtensionRegistered(ext));
 		if (this.ownedExtensions.length === 0) return;
 		registry.registerExtensions(this.ownedExtensions, (context, file) => {
 			// `sourcePath` identifies the host note for companion-photo resolution.
@@ -583,6 +609,31 @@ export default class AdvancedMapsPlugin extends Plugin {
 			this.embeds.add(embed);
 			return embed;
 		});
+	}
+
+	/** Give the extensions back and release every inline map's WebGL and
+	 *  decoded-image lifecycle — the teardown unloading the plugin runs. */
+	private dropInlineMaps(): void {
+		for (const embed of [...this.embeds]) embed.unload();
+		const registry = this.app.embedRegistry;
+		if (registry && this.ownedExtensions.length > 0) {
+			registry.unregisterExtensions(this.ownedExtensions);
+		}
+		this.ownedExtensions = [];
+	}
+
+	/**
+	 * Inline maps were switched on or off.
+	 *
+	 * On, the extensions are claimed again and a note has to be re-rendered
+	 * before its embed is built through them — which is why the settings row says
+	 * so rather than this pretending otherwise. Off, the maps on screen go now:
+	 * leaving them drawing would keep a graphics context held by a feature that
+	 * is off, and their container is empty until that note is opened again.
+	 */
+	refreshInlineMaps(): void {
+		this.dropInlineMaps();
+		this.registerTrackEmbeds();
 	}
 
 	/* ---- open in map ---- */
@@ -595,7 +646,11 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.addCommand({
 			id: 'open-in-map',
 			name: this.menuLabel(),
+			// The switch first, so a command belonging to a feature that is off is
+			// not in the palette either: an unavailable command is one Obsidian
+			// leaves out, which is the whole gate this needs.
 			checkCallback: (checking) => {
+				if (!this.settings.openInMap) return false;
 				const file = this.app.workspace.getActiveFile();
 				if (!this.hasCoords(file)) return false;
 				if (!checking) void this.openMapForFile(file);
@@ -605,9 +660,11 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 		// Fires for the note's ⋮ menu, and for the same file elsewhere (explorer,
 		// tab header). The coords check keeps it off notes that have no place.
+		// The listener stays registered whichever way the switch is set and
+		// answers per menu, because a menu is built when it is opened.
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
-				if (!this.hasCoords(file)) return;
+				if (!this.settings.openInMap || !this.hasCoords(file)) return;
 				menu.addItem((item) =>
 					item
 						.setTitle(this.menuLabel())
@@ -864,6 +921,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 			id: 'insert-linked-map',
 			name: t('command.insertMap'),
 			editorCheckCallback: (checking, editor, ctx) => {
+				if (!this.settings.nearbyMap) return false;
 				const file = ctx.file;
 				if (!file || file.extension !== 'md') return false;
 				if (!checking) void this.insertAroundMap(editor, file);
@@ -874,7 +932,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('editor-menu', (menu, editor, ctx) => {
 				const file = ctx.file;
-				if (!file || file.extension !== 'md') return;
+				if (!this.settings.nearbyMap || !file || file.extension !== 'md') return;
 				menu.addItem((item) =>
 					item
 						.setTitle(t('command.insertMap'))
@@ -1333,6 +1391,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 	private registerImportPlaces(): void {
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
+				if (!this.settings.placeExchange) return;
 				if (!(file instanceof TFile) || !TRACK_EXTS.has(file.extension)) return;
 				menu.addItem((item) =>
 					item
@@ -1560,6 +1619,16 @@ export default class AdvancedMapsPlugin extends Plugin {
 			this.settings.defaultBasemap = migrated.name;
 		}
 		if (dropLegacyBasemap(this.settings)) await this.saveSettings();
+
+		// Settings written before offline basemaps could be switched off say
+		// nothing about the switch, so the packs answer for them: a reader who has
+		// one keeps drawing it, and a reader who has none is not charged for a
+		// feature they never configured. Written once, not re-derived per load.
+		const startsOn = basemapStartsOn(saved, this.settings.tilePacks);
+		if (startsOn !== null && startsOn !== this.settings.offlineBasemap) {
+			this.settings.offlineBasemap = startsOn;
+			await this.saveSettings();
+		}
 
 		// A key written before there was anywhere else to put it stays where it is.
 		// The default for a fresh install is secret storage, which is the safer of

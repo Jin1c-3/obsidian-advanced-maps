@@ -107,6 +107,11 @@ until you tap somewhere else, since there is no pointer to leave.
 Ascent ignores changes below 5 m to suppress GPS drift. Moving time counts
 speeds above 0.9 km/h so slow walking and stairs still count.
 
+**Inline route maps** under settings → **Tracks** decides whether any of this
+happens. With it off this plugin claims no track file at all, so an embedded
+`![[track.gpx]]` is the embed Obsidian makes of it — the state a vault without
+this plugin is in. A note already on screen shows that after you open it again.
+
 An inline track map also draws geotagged photos linked from its host note. Route
 statistics continue to describe the route alone.
 

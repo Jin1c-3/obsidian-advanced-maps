@@ -86,15 +86,37 @@ function view(map: MapLibreMap | null): BasesMapView {
  * can hand out two packs with different bounds and see which one a map is on;
  * the first entry is the plugin's own default, matching the real one.
  */
-function plugin(packs: Record<string, OfflineBasemap> = {}, maps: NativeMapsPlugin | null = null): AdvancedMapsPlugin {
+function plugin(
+	packs: Record<string, OfflineBasemap> = {},
+	maps: NativeMapsPlugin | null = null,
+	offlineBasemap = true
+): AdvancedMapsPlugin {
 	const ids = Object.keys(packs);
+	// The real plugin gates all three of these on the one switch: `tilePacks()`
+	// answers with none while it is off, and both of the others read that.
+	const on = <T>(value: T, off: T) => (offlineBasemap ? value : off);
 	return {
-		settings: { follow: true, measure: true, followActiveNote: false, coordSystem: 'gcj02' },
+		// Every switch on, which is what a reader who has configured a pack has;
+		// the tests that are about a switch being off set that one themselves.
+		settings: {
+			follow: true,
+			measure: true,
+			followActiveNote: false,
+			coordSystem: 'gcj02',
+			offlineBasemap,
+			stampNote: true,
+			placeExchange: true,
+			externalLinks: true,
+		},
 		layers: new Set(),
 		resolveTracks: () => [],
-		tilePacks: () => ids.map((id) => ({ name: id.slice('pack:'.length), path: 'x', minZoom: 0, maxZoom: 16 })),
-		defaultBackground: () => ids[0] ?? 'off',
-		basemapFor: (background: string) => packs[background] ?? null,
+		tilePacks: () =>
+			on(
+				ids.map((id) => ({ name: id.slice('pack:'.length), path: 'x', minZoom: 0, maxZoom: 16 })),
+				[]
+			),
+		defaultBackground: () => on(ids[0] ?? 'off', 'off'),
+		basemapFor: (background: string) => on(packs[background] ?? null, null),
 		nativeMaps: () => maps,
 		// The real Plugin clears this on unload; the layer registers its adoption
 		// poll with it as a second line of defence.
@@ -685,6 +707,35 @@ describe('the basemap a map draws', () => {
 		return v;
 	}
 
+	it('never hands the host a background of ours, whatever a base file names', () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const NATIVE_BACKGROUND = 'https://tiles.example.com/{z}/{x}/{y}.png';
+
+		// Switched off, with a base file still naming a pack. The id is ours, so
+		// it stops here: handed on, the host would look up a tile set it has never
+		// heard of, and what it would draw is what it draws for `undefined`.
+		const off = configured(CITY, NATIVE_BACKGROUND);
+		new TrackLayer(plugin(PACK, null, false), off).attach();
+		expect(off.loadConfig().mapTiles).toEqual([NATIVE_BACKGROUND]);
+		expect((off as unknown as { asked: Array<string | undefined> }).asked).toEqual([undefined]);
+
+		// Switched on, with the pack that base names since removed. Same answer,
+		// for the same reason.
+		const gone = configured('pack:Gone', NATIVE_BACKGROUND);
+		new TrackLayer(plugin(PACK), gone).attach();
+		expect(gone.loadConfig().mapTiles).toEqual([NATIVE_BACKGROUND]);
+		expect((gone as unknown as { asked: Array<string | undefined> }).asked).toEqual([undefined]);
+	});
+
+	it("passes a background of the host's own on to the host, which resolves it", () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const v = configured('1786085922534', 'https://liberty/{z}/{x}/{y}.png');
+		new TrackLayer(plugin(PACK), v).attach();
+
+		v.loadConfig();
+		expect((v as unknown as { asked: Array<string | undefined> }).asked).toEqual(['1786085922534']);
+	});
+
 	it('substitutes the pack where the shared config object is built', () => {
 		vi.stubGlobal('createDiv', () => document.createElement('div'));
 		const v = configured('', 'https://tiles.example.com/{z}/{x}/{y}.png');
@@ -860,6 +911,25 @@ describe('picking a background from the map', () => {
 		// the same view is a view that was reopened.
 		new TrackLayer(plugin(PACKS), v).attach();
 		expect(v.loadConfig().mapTiles).toEqual([PACKS[CITY].url]);
+	});
+
+	it("hands the host's control nothing at all while offline basemaps are off", async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const host = maps({ id: LIBERTY, name: 'Liberty' });
+		const own = host.settings?.tileSets as NativeTileSet[];
+		const v = switchable(host);
+		let offered: NativeTileSet[] = [];
+		v.initializeMap = async () => {
+			offered = host.settings?.tileSets as NativeTileSet[];
+		};
+		new TrackLayer(plugin(PACKS, null, false), v).attach();
+
+		await v.initializeMap();
+		// The very array the host configured, not a copy of it: the control keeps
+		// the reference it is constructed with, so a background added in the Maps
+		// settings tab is in the menu the next time it is opened.
+		expect(offered).toBe(own);
+		expect(offered.map((entry) => entry.id)).toEqual([LIBERTY]);
 	});
 
 	it("offers each pack in the host's own menu and puts the host's array back", async () => {

@@ -55,6 +55,11 @@ global filters. If a linked note is excluded by the Base, Around does not bring
 it back. The embed also stores the view name, so renaming the view requires
 updating existing embeds.
 
+Switch **Insert a map of nearby notes** off under settings → **Open in map** and
+the editor's right-click menu carries no item of this plugin's, and the command
+leaves the palette. Maps you have already inserted go on drawing: what is
+switched off is the offer to write another one.
+
 ## Reuse one Base everywhere
 
 Set **Base file** and **View name** once, under Advanced Maps settings →
@@ -76,6 +81,10 @@ note, and opens its popup.
 **Open in** chooses a normal tab, which opens the Base file itself and keeps any
 view option you change there, or a pop-up window, which leaves your layout alone
 but has nowhere to write a change back to.
+
+Switch **Open a note in map** off on the same page and no note carries the item
+at all, and the command leaves the palette with it. The Base file above stays
+configured, because the map of nearby notes is taken from the same one.
 
 ![A configured Base map opened on one note while the other places remain visible](../../images/open-in-map.png)
 

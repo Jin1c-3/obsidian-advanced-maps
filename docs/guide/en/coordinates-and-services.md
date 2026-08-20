@@ -33,6 +33,10 @@ https://www.bing.com/maps?cp={lat}~{lng}&lvl=16         WGS-84
 om://map?v=1&ll={lat},{lng}                             WGS-84
 ```
 
+**Offer external maps** at the top of that page switches all of it off at once:
+right-clicking a map then offers no external app, and the order you arranged and
+the ones you already switched off are kept for when you want them back.
+
 App schemes such as `waze://` or `iosamap://` work on a device that has the app.
 State the datum instead of guessing it: a mirror of a mainland provider looks
 like any other host, and a wrong guess does not fail—it places the pin a few
@@ -60,6 +64,10 @@ into one would go into every note stamped from it afterwards.
 Only the coordinate property is written. If the note is not in that map's own
 query the pin will not appear, which is Bases filtering rather than a failure —
 the notice names the note and the value either way.
+
+Switch **Set a note's coordinates from the map** off under settings → **Map
+buttons and menu** and the map's menu drops the item. The rest of that menu is
+unchanged, down to the coordinate it hands the items that stay.
 
 ![The map's right-click menu with "set a note's coordinates here" beside New note and Copy coordinates; the note picker, where an already-placed note shows the coordinate it holds; and the confirmation naming the old value and the new one](../../images/stamp-note.png)
 

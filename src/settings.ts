@@ -34,6 +34,13 @@ export type OpenTarget = (typeof OPEN_TARGETS)[number];
 export interface AdvancedMapsSettings {
 	/** Default coordinate mode; a view option can override it. */
 	coordSystem: CoordMode;
+	/** Whether any of this is reached at all. Off, no pack is resolved, offered
+	 *  or drawn, no background group is added to a map's options, and nothing of
+	 *  this plugin's is handed to the host's own background control — which keeps
+	 *  the live reference to its own list that it would have without this plugin.
+	 *  The packs below are kept either way. The one switch that does not default
+	 *  to on: see `basemapDefault`. */
+	offlineBasemap: boolean;
 	/** Basemaps already on disk, each a named pack: the filesystem path its tiles
 	 *  are addressed by, holding `{z}`, `{x}` and `{y}`, and the shallowest and
 	 *  deepest levels it holds, which is what keeps a map from asking for tiles
@@ -68,13 +75,20 @@ export interface AdvancedMapsSettings {
 	trackMarkers: boolean;
 	/** A linked photo's own EXIF coordinate, drawn the same way a one-point track is. */
 	showPhotos: boolean;
+	/** Whether an embed of a track file becomes a map at all. Off, no track
+	 *  extension is claimed, so `![[route.gpx]]` is the embed the host makes of it
+	 *  with no plugin installed. */
+	inlineMaps: boolean;
 	/** Its own embedded thumbnail as the map icon, in place of a plain dot. */
 	photoThumbnails: boolean;
 	/** Which datum a photo's raw EXIF coordinate is trusted to be in. */
 	photoDatum: PhotoDatum;
 	/** Whether pins that land on the same spot fan apart once there is room. */
 	spreadMarkers: boolean;
-	/** "Open in map" — the map launched from a note's ⋮ menu. */
+	/** "Open in map" — the map launched from a note's ⋮ menu. Its switch takes
+	 *  the ⋮ item and the command together; the base below is shared with the
+	 *  map of nearby notes, so it stays whichever way either switch is set. */
+	openInMap: boolean;
 	basePath: string;
 	viewName: string;
 	coordsProperty: string;
@@ -92,8 +106,21 @@ export interface AdvancedMapsSettings {
 	measure: boolean;
 	/** Initial follow state for each newly opened map, once following is on. */
 	followActiveNote: boolean;
+	/** Whether the editor's menu offers to write one of those maps into a note.
+	 *  Off takes the item and its command; a view already written to a base and
+	 *  an embed already in a note are left drawing. */
+	nearbyMap: boolean;
 	/** The view added to the base for "a map of the notes around this one". */
 	aroundViewName: string;
+	/** The map menu's "new note here", which writes a clicked coordinate into a
+	 *  note the reader picks. */
+	stampNote: boolean;
+	/** Places out of a track file and into notes, and the places a map matched
+	 *  back out to a file. One switch, because they are one exchange. */
+	placeExchange: boolean;
+	/** Whether any external destination is offered at all, above the arrangement
+	 *  of individual ones below — which is kept while this is off. */
+	externalLinks: boolean;
 	/* "Open in external map", on the map's own right-click menu. Both start
 	 * empty, and empty means something in each: no arrangement of the built-ins
 	 * is the locale's own order with all six on, and no custom entries is the
@@ -185,6 +212,10 @@ export function dropLegacyBasemap(settings: AdvancedMapsSettings & LegacyBasemap
  * Device location starts disabled because it prompts and writes physical position. */
 export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	coordSystem: 'auto',
+	// The one switch that starts off: on is what costs a reader who has no pack
+	// the host's own background control, so it is asked for rather than assumed.
+	// A reader upgrading with a pack configured is switched on once, on load.
+	offlineBasemap: false,
 	tilePacks: [],
 	defaultBasemap: '',
 	trackColor: 'var(--bases-map-marker-background)',
@@ -202,10 +233,12 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	// not to, so that is what a vault which never opens the page keeps doing.
 	statsWrite: Object.fromEntries(STATS_FIGURES.map((figure) => [figure, true])) as Record<StatsFigure, boolean>,
 	trackMarkers: true,
+	inlineMaps: true,
 	showPhotos: true,
 	photoThumbnails: true,
 	photoDatum: 'auto',
 	spreadMarkers: true,
+	openInMap: true,
 	basePath: '',
 	viewName: '',
 	coordsProperty: 'coords',
@@ -219,7 +252,11 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 	// Off: a camera that moves on its own is a surprise, and this one moves
 	// because of something happening in another pane entirely.
 	followActiveNote: false,
+	nearbyMap: true,
 	aroundViewName: '',
+	stampNote: true,
+	placeExchange: true,
+	externalLinks: true,
 	externalMaps: [],
 	customMaps: [],
 	geocodeProvider: 'nominatim',
@@ -370,6 +407,7 @@ type PageKey =
 	| 'external'
 	| 'search'
 	| 'locate'
+	| 'places'
 	| 'pins'
 	| 'tracks'
 	| 'photos'
@@ -465,6 +503,24 @@ function moved<T>(list: T[], from: number, to: number): T[] {
 /** A datum a stored entry names, checked against the ones this version has. */
 function knownDatum(value: unknown): CustomDatum {
 	return (CUSTOM_DATUMS as readonly unknown[]).includes(value) ? (value as CustomDatum) : 'wgs84';
+}
+
+/**
+ * Whether offline basemaps start on for settings written before this switch, or
+ * null when those settings already answer it.
+ *
+ * On for a reader who already configured a pack, so nobody loses the background
+ * they have; off for everyone else, because on is what hands the host's own
+ * background control an array of ours. Computed once and persisted rather than
+ * re-derived on each load: removing the last pack later is not a statement about
+ * the feature, and would otherwise switch it off behind the reader.
+ */
+export function basemapStartsOn(
+	saved: Partial<AdvancedMapsSettings> | null | undefined,
+	packs: readonly TilePack[]
+): boolean | null {
+	if (typeof saved?.offlineBasemap === 'boolean') return null;
+	return packs.length > 0;
 }
 
 /**
@@ -719,12 +775,12 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		name: TranslationKey,
 		desc: TranslationKey | undefined,
 		key: ControlKey,
-		opts: { placeholder?: string; vars?: Record<string, string> } = {}
+		opts: { placeholder?: string; vars?: Record<string, string>; disabled?: () => boolean } = {}
 	): SettingDefinition<ControlKey> {
 		return {
 			name: t(name),
 			desc: desc ? t(desc, opts.vars) : undefined,
-			control: { type: 'text', key, placeholder: opts.placeholder },
+			control: { type: 'text', key, placeholder: opts.placeholder, disabled: opts.disabled },
 		};
 	}
 
@@ -734,12 +790,13 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		key: Key,
 		min: number,
 		max: number,
-		step: number
+		step: number,
+		disabled?: () => boolean
 	): SettingDefinition<Key> {
 		return {
 			name: t(name),
 			desc: desc ? t(desc) : undefined,
-			control: { type: 'slider', key, min, max, step },
+			control: { type: 'slider', key, min, max, step, disabled },
 		};
 	}
 
@@ -749,13 +806,22 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		return this.slider(name, desc, key, min, max, step);
 	}
 
+	/**
+	 * A switch, and — where it is given one — what makes it inert.
+	 *
+	 * `disabled` is what a row belonging to a switched-off feature carries: it
+	 * stays where it is, stating what it holds, rather than being taken off the
+	 * page, because what a reader is owed there is what switching back on hands
+	 * them. A row shared with another feature never carries one.
+	 */
 	private toggle(
 		name: TranslationKey,
 		desc: TranslationKey,
 		key: Key,
-		vars?: Record<string, string>
+		vars?: Record<string, string>,
+		disabled?: () => boolean
 	): SettingDefinition<Key> {
-		return { name: t(name), desc: t(desc, vars), control: { type: 'toggle', key } };
+		return { name: t(name), desc: t(desc, vars), control: { type: 'toggle', key, disabled } };
 	}
 
 	/**
@@ -912,6 +978,10 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	private packRow(setting: Setting, rows: readonly TilePack[], index: number): void {
 		setting.settingEl.addClass('advanced-maps-pack-entry');
 		const entry = rows[index];
+		// A pack the feature is not drawing from is still a pack the reader typed:
+		// the row states what it holds and takes no edits until the switch above
+		// it is on. The same shape the figure rows use beside their own switches.
+		const on = this.plugin.settings.offlineBasemap;
 		// Asked of the row as it now reads rather than as it was drawn, since
 		// neither box re-renders the pane while it is being typed in.
 		const say = (edit: Partial<TilePack>) => {
@@ -928,6 +998,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					say({ name: value });
 					void this.setControlValue(`tilePacks.${index}.name`, value);
 				});
+			text.setDisabled(!on);
 			text.inputEl.setAttribute('aria-label', t('settings.tiles.pack.name'));
 		});
 		setting.addText((text) => {
@@ -940,11 +1011,12 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					say({ path: value });
 					void this.setControlValue(`tilePacks.${index}.path`, value);
 				});
+			text.setDisabled(!on);
 			text.inputEl.addClass('advanced-maps-tiles-path');
 			text.inputEl.setAttribute('aria-label', t('settings.tiles.path.name'));
 		});
-		this.levelBox(setting, entry.minZoom, index, 'minZoom', 'settings.tiles.minZoom.name');
-		this.levelBox(setting, entry.maxZoom, index, 'maxZoom', 'settings.tiles.maxZoom.name');
+		this.levelBox(setting, entry.minZoom, index, 'minZoom', 'settings.tiles.minZoom.name', on);
+		this.levelBox(setting, entry.maxZoom, index, 'maxZoom', 'settings.tiles.maxZoom.name', on);
 		// A row saved half-written states itself on arrival rather than waiting to
 		// be typed in again.
 		say({});
@@ -957,12 +1029,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		value: number,
 		index: number,
 		field: 'minZoom' | 'maxZoom',
-		label: TranslationKey
+		label: TranslationKey,
+		on: boolean
 	): void {
 		setting.addText((text) => {
 			text.setValue(String(value)).onChange(
 				(next) => void this.setControlValue(`tilePacks.${index}.${field}`, next)
 			);
+			text.setDisabled(!on);
 			text.inputEl.type = 'number';
 			text.inputEl.min = '0';
 			text.inputEl.max = String(TILE_ZOOM_MAX);
@@ -1004,6 +1078,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	/** Draw three fields in one list row so delete/reorder indexes stay entry-aligned. */
 	private customRow(setting: Setting, entry: CustomMap, index: number): void {
 		setting.settingEl.addClass('advanced-maps-map-entry');
+		// Kept and stated while external destinations are switched off, and taking
+		// no edits until they are on again — the same as a tile pack's row.
+		const on = this.plugin.settings.externalLinks;
 		const say = (url: string) => {
 			// Empty is a row still being filled in, not a wrong one.
 			const problem = url.trim() === '' ? null : customUrlProblem(url);
@@ -1015,6 +1092,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				.setPlaceholder(t('settings.external.custom.name.name'))
 				.setValue(entry.name)
 				.onChange((value) => void this.setControlValue(`customMaps.${index}.name`, value))
+				.setDisabled(!on)
 		);
 		setting.addText((text) => {
 			text.setPlaceholder(t('settings.external.custom.url.placeholder'))
@@ -1026,6 +1104,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					say(value);
 					void this.setControlValue(`customMaps.${index}.url`, value);
 				});
+			text.setDisabled(!on);
 			text.inputEl.addClass('advanced-maps-map-url');
 			text.inputEl.setAttribute('aria-label', t('settings.external.custom.url.desc'));
 		});
@@ -1033,7 +1112,8 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			for (const datum of CUSTOM_DATUMS) dropdown.addOption(datum, t(`datum.${datum}`));
 			dropdown
 				.setValue(entry.datum)
-				.onChange((value) => void this.setControlValue(`customMaps.${index}.datum`, value));
+				.onChange((value) => void this.setControlValue(`customMaps.${index}.datum`, value))
+				.setDisabled(!on);
 			dropdown.selectEl.setAttribute('aria-label', t('settings.external.custom.datum.desc'));
 		});
 		// A URL saved by an older version, or left half-written, states itself on
@@ -1077,6 +1157,10 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			this.page(
 				'tiles',
 				[
+					// First, because everything under it is only worth reading once
+					// this is on — and because with it off, this is the one row on the
+					// page that does anything.
+					this.toggle('settings.tiles.enable.name', 'settings.tiles.enable.desc', 'offlineBasemap'),
 					// A list rather than a fixed row apiece: a pack is regional, so a
 					// reader who has one usually has two — the city they live in and the
 					// trail they walk — and each carries its own levels because each was
@@ -1091,18 +1175,26 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 							searchable: false,
 							render: (setting: Setting) => this.packRow(setting, packRowsNow, index),
 						})),
-						addItem: {
-							name: t('settings.tiles.packs.add'),
-							action: () => {
-								void this.writeList('tilePacks', [...this.packRows(), { ...NEW_PACK }]);
-							},
-						},
-						onDelete: (index: number) => {
-							void this.deletePack(index);
-						},
-						onReorder: (from: number, to: number) => {
-							void this.writeList('tilePacks', moved(this.packRows(), from, to));
-						},
+						// The list's own affordances go with the feature. A switched-off
+						// feature's configuration is there to be read — the rows above
+						// state what they hold, and adding a fifth to a list nothing
+						// draws from is not what the reader came to the page for.
+						...(this.plugin.settings.offlineBasemap
+							? {
+									addItem: {
+										name: t('settings.tiles.packs.add'),
+										action: () => {
+											void this.writeList('tilePacks', [...this.packRows(), { ...NEW_PACK }]);
+										},
+									},
+									onDelete: (index: number) => {
+										void this.deletePack(index);
+									},
+									onReorder: (from: number, to: number) => {
+										void this.writeList('tilePacks', moved(this.packRows(), from, to));
+									},
+								}
+							: {}),
 					},
 					{
 						name: t('settings.tiles.default.name'),
@@ -1114,17 +1206,26 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 							type: 'dropdown',
 							key: 'defaultBasemap',
 							options: this.defaultChoices(),
+							disabled: () => !this.plugin.settings.offlineBasemap,
 						},
 					},
 				],
 				// What every map draws unless it says otherwise — the one thing on this
-				// page that changes what a reader sees without opening a map view.
-				() => this.plugin.settings.defaultBasemap || t('settings.tiles.default.none')
+				// page that changes what a reader sees without opening a map view. Off,
+				// the page says so instead: no pack is drawn, whatever the default names.
+				() =>
+					this.plugin.settings.offlineBasemap
+						? this.plugin.settings.defaultBasemap || t('settings.tiles.default.none')
+						: this.state(false)
 			),
 
 			this.page(
 				'open',
 				[
+					// The switch above the base rather than beside the label: it takes
+					// the ⋮ item and the command together, and everything under it that
+					// is not shared with the map of nearby notes goes inert with it.
+					this.toggle('settings.open.enable.name', 'settings.open.enable.desc', 'openInMap'),
 					{
 						name: t('settings.open.basePath.name'),
 						desc: t('settings.open.basePath.desc'),
@@ -1170,12 +1271,19 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 						placeholder: DEFAULT_SETTINGS.placeProperty,
 					}),
 					this.slider('settings.open.zoom.name', 'settings.open.zoom.desc', 'openZoom', 1, 18, 1),
+					// Its own switch, because it is its own feature on its own surface:
+					// the editor's menu rather than the note's, and a view written into
+					// the base rather than a map opened on top of it. The base above is
+					// shared with it, so that row belongs to neither switch.
+					this.toggle('settings.open.nearby.name', 'settings.open.nearby.desc', 'nearbyMap'),
 					this.text('settings.open.aroundView.name', 'settings.open.aroundView.desc', 'aroundViewName', {
 						placeholder: t('view.around'),
+						disabled: () => !this.plugin.settings.nearbyMap,
 					}),
 					// The only cosmetic field in the group, so it comes last.
 					this.text('settings.open.label.name', 'settings.open.label.desc', 'menuLabel', {
 						placeholder: t('command.openInMap'),
+						disabled: () => !this.plugin.settings.openInMap,
 					}),
 				],
 				// The base everything on this page hangs off, named rather than
@@ -1199,17 +1307,30 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 						visible: () => this.plugin.settings.follow,
 					},
 					this.toggle('settings.controls.measure.name', 'settings.controls.measure.desc', 'measure'),
+					// Not a button in the corner but an item in the same map's own
+					// menu, which is why this page is about what this plugin adds to a
+					// map rather than only about its buttons.
+					this.toggle('settings.controls.stamp.name', 'settings.controls.stamp.desc', 'stampNote'),
 				],
 				() =>
 					t('settings.controls.count', {
-						on: String([this.plugin.settings.follow, this.plugin.settings.measure].filter(Boolean).length),
-						total: '2',
+						on: String(
+							[
+								this.plugin.settings.follow,
+								this.plugin.settings.measure,
+								this.plugin.settings.stampNote,
+							].filter(Boolean).length
+						),
+						total: '3',
 					})
 			),
 
 			this.page(
 				'external',
 				[
+					// One switch over both lists below, because "none of them" is what
+					// six switches and an emptied list said the long way round.
+					this.toggle('settings.external.enable.name', 'settings.external.enable.desc', 'externalLinks'),
 					// Two lists rather than one: the built-ins are a fixed set to arrange,
 					// the custom ones a collection to add to, and `type: 'list'` gives each
 					// exactly the affordances it needs — drag handles for both, a delete and
@@ -1220,11 +1341,19 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 						heading: t('settings.external.builtin.heading'),
 						items: this.builtins().map((builtin, index) => ({
 							name: t(`link.provider.${builtin.id}`),
-							control: { type: 'toggle' as const, key: `externalMaps.${index}.on` as ControlKey },
+							control: {
+								type: 'toggle' as const,
+								key: `externalMaps.${index}.on` as ControlKey,
+								disabled: () => !this.plugin.settings.externalLinks,
+							},
 						})),
-						onReorder: (from: number, to: number) => {
-							void this.writeList('externalMaps', moved(this.builtins(), from, to));
-						},
+						...(this.plugin.settings.externalLinks
+							? {
+									onReorder: (from: number, to: number) => {
+										void this.writeList('externalMaps', moved(this.builtins(), from, to));
+									},
+								}
+							: {}),
 					},
 					{
 						type: 'list',
@@ -1236,31 +1365,41 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 							searchable: false,
 							render: (setting: Setting) => this.customRow(setting, entry, index),
 						})),
-						addItem: {
-							name: t('settings.external.custom.add'),
-							action: () => {
-								void this.writeList('customMaps', [
-									...this.customs(),
-									{ name: '', url: '', datum: 'wgs84' },
-								]);
-							},
-						},
-						onDelete: (index: number) => {
-							void this.writeList(
-								'customMaps',
-								this.customs().filter((_, at) => at !== index)
-							);
-						},
-						onReorder: (from: number, to: number) => {
-							void this.writeList('customMaps', moved(this.customs(), from, to));
-						},
+						// The affordances go with the feature, the way the tile packs' do.
+						...(this.plugin.settings.externalLinks
+							? {
+									addItem: {
+										name: t('settings.external.custom.add'),
+										action: () => {
+											void this.writeList('customMaps', [
+												...this.customs(),
+												{ name: '', url: '', datum: 'wgs84' },
+											]);
+										},
+									},
+									onDelete: (index: number) => {
+										void this.writeList(
+											'customMaps',
+											this.customs().filter((_, at) => at !== index)
+										);
+									},
+									onReorder: (from: number, to: number) => {
+										void this.writeList('customMaps', moved(this.customs(), from, to));
+									},
+								}
+							: {}),
 					},
 				],
-				// Both lists' switched-on entries: what the right-click menu will offer.
+				// Both lists' switched-on entries: what the right-click menu will offer,
+				// and nothing at all while the feature above them is off.
 				() =>
-					t('settings.external.enabled', {
-						count: String(this.builtins().filter((entry) => entry.on).length + this.customs().length),
-					})
+					this.plugin.settings.externalLinks
+						? t('settings.external.enabled', {
+								count: String(
+									this.builtins().filter((entry) => entry.on).length + this.customs().length
+								),
+							})
+						: this.state(false)
 			),
 
 			this.page(
@@ -1350,6 +1489,15 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				() => this.state(this.plugin.settings.locate)
 			),
 
+			// Import and export are one exchange and one switch, and the two halves
+			// live on two different menus — a track file's and a map's — so neither
+			// of those pages is where this belongs.
+			this.page(
+				'places',
+				[this.toggle('settings.places.enable.name', 'settings.places.enable.desc', 'placeExchange')],
+				() => this.state(this.plugin.settings.placeExchange)
+			),
+
 			// The notes' own pins, which are the native view's rather than this
 			// plugin's — hence a page of their own rather than a row among the
 			// track knobs, which are about files a note points at.
@@ -1372,16 +1520,33 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 				this.knob('settings.tracks.weight.name', undefined, 'trackWeight'),
 				this.knob('settings.tracks.opacity.name', undefined, 'trackOpacity'),
 				this.knob('settings.tracks.fitMaxZoom.name', 'settings.tracks.fitMaxZoom.desc', 'fitMaxZoom'),
+				// Above the three rows that describe an inline map, because with it off
+				// there is no inline map for them to describe. The knobs above are a
+				// route's, drawn on a Base map too, and stay live.
+				this.toggle('settings.tracks.inline.name', 'settings.tracks.inline.desc', 'inlineMaps'),
 				this.slider(
 					'settings.tracks.embedHeight.name',
 					'settings.tracks.embedHeight.desc',
 					'embedHeight',
 					160,
 					800,
-					20
+					20,
+					() => !this.plugin.settings.inlineMaps
 				),
-				this.toggle('settings.tracks.stats.name', 'settings.tracks.stats.desc', 'trackStats'),
-				this.toggle('settings.tracks.profile.name', 'settings.tracks.profile.desc', 'elevationProfile'),
+				this.toggle(
+					'settings.tracks.stats.name',
+					'settings.tracks.stats.desc',
+					'trackStats',
+					undefined,
+					() => !this.plugin.settings.inlineMaps
+				),
+				this.toggle(
+					'settings.tracks.profile.name',
+					'settings.tracks.profile.desc',
+					'elevationProfile',
+					undefined,
+					() => !this.plugin.settings.inlineMaps
+				),
 				this.toggle('settings.tracks.markers.name', 'settings.tracks.markers.desc', 'trackMarkers'),
 				// A page of its own inside this one, and the only rows about tracks
 				// that change nothing already drawn: they name what a command
@@ -1542,12 +1707,36 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			case 'coordSystem':
 				this.plugin.reprojectAll();
 				break;
+			case 'offlineBasemap':
+				// The rows under it become inert or editable, and every map already
+				// open either loses the pack it draws or gets it back — refreshed the
+				// same way a pack change refreshes them, which is also what takes the
+				// packs out of the host's menu and puts them back.
+				this.update();
+				this.refreshBasemaps();
+				break;
 			case 'tilePacks':
 			case 'defaultBasemap':
 				// Not on the track-refresh list below: this replaces the ground under
 				// the tracks rather than the tracks, and the redraw the new style
 				// triggers puts them back by itself.
 				this.refreshBasemaps();
+				break;
+			case 'inlineMaps':
+				// Claims or releases the track extensions, and takes down the inline
+				// maps on screen when it releases them.
+				this.plugin.refreshInlineMaps();
+				this.update();
+				break;
+			case 'openInMap':
+			case 'nearbyMap':
+			case 'stampNote':
+			case 'placeExchange':
+			case 'externalLinks':
+				// Nothing to refresh on a map: a menu is built when it is opened and
+				// reads the switch then. The re-render is for the rows these decide
+				// the inertness of, and for the page's own entry.
+				this.update();
 				break;
 			case 'coordsProperty':
 				// Rewritten rather than re-rendered: this fires on every keystroke

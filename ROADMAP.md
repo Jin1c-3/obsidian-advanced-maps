@@ -79,6 +79,14 @@ in Fiji and a note in Chile is a line across the antimeridian, which 1.14.0
 already unwraps for tracks — `unwrapGeometry()` in `geometry.ts` is the same
 arithmetic, reached the same way.
 
+### Reading a single-file `.pmtiles`
+
+In development. A pack unpacked into a directory tree is thousands of files a
+vault has to be kept from indexing, and one archive instead of that is the
+version of this feature people ask for. What is holding it up is a bug in
+Obsidian on Android rather than anything about the format, so the shape of the
+answer is not in doubt — the timing is.
+
 ### Obsidian CLI commands, and a skill
 
 Map View registers `mv-geosearch`, `mv-calc-distance`, `mv-query` and ships a
@@ -102,9 +110,10 @@ getting reopened.
   turned out to be reachable and has shipped. Fetching them in bulk from a
   provider did not: that is their terms of service to grant, and a plugin that
   ships a "download this area" button grants it on the reader's behalf. A
-  single-file `.pmtiles` or `.mbtiles` is out for the original reason — it needs
+  single-file `.mbtiles` is out for the original reason — it needs
   `addProtocol`, which is a module-level export of a MapLibre this plugin does
-  not bundle — so a pack has to be unpacked into a directory tree first.
+  not bundle — so such a pack has to be unpacked into a directory tree first.
+  `.pmtiles` is the exception being worked on; see below.
 - **Drawing and editing shapes on the map.** No drawing library is reachable, so
   it would be hand-rolled from pointer events. The elevation profile under an
   inline map is hand-rolled SVG for the same reason, and is about the size such

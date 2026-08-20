@@ -26,25 +26,48 @@ Base or Around map without creating another map in the note.
 
 ## Where the settings live
 
-**Settings → Community plugins → Advanced Maps** opens on ten entries, one per
+**Settings → Community plugins → Advanced Maps** opens on eleven entries, one per
 topic. Open one to reach its rows; the entry states what it is set to, so the
 pane answers the common questions without being opened.
 
 | Entry                | Holds                                                                                                                                                    |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Coordinate system    | The default datum for inline maps and for views that set none                                                                                            |
-| Offline basemap      | The tile packs on disk that maps can be drawn from, the zoom levels each holds, and which one is the default                                             |
+| Offline basemap      | Whether local tile packs are used at all, the packs on disk, the zoom levels each holds, and which one is the default                                    |
 | Open in map          | Base file, view name, target, coordinate and place properties, zoom, Around view name, menu label                                                        |
-| Map buttons          | Whether a map carries the follow and measure buttons, and which way follow starts                                                                        |
+| Map buttons and menu | Whether a map carries the follow and measure buttons, which way follow starts, and whether its menu can set a note's coordinates                         |
 | Open in external map | The built-in map apps and your own                                                                                                                       |
 | Place search         | Search source and, for Amap, where its key is kept                                                                                                       |
 | Location             | Device location and the automatic coordinate fill                                                                                                        |
+| Places in and out    | Whether places are exchanged with files at all — the import on a track file's menu and the export on a map's                                             |
 | Pins                 | How the notes' own markers behave                                                                                                                        |
 | Tracks               | Colour, width, opacity, fit zoom, inline height, statistics, profile, markers — and **Track properties**, which names what the statistics command writes |
 | Photos               | Photo pins, thumbnails, photo datum, and the photo index                                                                                                 |
 
 Anything named in this guide can also be found by typing it into the settings
 search, which reaches rows inside these pages the same way it reaches any other.
+
+## Turning a feature off
+
+Everything this plugin puts somewhere you did not open for it can be switched
+off, and switching it off takes the whole feature: the menu item, its command,
+and the work behind it. A command is not on this list — it runs because you
+invoked it, so there is nothing to decline — and a command belonging to a
+switched-off feature goes with that feature.
+
+Nothing is cleared by a switch. What the feature was configured with stays on
+its page, stating what it holds and taking no edits, so you can see what
+switching it back on hands you.
+
+| Switch                                    | Page                 | With it off                                                                                                                                                 |
+| ----------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Use offline basemaps**                  | Offline basemap      | No map is drawn on a pack, and a map's background button lists only what Maps itself has. Your packs are kept. It starts off unless you already had a pack. |
+| **Open a note in map**                    | Open in map          | No note carries the ⋮ item, and the command leaves the palette.                                                                                             |
+| **Insert a map of nearby notes**          | Open in map          | The editor's right-click menu carries no item, and the command leaves the palette. Maps already inserted go on drawing.                                     |
+| **Set a note's coordinates from the map** | Map buttons and menu | The map's right-click menu drops that item. Its other items carry the same coordinate they always did.                                                      |
+| **Exchange places with files**            | Places in and out    | A track file's ⋮ menu offers no import, and a map's menu no export. Notes and files already written are untouched.                                          |
+| **Inline route maps**                     | Tracks               | An embedded `![[route.gpx]]` is the embed Obsidian makes of it, because this plugin claims no track file at all.                                            |
+| **Offer external maps**                   | Open in external map | Right-clicking a map offers no external app. The order and the ones you switched off are kept.                                                              |
 
 ## Which setting owns what
 

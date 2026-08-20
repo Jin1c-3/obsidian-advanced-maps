@@ -4,6 +4,37 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [1.18.5]
+
+### Added
+
+- **Seven switches, one for every feature that appears without being asked
+  for.** Each takes the whole feature with it — the menu item, its command, and
+  the work behind it — and none of them clears what the feature was configured
+  with: that stays on its page, stated, taking no edits until you switch back
+  on. **Use offline basemaps**, **Open a note in map**, **Insert a map of nearby
+  notes**, **Set a note's coordinates from the map**, **Exchange places with
+  files**, **Inline route maps**, and **Offer external maps**. A command needs no
+  switch of its own — it runs because you invoked it.
+
+- **Places in and out** is a settings page of its own, holding the one switch
+  that governs both halves of that exchange.
+
+### Changed
+
+- **Offline basemaps are off until you ask for them**, unless you already have a
+  tile pack configured — those are switched on once, on upgrade, so nobody loses
+  the background they have. On costs a reader who has no pack something real:
+  the Maps plugin's own background button is handed a list this plugin
+  maintains, and a background added in the Maps settings tab then reaches an
+  open map on its next configuration reload rather than the next time the menu
+  is opened. Off, that button holds Maps' own list, exactly as it would with
+  this plugin absent.
+
+- **Map buttons** is now **Map buttons and menu**, covering what this plugin adds
+  to a map view on both counts — the buttons in its corner and the items on its
+  own right-click menu.
+
 ## [1.18.4]
 
 ### Fixed
@@ -1165,6 +1196,7 @@ one vault; the behaviour is unchanged, everything around it is new.
   base's first map view, and the menu label falls back to the localized default.
 
 [Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.2...HEAD
+[1.18.5]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.4...1.18.5
 [1.18.4]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.3...1.18.4
 [1.18.3]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.2...1.18.3
 [1.18.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.1...1.18.2

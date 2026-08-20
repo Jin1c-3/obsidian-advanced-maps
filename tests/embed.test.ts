@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TFile } from 'obsidian';
 import { READ_CONCURRENCY } from '../src/constants';
-import { TrackEmbed } from '../src/embed';
+import { claimableExtensions, TrackEmbed } from '../src/embed';
 import type AdvancedMapsPlugin from '../src/main';
 import type { BasesMapView, MapLibreMap } from '../src/types/obsidian-internals';
 
@@ -301,5 +301,19 @@ describe('TrackEmbed bounded companion reads', () => {
 
 		expect(album.started.length).toBe(firstWindow);
 		expect(album.started.length).toBeLessThan(album.photos.length);
+	});
+});
+
+describe('claimableExtensions', () => {
+	it('takes every track extension no one else owns', () => {
+		expect(claimableExtensions(() => false)).toEqual(['gpx', 'geojson', 'kml', 'tcx']);
+	});
+
+	it('leaves an extension another plugin has taken since with its owner', () => {
+		expect(claimableExtensions((ext) => ext === 'geojson')).not.toContain('geojson');
+	});
+
+	it('claims nothing where every one of them is owned', () => {
+		expect(claimableExtensions(() => true)).toEqual([]);
 	});
 });
