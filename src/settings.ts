@@ -8,7 +8,7 @@ import {
 	type SettingDefinition,
 	type SettingDefinitionItem,
 } from 'obsidian';
-import { TILE_ZOOM_MAX, tilePacks, tilesProblem, type TilePack } from './basemap';
+import { TILE_ZOOM_MAX, packProblem, packRows, tilePacks, type TilePack } from './basemap';
 import { GUIDE_URL, REPO_URL, SPREAD, TRACK_KNOBS, type TrackKnob } from './constants';
 import { COORD_MODES, knownMode, type CoordMode } from './coords';
 import type { PhotoDatum } from './exif';
@@ -233,6 +233,22 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
 };
 
 /**
+ * A zoom level as the reader has typed it, or the one the pack already had.
+ *
+ * The two boxes are numbers typed by hand, and an emptied one is not a level:
+ * `Number('')` is 0, so reading it as one would silently drop a pack's deepest
+ * level to "the whole world in a single tile" the moment the box was cleared to
+ * type a new number into it.
+ */
+export function typedLevel(value: unknown, current: number): number {
+	const typed = typeof value === 'string' ? value.trim() : value;
+	if (typed === '' || typed === null || typed === undefined) return current;
+	const level = Number(typed);
+	if (!isFinite(level)) return current;
+	return Math.min(TILE_ZOOM_MAX, Math.max(0, Math.round(level)));
+}
+
+/**
  * The skip list as the reader has it on screen, blanks included.
  *
  * A row just added is empty until it is typed in, so unlike `excludedFragments`
@@ -241,6 +257,20 @@ export const DEFAULT_SETTINGS: AdvancedMapsSettings = {
  */
 export function exclusionRows(setting: string): string[] {
 	return setting === '' ? [] : setting.split(',').map((part) => part.trim());
+}
+
+/**
+ * Those rows back as the one string that is stored.
+ *
+ * One blank row is the case the join cannot state on its own: `['']` joins to
+ * `''`, and `''` is no rows at all — which is what left the add button under an
+ * emptied list adding a row that was gone before it could be drawn. A lone space
+ * is the one value that reads back as exactly one blank row, and it is not a
+ * path fragment: `excludedFragments` drops it, so nothing is excluded by it.
+ */
+export function storedExclusions(rows: string[]): string {
+	if (rows.length === 1 && rows[0].trim() === '') return ' ';
+	return rows.join(', ');
 }
 
 /** Path fragments that switch off the automatic fill, as a usable list. */
@@ -797,17 +827,44 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		return customMaps(this.plugin.settings.customMaps);
 	}
 
-	/** Every pack as the reader has them; the list draws this, and a write starts from it. */
-	private packs(): TilePack[] {
-		return tilePacks(this.plugin.settings.tilePacks);
+	/**
+	 * Every pack row as the reader has them on screen, blanks included; the list
+	 * draws this, and a write starts from it.
+	 *
+	 * Deliberately not `tilePacks`: that one answers "which packs can a map be
+	 * pointed at", and a row added a keystroke ago is not one of them yet. Storing
+	 * its answer instead is what made the add button do nothing at all — the row
+	 * was dropped on its way into `data.json`, before it could be named.
+	 */
+	private packRows(): TilePack[] {
+		return packRows(this.plugin.settings.tilePacks);
 	}
 
 	/** "No default", then one entry per named pack. A row still being filled in
 	 *  has no name yet and nothing to be chosen by, so it is not offered. */
 	private defaultChoices(): Record<string, string> {
 		const choices: Record<string, string> = { '': t('settings.tiles.default.none') };
-		for (const pack of this.packs()) choices[pack.name] = pack.name;
+		for (const pack of tilePacks(this.plugin.settings.tilePacks)) choices[pack.name] = pack.name;
 		return choices;
+	}
+
+	/**
+	 * A pack row removed — and the default setting with it, when that row was the
+	 * only one answering to the name it holds.
+	 *
+	 * The same reason a rename carries the default along: the name is the whole
+	 * reference, so a delete would otherwise leave the setting naming a pack that
+	 * is gone. Cleared before the list is written, so the one re-render shows
+	 * both.
+	 */
+	private async deletePack(index: number): Promise<void> {
+		const rows = this.packRows();
+		const gone = rows[index];
+		const rest = rows.filter((_, at) => at !== index);
+		if (gone && this.plugin.settings.defaultBasemap === gone.name && !rest.some((row) => row.name === gone.name)) {
+			await this.setControlValue('defaultBasemap', '');
+		}
+		await this.writeList('tilePacks', rest);
 	}
 
 	/**
@@ -833,7 +890,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 * deliberately does not, for the same reason `writeList` does not.
 	 */
 	private async writeExclusions(rows: string[], rerender = true): Promise<void> {
-		await super.setControlValue('autoFillExclude', rows.join(', '));
+		await super.setControlValue('autoFillExclude', storedExclusions(rows));
 		if (rerender) this.update();
 	}
 
@@ -841,26 +898,36 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	 * One pack on one row: what it is called, where its tiles are, and the two
 	 * levels it holds — saying what is wrong with the path as it is typed.
 	 *
-	 * The check is structural only: whether the three placeholders are there.
+	 * The path check is structural only: whether the three placeholders are there.
 	 * Whether anything is at that path cannot be asked without enumerating a
 	 * directory outside the vault, and a pack whose path is wrong draws nothing,
-	 * which is visible at once.
+	 * which is visible at once. The name is checked too, and for the same reason
+	 * the path is — an unnamed or clashing row is left out of every menu, so
+	 * without this it would be a row the reader has filled in that quietly is not
+	 * one of their packs.
 	 *
 	 * Four boxes on one row because the list counts rows, and one row has to be
 	 * one pack for its ✕ and its drag handle to mean what they say.
 	 */
-	private packRow(setting: Setting, entry: TilePack, index: number): void {
+	private packRow(setting: Setting, rows: readonly TilePack[], index: number): void {
 		setting.settingEl.addClass('advanced-maps-pack-entry');
-		const say = (path: string) => {
-			// Empty is a row still being filled in, not a wrong one.
-			const problem = path.trim() === '' ? null : tilesProblem(path);
+		const entry = rows[index];
+		// Asked of the row as it now reads rather than as it was drawn, since
+		// neither box re-renders the pane while it is being typed in.
+		const say = (edit: Partial<TilePack>) => {
+			const next = rows.slice();
+			next[index] = { ...entry, ...edit };
+			const problem = packProblem(next, index);
 			setting.setErrorMessage(problem === null ? null : t(`settings.tiles.error.${problem}`));
 		};
 
 		setting.addText((text) => {
 			text.setPlaceholder(t('settings.tiles.pack.name'))
 				.setValue(entry.name)
-				.onChange((value) => void this.setControlValue(`tilePacks.${index}.name`, value));
+				.onChange((value) => {
+					say({ name: value });
+					void this.setControlValue(`tilePacks.${index}.name`, value);
+				});
 			text.inputEl.setAttribute('aria-label', t('settings.tiles.pack.name'));
 		});
 		setting.addText((text) => {
@@ -870,7 +937,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					// Said while the reader is still looking at the box: a template
 					// missing a placeholder resolves to nothing, and a map that draws
 					// nothing cannot explain why.
-					say(value);
+					say({ path: value });
 					void this.setControlValue(`tilePacks.${index}.path`, value);
 				});
 			text.inputEl.addClass('advanced-maps-tiles-path');
@@ -878,9 +945,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		});
 		this.levelBox(setting, entry.minZoom, index, 'minZoom', 'settings.tiles.minZoom.name');
 		this.levelBox(setting, entry.maxZoom, index, 'maxZoom', 'settings.tiles.maxZoom.name');
-		// A template saved half-written states itself on arrival rather than
-		// waiting to be typed in again.
-		say(entry.path);
+		// A row saved half-written states itself on arrival rather than waiting to
+		// be typed in again.
+		say({});
 	}
 
 	/** One of a pack row's two zoom levels: a number box, not a slider — a slider
@@ -978,6 +1045,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		// Started here because this is the one thing called on every render of the
 		// pane; it stands down at once unless the base has changed under it.
 		void this.loadViews();
+		// One snapshot for the whole render: each row is drawn from it, and a row
+		// reports a clashing name by looking at the others in it.
+		const packRowsNow = this.packRows();
 		const coordModes: Record<string, string> = {};
 		for (const mode of COORD_MODES) coordModes[mode] = t(`coord.${mode}`);
 		const providers: Record<string, string> = {};
@@ -1015,26 +1085,23 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 						type: 'list',
 						heading: t('settings.tiles.packs.heading'),
 						emptyState: t('settings.tiles.packs.empty'),
-						items: this.packs().map((entry, index) => ({
+						items: packRowsNow.map((_, index) => ({
 							// Ordinary nameless rows retain the list's drag/delete affordances.
 							name: '',
 							searchable: false,
-							render: (setting: Setting) => this.packRow(setting, entry, index),
+							render: (setting: Setting) => this.packRow(setting, packRowsNow, index),
 						})),
 						addItem: {
 							name: t('settings.tiles.packs.add'),
 							action: () => {
-								void this.writeList('tilePacks', [...this.packs(), { ...NEW_PACK }]);
+								void this.writeList('tilePacks', [...this.packRows(), { ...NEW_PACK }]);
 							},
 						},
 						onDelete: (index: number) => {
-							void this.writeList(
-								'tilePacks',
-								this.packs().filter((_, at) => at !== index)
-							);
+							void this.deletePack(index);
 						},
 						onReorder: (from: number, to: number) => {
-							void this.writeList('tilePacks', moved(this.packs(), from, to));
+							void this.writeList('tilePacks', moved(this.packRows(), from, to));
 						},
 					},
 					{
@@ -1361,7 +1428,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		if (!path) return super.getControlValue(key);
 		if (path.list === 'externalMaps') return this.builtins()[path.index]?.on ?? true;
 		if (path.list === 'tilePacks') {
-			const pack = this.packs()[path.index];
+			const pack = this.packRows()[path.index];
 			return pack ? pack[path.field] : '';
 		}
 		const entry = this.customs()[path.index];
@@ -1379,17 +1446,12 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 			return;
 		}
 		if (path.list === 'tilePacks') {
-			const list = this.packs();
+			const list = this.packRows();
 			const entry = list[path.index];
 			if (!entry) return;
 			const updated = { ...entry };
 			if (path.field === 'minZoom' || path.field === 'maxZoom') {
-				// The two boxes are numbers typed by hand: an emptied one is not a
-				// level, so the pack keeps the one it had rather than jumping to zero
-				// while the reader is still mid-edit.
-				const level = Number(value);
-				if (!isFinite(level)) return;
-				updated[path.field] = Math.min(TILE_ZOOM_MAX, Math.max(0, Math.round(level)));
+				updated[path.field] = typedLevel(value, entry[path.field]);
 			} else {
 				updated[path.field] = typeof value === 'string' ? value.trim() : '';
 			}
@@ -1471,7 +1533,9 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		// an unknown provider or datum cannot be stored by going through here.
 		if (key === 'externalMaps') next = resolveBuiltins(next, getLocale());
 		if (key === 'customMaps') next = customMaps(next);
-		if (key === 'tilePacks') next = tilePacks(next);
+		// Rows, not packs: an unnamed one is a row the reader is still filling in,
+		// and dropping it here is what left the add button doing nothing at all.
+		if (key === 'tilePacks') next = packRows(next);
 		await super.setControlValue(key, next);
 
 		switch (key) {

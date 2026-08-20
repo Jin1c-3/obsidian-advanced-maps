@@ -92,6 +92,11 @@ without changing any map until you ask for one.
 Give each pack a name of its own. Two packs sharing a name are one pack as far as
 everything that refers to one is concerned, and the second is left out.
 
+A row says so when nothing can be pointed at it, under the boxes: a name another
+row already carries, a row with a path and no name, or a path missing one of its
+three placeholders. Such a row stays where it is, waiting to be corrected, and is
+offered nowhere until it is.
+
 ### The two zoom levels
 
 They are the folder names at either end of that pack, and each stops a different

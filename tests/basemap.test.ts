@@ -10,6 +10,8 @@ import {
 	packBackgroundId,
 	packBackgroundName,
 	packBasemap,
+	packProblem,
+	packRows,
 	resolveBackground,
 	restyleForBasemap,
 	tilePacks,
@@ -407,6 +409,69 @@ describe('tilePacks', () => {
 		expect(tilePacks([{ name: 'City', path: 'x/{z}/{x}/{y}.png', minZoom: '4', maxZoom: null }])).toEqual([
 			{ name: 'City', path: 'x/{z}/{x}/{y}.png', minZoom: 0, maxZoom: 22 },
 		]);
+	});
+});
+
+describe('packRows', () => {
+	it('keeps the row the add button just made, which has nothing in it yet', () => {
+		// The whole reason this exists: stored through `tilePacks` the new row was
+		// dropped between the click and the render, so the button did nothing.
+		const rows = packRows([
+			{ name: 'City', path: '/packs/city/{z}/{x}/{y}.png', minZoom: 2, maxZoom: 16 },
+			{ name: '', path: '', minZoom: 0, maxZoom: 16 },
+		]);
+		expect(rows).toHaveLength(2);
+		expect(rows[1]).toEqual({ name: '', path: '', minZoom: 0, maxZoom: 16 });
+	});
+
+	it('keeps both rows of a clashing pair, so the loser can be renamed', () => {
+		expect(packRows([{ name: 'City' }, { name: 'City' }])).toHaveLength(2);
+	});
+
+	it('normalizes each field the way the packs themselves are', () => {
+		expect(packRows([{ name: '  City  ', path: ' x/{z}/{x}/{y}.png ', minZoom: -3, maxZoom: 99 }])).toEqual([
+			{ name: 'City', path: 'x/{z}/{x}/{y}.png', minZoom: 0, maxZoom: 22 },
+		]);
+	});
+
+	it('answers an empty list for anything that is not one', () => {
+		expect(packRows(undefined)).toEqual([]);
+		expect(packRows([null, 7, 'x'])).toEqual([]);
+	});
+});
+
+describe('packProblem', () => {
+	const row = (name: string, path = '/packs/{z}/{x}/{y}.png'): TilePack => ({
+		name,
+		path,
+		minZoom: 0,
+		maxZoom: 16,
+	});
+
+	it('says nothing about a row nobody has typed in yet', () => {
+		expect(packProblem([row('', '')], 0)).toBeNull();
+	});
+
+	it('says nothing about a usable pack, or about a name whose path is still empty', () => {
+		expect(packProblem([row('City')], 0)).toBeNull();
+		expect(packProblem([row('City', '')], 0)).toBeNull();
+	});
+
+	it('names the two things that keep a filled-in row out of every menu', () => {
+		expect(packProblem([row('', '/packs/{z}/{x}/{y}.png')], 0)).toBe('unnamed');
+		// Both of them, not only the one that loses: the reader is looking at
+		// whichever row they are typing in.
+		const pair = [row('City', '/first/{z}/{x}/{y}.png'), row('City', '/second/{z}/{x}/{y}.png')];
+		expect(packProblem(pair, 0)).toBe('duplicate');
+		expect(packProblem(pair, 1)).toBe('duplicate');
+	});
+
+	it('falls through to the template once the name is settled', () => {
+		expect(packProblem([row('City', '/packs/tiles.png')], 0)).toBe('placeholders');
+	});
+
+	it('says nothing about a row that is not there', () => {
+		expect(packProblem([], 3)).toBeNull();
 	});
 });
 

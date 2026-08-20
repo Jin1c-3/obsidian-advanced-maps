@@ -328,6 +328,8 @@ const en = {
 	'settings.tiles.path.desc':
 		'The path your tiles are addressed by, holding {z}, {x} and {y}. Absolute, or relative to the vault.',
 	'settings.tiles.error.placeholders': 'Needs {z}, {x} and {y} in it.',
+	'settings.tiles.error.unnamed': 'Give this pack a name — the name is what a map is pointed at.',
+	'settings.tiles.error.duplicate': 'Two packs cannot share a name.',
 	'settings.tiles.minZoom.name': 'Lowest zoom level',
 	'settings.tiles.minZoom.desc':
 		'The lowest-numbered folder your pack goes down to. Maps stop zooming out there rather than emptying.',
@@ -724,6 +726,8 @@ const zh: Record<TranslationKey, string> = {
 	'settings.tiles.path.name': '瓦片路径',
 	'settings.tiles.path.desc': '瓦片的寻址路径，要含 {z}、{x}、{y}。可以是绝对路径，也可以相对于仓库。',
 	'settings.tiles.error.placeholders': '需要同时包含 {z}、{x} 和 {y} 。',
+	'settings.tiles.error.unnamed': '给这套瓦片起个名字 —— 地图是靠名字指向它的。',
+	'settings.tiles.error.duplicate': '两套瓦片不能同名。',
 	'settings.tiles.minZoom.name': '最低层级',
 	'settings.tiles.minZoom.desc': '这套瓦片里编号最小的那层。地图缩小到这里就停住，而不是变成空白。',
 	'settings.tiles.maxZoom.name': '最高层级',

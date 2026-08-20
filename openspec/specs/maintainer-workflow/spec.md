@@ -68,7 +68,11 @@ A row's name and description SHALL say what the setting does and what happens wh
 
 A setting whose value is a list of vault paths SHALL be edited as a list, one path per row, each offering the vault's own folder suggestions; and a list the reader has emptied SHALL be stored as empty rather than restored to its default, while stating in place what an empty list means.
 
+A row a reader adds to any of the pane's lists SHALL persist until they fill it in or remove it, from every state that list can be in, including one they have just emptied. A stored form that cannot represent a row nobody has typed into yet, and a reader that keeps only the entries something else can already use, are each a list whose add button silently does nothing; where a setting is read both to draw the pane and to act on, the two SHALL be separate readings.
+
 Where one setting decides whether another is written at all, both SHALL sit on one row, and the row SHALL keep the dependent control visible but inert rather than removing it, so the row still states what the value would be.
+
+A value the reader types a character at a time SHALL be read as the reader means it while it is incomplete: a cleared numeric box is an empty box and SHALL keep the value it is replacing, rather than being read as the number an empty string converts to.
 
 #### Scenario: Dynamic base-view options are not ready
 
@@ -119,6 +123,16 @@ Where one setting decides whether another is written at all, both SHALL sit on o
 
 - **WHEN** the setting that decides whether a value is used at all is switched off
 - **THEN** that value's own control stays on the same row, inert rather than removed, still stating what it holds
+
+#### Scenario: A row is added to a list
+
+- **WHEN** the reader adds a row to a settings list, including one they have emptied of every row
+- **THEN** the row is on screen and stored, and is still there after the pane re-renders and after a restart
+
+#### Scenario: A numeric box is cleared to type a new number
+
+- **WHEN** the reader clears a numeric settings box before typing its replacement
+- **THEN** the setting keeps the value it had, and takes the new one once it is typed
 
 ### Requirement: Pure logic retains gated test coverage
 
