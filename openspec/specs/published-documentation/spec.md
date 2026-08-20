@@ -78,8 +78,13 @@ publish a locale switch that leads nowhere.
 
 Guide figures SHALL live in a single directory under the documentation root and
 SHALL be referenced by a path that resolves unchanged from the repository
-Markdown, from the project README, and from the published site. A figure SHALL
-carry alternative text describing what it shows.
+Markdown, from the project README, and from the published site. One set SHALL
+serve every locale as well as every surface: a locale SHALL NOT carry figures of
+its own. A figure SHALL carry alternative text describing what it shows.
+
+Because one set is shared, a figure whose meaning depends on interface text SHALL
+be described in the surrounding prose of each locale, so a reader of a locale the
+figure is not in is not left to translate the picture.
 
 #### Scenario: A figure is referenced from two surfaces
 
@@ -90,6 +95,12 @@ carry alternative text describing what it shows.
 
 - **WHEN** an image cannot be displayed
 - **THEN** its alternative text states what the figure was showing
+
+#### Scenario: A figure shows a named control
+
+- **WHEN** a figure shows a command, setting, or menu label
+- **THEN** each locale's page names that control in its own locale, rather than
+  relying on the figure's text alone
 
 ### Requirement: Install guidance names the in-app path
 

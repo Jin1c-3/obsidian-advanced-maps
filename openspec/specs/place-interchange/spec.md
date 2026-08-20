@@ -1,5 +1,3 @@
-# place-interchange Specification
-
 ## Purpose
 
 Saved places pass through the vault in both directions: a file of placemarks
@@ -113,6 +111,12 @@ exported SHALL be exactly the places that map shows — the rows the base matche
 whose coordinate resolved — so what leaves matches what is on screen. Each
 exported place SHALL carry a name and its coordinate; a name SHALL be taken from
 the note's file name or from any property the base displays, chosen per export.
+A place that has neither SHALL still be named, by a constant that does not change
+with the reader's interface language: an exported file is read by other software
+and outlives the session that wrote it, so the same base exported on two installs
+SHALL produce the same names. This applies to what is written into the file, not
+to the file name the export offers the reader, which is interface text and is
+translated.
 
 #### Scenario: A base's places are exported
 
@@ -131,6 +135,13 @@ the note's file name or from any property the base displays, chosen per export.
   properties
 - **THEN** each place is named by that property's value for its note, falling
   back to the note's file name where the property is empty
+
+#### Scenario: A place has nothing to be named by
+
+- **WHEN** a marker resolves to no file name and to no value for the property the
+  export names places by
+- **THEN** the place is written under a constant name, and the same export run on
+  an install in another interface language writes that same name
 
 #### Scenario: A map has no places to export
 
@@ -181,15 +192,13 @@ when the export completes.
 
 ### Requirement: Places in and out can be switched off
 
-The reader SHALL be able to switch the exchange of places with files off. With it
-off, no import item SHALL be added to a track file's menu and no export item to a
-map's menu, and neither SHALL be reachable another way, because the two are one
-feature: the same places, in and out.
+Switched off under the shared policy in the feature-switches capability, which states what a switch takes away, what it keeps, and how it defaults. What follows is only what is specific to this feature.
 
-The setting SHALL default to on, so a reader who never opens it keeps the plugin
-they had. Switching it SHALL reach menus opened after that without a restart.
-Notes already imported and files already exported SHALL be untouched by either
-flip, being ordinary vault files once they are written.
+With it off, no import item SHALL be added to a track file's menu and no export
+item to a map's menu, and neither SHALL be reachable another way, because the two
+are one feature: the same places, in and out. Notes already imported and files
+already exported SHALL be untouched by either flip, being ordinary vault files
+once they are written.
 
 #### Scenario: The exchange is switched off
 

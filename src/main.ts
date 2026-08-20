@@ -12,7 +12,7 @@ import {
 	stringifyYaml,
 	TFile,
 } from 'obsidian';
-import type { CachedMetadata, Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
+import type { Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
 import {
 	activePacks,
 	DEFAULT_BACKGROUND,
@@ -27,11 +27,12 @@ import {
 	type OfflineBasemap,
 	type TilePack,
 } from './basemap';
-import { FOCUS_RETRY_MS, FOCUS_TRIES, NATIVE_MAPS_ID, PHOTO_EXTS, TRACK_EXTS } from './constants';
+import { FOCUS_RETRY_MS, FOCUS_TRIES, NATIVE_MAPS_ID, TRACK_EXTS } from './constants';
 import { formatLatLng, parseLatLng } from './coords';
+import { AttachmentResolver } from './attachments';
 import { claimableExtensions, TrackEmbed } from './embed';
 import { t } from './i18n';
-import { GeocodeError, needsKey, parseReverse, reverseRequest } from './geocode';
+import { awaitRateLimit, GeocodeError, needsKey, parseReverse, reverseRequest } from './geocode';
 import { LinkModal } from './link-modal';
 import { formatFix, isBlank, Locator } from './locate';
 import {
@@ -55,6 +56,7 @@ import {
 	basemapStartsOn,
 	DEFAULT_SETTINGS,
 	dropLegacyBasemap,
+	forceKnownEnums,
 	isExcluded,
 	migratedPack,
 	type AdvancedMapsSettings,
@@ -89,8 +91,8 @@ export default class AdvancedMapsPlugin extends Plugin {
 	private readonly filling = new WeakSet<TFile>();
 	/** The pane the followed notes are opening in; see `followTarget`. */
 	private followPane: WorkspaceLeaf | null = null;
-	/** Which track files a note embeds, memoised against the metadata that answered. */
-	private trackLinks = new WeakMap<CachedMetadata, TFile[]>();
+	/** Which files a note points at, and the memo over that; see `attachments.ts`. */
+	private attachments!: AttachmentResolver;
 
 	private nativeFactory: BasesViewFactory | null = null;
 	/** This instance's identity on the wrappers it installs; see `registration.ts`. */
@@ -106,6 +108,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	override async onload(): Promise<void> {
 		await this.loadSettings();
+		this.attachments = new AttachmentResolver(this.app, this.settings.showPhotos);
 		this.photoIndex = new PhotoIndex(pluginIndexIO(this));
 		// Started here rather than awaited: the read is what the first map waits
 		// on, and every other part of loading has no business waiting with it.
@@ -173,9 +176,14 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.registerEvent(
 			this.app.vault.on('rename', (_file: TAbstractFile, oldPath: string) => this.forgetTrack(oldPath))
 		);
+		// Only a new track or photo can change what a note's links resolve to: the
+		// memo is built by the same `isTrackFile` predicate, so a new `.md` cannot
+		// enter any note's answer. Gated because creation is not rare — importing
+		// places writes one note per place, and each would otherwise discard every
+		// note's resolved attachments.
 		this.registerEvent(
-			this.app.vault.on('create', () => {
-				this.trackLinks = new WeakMap();
+			this.app.vault.on('create', (file: TAbstractFile) => {
+				if (file instanceof TFile && this.isTrackFile(file.extension)) this.attachments.forgetAll();
 			})
 		);
 
@@ -253,7 +261,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// none, and after a rename the bytes answer to another name — either way
 		// it must not be able to place a point.
 		this.photoIndex.forget(path);
-		this.trackLinks = new WeakMap();
+		this.attachments.forgetAll();
 	}
 
 	/** Drop stored entries for photos the vault no longer has. */
@@ -502,8 +510,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 	}
 
 	refreshTracks(): void {
-		// `showPhotos` changes link eligibility without replacing CachedMetadata.
-		this.trackLinks = new WeakMap();
+		// Assigned rather than compared: the resolver drops its memo when this
+		// changes, because `showPhotos` changes what a note resolves to without
+		// Obsidian replacing any CachedMetadata.
+		this.attachments.showPhotos = this.settings.showPhotos;
 		for (const layer of this.layers) {
 			layer.sync().catch((e) => console.error('Advanced Maps: could not redraw tracks', e));
 		}
@@ -528,58 +538,12 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	/* ---- tracks ---- */
 
-	/** Whether this extension is one `resolveTracks` will pick up: a track
-	 *  format outright, or a photo format with **Show photos** on. Gating the
-	 *  photo half here rather than after the fact is what makes the memo below
-	 *  self-correct on a toggle: see `refreshTracks()`. */
 	private isTrackFile(extension: string): boolean {
-		return TRACK_EXTS.has(extension) || (this.settings.showPhotos && PHOTO_EXTS.has(extension));
-	}
-
-	/**
-	 * Resolve direct result files plus embeds, body links, and frontmatter links.
-	 * Metadata-cache discovery leaves the base query unchanged; TFile identity deduplicates.
-	 */
-	/**
-	 * The attachments a note points at that `accept` admits, in reading order.
-	 *
-	 * The three reference sources are read separately because Obsidian keeps them
-	 * separate, and all three count. Stated once: every caller has to agree on
-	 * the order and on the de-duplication, and a second copy of this loop is a
-	 * second place for a fourth source or an ordering rule to be missed.
-	 */
-	private linkedAttachments(file: TFile, cache: CachedMetadata, accept: (extension: string) => boolean): TFile[] {
-		const out: TFile[] = [];
-		// A Set beside the list rather than scanning `out`: an album note can
-		// reference hundreds of photos, and a linear scan per reference makes
-		// resolving one note quadratic in its own attachments.
-		const seen = new Set<TFile>();
-		// Embeds first, so a note that both embeds and links the same file keeps
-		// the order it reads in; `getFirstLinkpathDest` answers the same TFile for
-		// both, which is what makes the identity check enough to de-duplicate.
-		for (const ref of [...(cache.embeds ?? []), ...(cache.links ?? []), ...(cache.frontmatterLinks ?? [])]) {
-			const dest = this.app.metadataCache.getFirstLinkpathDest(ref.link, file.path);
-			if (dest && accept(dest.extension) && !seen.has(dest)) {
-				seen.add(dest);
-				out.push(dest);
-			}
-		}
-		return out;
+		return this.attachments.isTrackFile(extension);
 	}
 
 	resolveTracks(file: TFile): TFile[] {
-		if (this.isTrackFile(file.extension)) return [file];
-		if (file.extension !== 'md') return [];
-		const cache = this.app.metadataCache.getFileCache(file);
-		if (!cache) return [];
-
-		// Cache-object identity invalidates naturally when Obsidian re-indexes the note.
-		const memo = this.trackLinks.get(cache);
-		if (memo) return memo;
-
-		const out = this.linkedAttachments(file, cache, (extension) => this.isTrackFile(extension));
-		this.trackLinks.set(cache, out);
-		return out;
+		return this.attachments.resolveTracks(file);
 	}
 
 	/**
@@ -1209,6 +1173,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 		}
 
 		try {
+			// The same interval the search box keeps to. Bound to a hotkey this is
+			// the easiest way in the plugin to exceed Nominatim's usage policy, and
+			// the budget is the provider's, not one feature's.
+			await awaitRateLimit(geocodeProvider);
 			const request = reverseRequest(geocodeProvider, pair[0], pair[1], { key, language: getLanguage() || 'en' });
 			const response = await requestUrl({ url: request.url, headers: request.headers, throw: false });
 			if (response.status >= 400) throw new GeocodeError(`HTTP ${response.status}`);
@@ -1225,12 +1193,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	/** Resolve referenced photos for an explicit command, independent of display settings. */
 	private resolvePhotos(file: TFile): TFile[] {
-		const cache = this.app.metadataCache.getFileCache(file);
-		if (!cache) return [];
-		// Not memoized like `resolveTracks`, and deliberately past `isTrackFile`:
-		// this answers an explicit command, so it admits photos whether or not the
-		// display setting draws them.
-		return this.linkedAttachments(file, cache, (extension) => PHOTO_EXTS.has(extension));
+		return this.attachments.resolvePhotos(file);
 	}
 
 	/** EXIF is local file data, so this command is independent of device-location permission. */
@@ -1605,6 +1568,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// disk since. The defaults underneath it are what make the result whole.
 		const saved = (await this.loadData()) as (Partial<AdvancedMapsSettings> & LegacyBasemap) | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+		// The defaults fill in what the file left out; this is for what it filled
+		// in wrongly. Before the migrations below, so each of them reads a setting
+		// that is already one of the values its type admits.
+		forceKnownEnums(this.settings);
 
 		// One pack with no name became a list of named ones. The three old keys are
 		// read here and written nowhere: `Object.assign` copies them onto the live
@@ -1618,7 +1585,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 			// into every map: it was the only one, so it is the default one.
 			this.settings.defaultBasemap = migrated.name;
 		}
-		if (dropLegacyBasemap(this.settings)) await this.saveSettings();
+		// Each migration below only records that it changed something; the one
+		// write happens after all three have run, so a load that meets all of them
+		// rewrites `data.json` once instead of three times.
+		let dirty = dropLegacyBasemap(this.settings);
 
 		// Settings written before offline basemaps could be switched off say
 		// nothing about the switch, so the packs answer for them: a reader who has
@@ -1627,7 +1597,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		const startsOn = basemapStartsOn(saved, this.settings.tilePacks);
 		if (startsOn !== null && startsOn !== this.settings.offlineBasemap) {
 			this.settings.offlineBasemap = startsOn;
-			await this.saveSettings();
+			dirty = true;
 		}
 
 		// A key written before there was anywhere else to put it stays where it is.
@@ -1638,8 +1608,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// so that clearing the box later cannot flip the store on the next start.
 		if (saved?.amapKey && !saved.amapKeyStore) {
 			this.settings.amapKeyStore = 'plugin';
-			await this.saveSettings();
+			dirty = true;
 		}
+
+		if (dirty) await this.saveSettings();
 	}
 
 	async saveSettings(): Promise<void> {

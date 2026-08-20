@@ -1,6 +1,6 @@
 /* Pure WGS-84-to-provider URL builders with provider-specific datum and axis order. */
 
-import { COORD_DIGITS, toTileSpace, wgs2gcj, type CoordSystem } from './coords';
+import { formatCoord as fmt, toTileSpace, wgs2gcj, type CoordSystem } from './coords';
 
 export const EXTERNAL_MAPS = ['amap', 'baidu', 'tencent', 'google', 'apple', 'osm'] as const;
 export type ExternalMap = (typeof EXTERNAL_MAPS)[number];
@@ -26,9 +26,6 @@ export interface CustomMap {
 export const CUSTOM_DATUMS = ['wgs84', 'gcj02', 'bd09'] as const;
 /** Spelled as the shared system rather than a parallel union, so the two cannot drift. */
 export type CustomDatum = CoordSystem;
-
-/** The same rounding every other coordinate this plugin writes gets. */
-const fmt = (n: number): string => n.toFixed(COORD_DIGITS);
 
 /**
  * The order to list them in — most likely first for this locale.

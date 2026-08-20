@@ -99,12 +99,19 @@ export class NotePickerModal extends FuzzySuggestModal<TFile> {
 		this.modalEl.addClass('advanced-maps-note-picker');
 	}
 
+	/** Built on first ask and held for this opening; see `getItems()`. */
+	private items: TFile[] | null = null;
+
 	getItems(): TFile[] {
+		// Asked again for every keystroke, so the vault walk is done once per
+		// opening and kept. Still not held across openings: the reader can move
+		// their template folder between one right-click and the next, and the next
+		// modal builds this afresh.
+		if (this.items) return this.items;
 		const notes = this.app.vault.getMarkdownFiles();
-		// Read per open rather than held: the reader can move their template
-		// folder between one right-click and the next.
 		const templates = templateFolder(this.app);
-		return templates === null ? notes : notes.filter((file) => !inFolder(file.path, templates));
+		this.items = templates === null ? notes : notes.filter((file) => !inFolder(file.path, templates));
+		return this.items;
 	}
 
 	getItemText(file: TFile): string {

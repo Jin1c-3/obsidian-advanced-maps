@@ -21,12 +21,19 @@ class FolderSuggest extends AbstractInputSuggest<TFolder> {
 		super(app, input);
 	}
 
+	/** Folders and their lowercased paths, built on the first keystroke. */
+	private folders: { folder: TFolder; lower: string }[] | null = null;
+
 	getSuggestions(query: string): TFolder[] {
 		const needle = query.toLowerCase();
-		// The folders, not every file in the vault filtered down to them: this runs
-		// on each keystroke, and a large vault holds orders of magnitude more files
-		// than folders.
-		return this.app.vault.getAllFolders(true).filter((folder) => folder.path.toLowerCase().includes(needle));
+		// The folders, not every file in the vault filtered down to them: a large
+		// vault holds orders of magnitude more files than folders. Walked and
+		// lowercased once rather than per keystroke, since this suggester lives
+		// only as long as the text field it is attached to.
+		this.folders ??= this.app.vault
+			.getAllFolders(true)
+			.map((folder) => ({ folder, lower: folder.path.toLowerCase() }));
+		return this.folders.filter((entry) => entry.lower.includes(needle)).map((entry) => entry.folder);
 	}
 
 	renderSuggestion(folder: TFolder, el: HTMLElement): void {

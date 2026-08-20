@@ -6,6 +6,7 @@ import {
 	excludedFragments,
 	exclusionRows,
 	fallsBackToDefault,
+	forceKnownEnums,
 	isExcluded,
 	migratedPack,
 	packNameFromPath,
@@ -211,5 +212,53 @@ describe('basemapStartsOn', () => {
 	it('says nothing about settings that already answer, either way', () => {
 		expect(basemapStartsOn({ offlineBasemap: false }, [PACK])).toBeNull();
 		expect(basemapStartsOn({ offlineBasemap: true }, [])).toBeNull();
+	});
+});
+
+describe('a stored setting that is not one of its own values', () => {
+	const loaded = (saved: Partial<AdvancedMapsSettings>): AdvancedMapsSettings =>
+		Object.assign({}, DEFAULT_SETTINGS, saved);
+
+	it('puts back the default rather than handing on a provider nothing can look up', () => {
+		// What `data.json` holds after a hand edit, a restored backup, or a sync
+		// from a build that knows one provider more than this one does. The old
+		// pair of ternaries read anything unrecognised as Nominatim; the table
+		// that replaced them is a total lookup, so an unknown key reaches
+		// `PROVIDERS[provider].needsKey` and throws out of the search command.
+		const settings = loaded({ geocodeProvider: 'some-future-provider' as AdvancedMapsSettings['geocodeProvider'] });
+		forceKnownEnums(settings);
+		expect(settings.geocodeProvider).toBe(DEFAULT_SETTINGS.geocodeProvider);
+	});
+
+	it('leaves a provider this build does know exactly where it is', () => {
+		const settings = loaded({ geocodeProvider: 'amap' });
+		forceKnownEnums(settings);
+		expect(settings.geocodeProvider).toBe('amap');
+	});
+
+	it('checks every fixed-list setting, not just the one that threw', () => {
+		const settings = loaded({
+			amapKeyStore: 'keychain' as AdvancedMapsSettings['amapKeyStore'],
+			openIn: 'elsewhere' as AdvancedMapsSettings['openIn'],
+			photoDatum: 'moon' as AdvancedMapsSettings['photoDatum'],
+		});
+		forceKnownEnums(settings);
+		expect(settings.amapKeyStore).toBe(DEFAULT_SETTINGS.amapKeyStore);
+		expect(settings.openIn).toBe(DEFAULT_SETTINGS.openIn);
+		expect(settings.photoDatum).toBe(DEFAULT_SETTINGS.photoDatum);
+	});
+
+	it('trims a coordinate mode rather than reading the whitespace as unknown', () => {
+		// The one key the table excludes: `knownMode` accepts what a plain
+		// `includes` would throw away.
+		const settings = loaded({ coordSystem: ' gcj02 ' as AdvancedMapsSettings['coordSystem'] });
+		forceKnownEnums(settings);
+		expect(settings.coordSystem).toBe('gcj02');
+	});
+
+	it('restores the default coordinate mode when the stored one names nothing', () => {
+		const settings = loaded({ coordSystem: 'utm' as AdvancedMapsSettings['coordSystem'] });
+		forceKnownEnums(settings);
+		expect(settings.coordSystem).toBe(DEFAULT_SETTINGS.coordSystem);
 	});
 });

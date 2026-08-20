@@ -7,6 +7,7 @@ import {
 	type Setting,
 	type SettingDefinition,
 	type SettingDefinitionItem,
+	type SettingDefinitionList,
 } from 'obsidian';
 import { TILE_ZOOM_MAX, packProblem, packRows, tilePacks, type TilePack } from './basemap';
 import { GUIDE_URL, REPO_URL, SPREAD, TRACK_KNOBS, type TrackKnob } from './constants';
@@ -539,6 +540,38 @@ const ENUM_VALUES: Partial<Record<keyof AdvancedMapsSettings, readonly unknown[]
 	photoDatum: PHOTO_DATUMS,
 };
 
+/** Bound to one key, so the default and the field it replaces have one type. */
+function restoreDefault<K extends keyof AdvancedMapsSettings>(settings: AdvancedMapsSettings, key: K): void {
+	settings[key] = DEFAULT_SETTINGS[key];
+}
+
+/**
+ * Every fixed-list setting forced back onto its list.
+ *
+ * The same check `setControlValue` makes on the way out, made on the way in:
+ * `loadData()` answers with whatever is on disk, which may have been
+ * hand-edited, restored from a backup, or synced from a build that knows one
+ * provider more than this one does. The type says the value is on the list, and
+ * the code downstream is entitled to believe it — `PROVIDERS[provider]` is a
+ * lookup typed as total, so an unknown provider does not degrade, it throws
+ * `undefined is not an object` from inside whichever command asked.
+ *
+ * `coordSystem` is here as well as in the table's exclusion: it needs
+ * `knownMode`, which trims before matching, not a plain `includes`.
+ *
+ * Corrected in memory and deliberately not written back. A value this build
+ * cannot name may be one a later build can, and healing `data.json` would
+ * resolve that by deleting the reader's setting on the device that understands
+ * it least.
+ */
+export function forceKnownEnums(settings: AdvancedMapsSettings): void {
+	settings.coordSystem = knownMode(settings.coordSystem) ?? DEFAULT_SETTINGS.coordSystem;
+	for (const key of Object.keys(ENUM_VALUES) as (keyof AdvancedMapsSettings)[]) {
+		const allowed = ENUM_VALUES[key];
+		if (allowed && !allowed.includes(settings[key])) restoreDefault(settings, key);
+	}
+}
+
 /** Declarative Obsidian 1.13 settings, indexed by settings search. */
 export class AdvancedMapsSettingTab extends PluginSettingTab {
 	/**
@@ -950,6 +983,45 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	/**
+	 * A list's add, delete and reorder affordances, and the switch they go with.
+	 *
+	 * One shape for all four of the pane's lists, because they differ only in
+	 * what they read, what they write, and which of the three they offer — while
+	 * the rule binding them is the same everywhere and is easy to get wrong in a
+	 * fifth copy: the affordances go with the feature. A switched-off feature's
+	 * configuration is there to be read — the rows state what they hold — and
+	 * adding an entry to a list nothing draws from is not what the reader came to
+	 * the page for.
+	 *
+	 * `read` is asked afresh inside each affordance rather than captured, so a
+	 * row typed since the list was drawn is in the list a delete or a drag starts
+	 * from.
+	 */
+	private listAffordances<T>(options: {
+		/** Omitted where the list belongs to no switch, as the skip list does. */
+		enabled?: boolean;
+		read: () => T[];
+		write: (rows: T[]) => void;
+		/** Omitted where the entries are fixed, as the six built-ins are. */
+		add?: { name: string; make: () => T };
+		/** Omitted where the entries are fixed; overridden where deleting one
+		 *  has to carry something else with it, as removing a pack does. */
+		remove?: (index: number) => void;
+		/** Omitted where order is not the reader's to choose. */
+		reorder?: boolean;
+	}): Partial<Pick<SettingDefinitionList<ControlKey>, 'addItem' | 'onDelete' | 'onReorder'>> {
+		if (options.enabled === false) return {};
+		const { read, write, add, remove, reorder } = options;
+		return {
+			...(add ? { addItem: { name: add.name, action: () => write([...read(), add.make()]) } } : {}),
+			...(add || remove
+				? { onDelete: remove ?? ((index: number) => write(read().filter((_, at) => at !== index))) }
+				: {}),
+			...(reorder ? { onReorder: (from: number, to: number) => write(moved(read(), from, to)) } : {}),
+		};
+	}
+
+	/**
 	 * The skip list as one stored string.
 	 *
 	 * `rerender` for the two that change how many rows there are; editing a row
@@ -1175,26 +1247,16 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 							searchable: false,
 							render: (setting: Setting) => this.packRow(setting, packRowsNow, index),
 						})),
-						// The list's own affordances go with the feature. A switched-off
-						// feature's configuration is there to be read — the rows above
-						// state what they hold, and adding a fifth to a list nothing
-						// draws from is not what the reader came to the page for.
-						...(this.plugin.settings.offlineBasemap
-							? {
-									addItem: {
-										name: t('settings.tiles.packs.add'),
-										action: () => {
-											void this.writeList('tilePacks', [...this.packRows(), { ...NEW_PACK }]);
-										},
-									},
-									onDelete: (index: number) => {
-										void this.deletePack(index);
-									},
-									onReorder: (from: number, to: number) => {
-										void this.writeList('tilePacks', moved(this.packRows(), from, to));
-									},
-								}
-							: {}),
+						...this.listAffordances<TilePack>({
+							enabled: this.plugin.settings.offlineBasemap,
+							read: () => this.packRows(),
+							write: (rows) => void this.writeList('tilePacks', rows),
+							add: { name: t('settings.tiles.packs.add'), make: () => ({ ...NEW_PACK }) },
+							// Not the ordinary filter: removing a pack carries the default
+							// setting with it when that row was the last of its name.
+							remove: (index) => void this.deletePack(index),
+							reorder: true,
+						}),
 					},
 					{
 						name: t('settings.tiles.default.name'),
@@ -1312,17 +1374,19 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 					// map rather than only about its buttons.
 					this.toggle('settings.controls.stamp.name', 'settings.controls.stamp.desc', 'stampNote'),
 				],
-				() =>
-					t('settings.controls.count', {
-						on: String(
-							[
-								this.plugin.settings.follow,
-								this.plugin.settings.measure,
-								this.plugin.settings.stampNote,
-							].filter(Boolean).length
-						),
-						total: '3',
-					})
+				() => {
+					// Both numbers off one list, so adding a switch to this page cannot
+					// leave the total stating the count it had before.
+					const switches = [
+						this.plugin.settings.follow,
+						this.plugin.settings.measure,
+						this.plugin.settings.stampNote,
+					];
+					return t('settings.controls.count', {
+						on: String(switches.filter(Boolean).length),
+						total: String(switches.length),
+					});
+				}
 			),
 
 			this.page(
@@ -1347,13 +1411,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 								disabled: () => !this.plugin.settings.externalLinks,
 							},
 						})),
-						...(this.plugin.settings.externalLinks
-							? {
-									onReorder: (from: number, to: number) => {
-										void this.writeList('externalMaps', moved(this.builtins(), from, to));
-									},
-								}
-							: {}),
+						// Reorder only: the six are fixed, so there is none to add and none
+						// to remove — a built-in is switched off, not deleted.
+						...this.listAffordances<BuiltinMap>({
+							enabled: this.plugin.settings.externalLinks,
+							read: () => this.builtins(),
+							write: (rows) => void this.writeList('externalMaps', rows),
+							reorder: true,
+						}),
 					},
 					{
 						type: 'list',
@@ -1365,29 +1430,16 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 							searchable: false,
 							render: (setting: Setting) => this.customRow(setting, entry, index),
 						})),
-						// The affordances go with the feature, the way the tile packs' do.
-						...(this.plugin.settings.externalLinks
-							? {
-									addItem: {
-										name: t('settings.external.custom.add'),
-										action: () => {
-											void this.writeList('customMaps', [
-												...this.customs(),
-												{ name: '', url: '', datum: 'wgs84' },
-											]);
-										},
-									},
-									onDelete: (index: number) => {
-										void this.writeList(
-											'customMaps',
-											this.customs().filter((_, at) => at !== index)
-										);
-									},
-									onReorder: (from: number, to: number) => {
-										void this.writeList('customMaps', moved(this.customs(), from, to));
-									},
-								}
-							: {}),
+						...this.listAffordances<CustomMap>({
+							enabled: this.plugin.settings.externalLinks,
+							read: () => this.customs(),
+							write: (rows) => void this.writeList('customMaps', rows),
+							add: {
+								name: t('settings.external.custom.add'),
+								make: () => ({ name: '', url: '', datum: 'wgs84' }),
+							},
+							reorder: true,
+						}),
 					},
 				],
 				// Both lists' switched-on entries: what the right-click menu will offer,
@@ -1473,17 +1525,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 								placeholder: DEFAULT_SETTINGS.autoFillExclude,
 							},
 						})),
-						addItem: {
-							name: t('settings.locate.exclude.add'),
-							action: () => {
-								void this.writeExclusions([...exclusionRows(this.plugin.settings.autoFillExclude), '']);
-							},
-						},
-						onDelete: (index: number) => {
-							void this.writeExclusions(
-								exclusionRows(this.plugin.settings.autoFillExclude).filter((_, at) => at !== index)
-							);
-						},
+						// No switch of its own: the skip list belongs to the row above it,
+						// which is disabled rather than taken away. No order to choose
+						// either — one folder is skipped whatever place it is listed in.
+						...this.listAffordances<string>({
+							read: () => exclusionRows(this.plugin.settings.autoFillExclude),
+							write: (rows) => void this.writeExclusions(rows),
+							add: { name: t('settings.locate.exclude.add'), make: () => '' },
+						}),
 					},
 				],
 				() => this.state(this.plugin.settings.locate)
@@ -1641,6 +1690,114 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		await this.setControlValue('customMaps', list);
 	}
 
+	/**
+	 * What each setting sets in motion once it has been written.
+	 *
+	 * A table rather than a `switch`, for the reason `TRACK_REFRESH_KEYS` is one:
+	 * a setting's after-effect is a property of that setting, and a list of them
+	 * can be read, while a case buried in eighty lines of other cases is a thing
+	 * to remember. The five that only re-render say so by sharing one entry
+	 * instead of by falling through to a shared `break`.
+	 *
+	 * Keys with nothing to set in motion are simply absent; the lookup answers
+	 * `undefined` and nothing happens. A gate on the feature itself is
+	 * deliberately *not* here — a menu item's switch is read where the menu is
+	 * built, and routing that through a table would put the answer somewhere
+	 * other than the question.
+	 *
+	 * Inside the class because every entry reaches this pane's own workings, and
+	 * a table is not a reason to open them to the module.
+	 */
+	private static readonly AFTER_WRITE: Partial<
+		Record<Key, (tab: AdvancedMapsSettingTab, next: unknown) => void | Promise<void>>
+	> = {
+		coordSystem: (tab) => tab.plugin.reprojectAll(),
+
+		// The rows under it become inert or editable, and every map already open
+		// either loses the pack it draws or gets it back — refreshed the same way a
+		// pack change refreshes them, which is also what takes the packs out of the
+		// host's menu and puts them back.
+		offlineBasemap: (tab) => {
+			tab.update();
+			tab.refreshBasemaps();
+		},
+
+		// Not on the track-refresh list: this replaces the ground under the tracks
+		// rather than the tracks, and the redraw the new style triggers puts them
+		// back by itself.
+		tilePacks: (tab) => {
+			tab.refreshBasemaps();
+		},
+		defaultBasemap: (tab) => {
+			tab.refreshBasemaps();
+		},
+
+		// Claims or releases the track extensions, and takes down the inline maps
+		// on screen when it releases them.
+		inlineMaps: (tab) => {
+			tab.plugin.refreshInlineMaps();
+			tab.update();
+		},
+
+		// Nothing to refresh on a map: a menu is built when it is opened and reads
+		// the switch then. The re-render is for the rows these decide the inertness
+		// of, and for the page's own entry.
+		openInMap: (tab) => tab.update(),
+		nearbyMap: (tab) => tab.update(),
+		stampNote: (tab) => tab.update(),
+		placeExchange: (tab) => tab.update(),
+		externalLinks: (tab) => tab.update(),
+
+		// Rewritten rather than re-rendered: this fires on every keystroke in the
+		// box, and `update()` would take the caret with it.
+		coordsProperty: (tab, next) => tab.restateProperty(String(next)),
+
+		// Another base has other views. This re-renders with what is known now —
+		// the list itself is read after, and re-renders again.
+		basePath: (tab) => tab.update(),
+
+		// The Amap key rows state when they are visible; this is what re-asks.
+		geocodeProvider: (tab) => tab.update(),
+
+		// Move first, re-render second: the secret box is seeded from what it reads
+		// at render, so a move after that one would not show until the settings
+		// window was reopened.
+		amapKeyStore: async (tab, next) => {
+			if (next === 'secret') await tab.adoptPlainKey();
+			tab.update();
+		},
+
+		// Turning it on is a fresh statement of intent; forget any refusal.
+		locate: (tab) => tab.plugin.resetLocator(),
+
+		// The button appears on, or leaves, every map already open. The re-render
+		// is for the follow page's own second row, which is there only while the
+		// first is on.
+		follow: (tab) => tab.refreshControlRows(),
+		measure: (tab) => tab.refreshControlRows(),
+
+		// Not on the track-refresh list: the fan is stamped on the pins as the
+		// *native* manager mints them, and only `updateMarkers` mints them.
+		// `sync()` would redraw every track and change no pin at all.
+		spreadMarkers: (tab) => tab.plugin.reprojectAll(),
+	};
+
+	/** This plugin's buttons on every open map, and the row that depends on them. */
+	private refreshControlRows(): void {
+		this.plugin.refreshControls();
+		this.update();
+	}
+
+	/**
+	 * Restate the coordinate property wherever a description names it.
+	 *
+	 * In place rather than through `update()`: this is reached on every keystroke
+	 * in that box, and a re-render would take the caret out of it.
+	 */
+	private restateProperty(name: string): void {
+		for (const span of this.containerEl.querySelectorAll(`.${PROPERTY_MENTION}`)) span.textContent = name;
+	}
+
 	override async setControlValue(key: string, value: unknown): Promise<void> {
 		const excluded = excludeIndex(key);
 		if (excluded !== null) {
@@ -1703,88 +1860,14 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		if (key === 'tilePacks') next = packRows(next);
 		await super.setControlValue(key, next);
 
-		switch (key) {
-			case 'coordSystem':
-				this.plugin.reprojectAll();
-				break;
-			case 'offlineBasemap':
-				// The rows under it become inert or editable, and every map already
-				// open either loses the pack it draws or gets it back — refreshed the
-				// same way a pack change refreshes them, which is also what takes the
-				// packs out of the host's menu and puts them back.
-				this.update();
-				this.refreshBasemaps();
-				break;
-			case 'tilePacks':
-			case 'defaultBasemap':
-				// Not on the track-refresh list below: this replaces the ground under
-				// the tracks rather than the tracks, and the redraw the new style
-				// triggers puts them back by itself.
-				this.refreshBasemaps();
-				break;
-			case 'inlineMaps':
-				// Claims or releases the track extensions, and takes down the inline
-				// maps on screen when it releases them.
-				this.plugin.refreshInlineMaps();
-				this.update();
-				break;
-			case 'openInMap':
-			case 'nearbyMap':
-			case 'stampNote':
-			case 'placeExchange':
-			case 'externalLinks':
-				// Nothing to refresh on a map: a menu is built when it is opened and
-				// reads the switch then. The re-render is for the rows these decide
-				// the inertness of, and for the page's own entry.
-				this.update();
-				break;
-			case 'coordsProperty':
-				// Rewritten rather than re-rendered: this fires on every keystroke
-				// in the box, and `update()` would take the caret with it.
-				for (const span of this.containerEl.querySelectorAll(`.${PROPERTY_MENTION}`)) {
-					span.textContent = String(next);
-				}
-				break;
-			case 'basePath':
-				// Another base has other views. This re-renders with what is known
-				// now — the list itself is read after, and re-renders again.
-				this.update();
-				break;
-			case 'geocodeProvider':
-				// The Amap key rows state when they are visible; this is what re-asks.
-				this.update();
-				break;
-			case 'amapKeyStore':
-				// Move first, re-render second: the secret box is seeded from what it
-				// reads at render, so a move after that one would not show until the
-				// settings window was reopened.
-				if (next === 'secret') await this.adoptPlainKey();
-				this.update();
-				break;
-			case 'locate':
-				// Turning it on is a fresh statement of intent; forget any refusal.
-				this.plugin.resetLocator();
-				break;
-			case 'follow':
-			case 'measure':
-				// The button appears on, or leaves, every map already open. The
-				// re-render is for the follow page's own second row, which is there
-				// only while the first is on.
-				this.plugin.refreshControls();
-				this.update();
-				break;
-			case 'spreadMarkers':
-				// Not on the track-refresh list below: the fan is stamped on the pins
-				// as the *native* manager mints them, and only `updateMarkers` mints
-				// them. `sync()` would redraw every track and change no pin at all.
-				this.plugin.reprojectAll();
-				break;
-		}
+		await AdvancedMapsSettingTab.AFTER_WRITE[key as Key]?.(this, next);
 
-		// Beside the switch rather than instead of it, so a key can be both: a
-		// visual setting must reach maps that are already open, because Bases does
-		// not necessarily sync after plugin data.json changes and an inline embed
-		// has no Bases result set to prompt it at all.
+		// Beside the table rather than inside it, so a key can be both: a visual
+		// setting must reach maps that are already open, because Bases does not
+		// necessarily sync after plugin data.json changes and an inline embed has
+		// no Bases result set to prompt it at all. A Set is the right shape for
+		// many keys sharing one action; the table above is the right shape for
+		// keys that each want a different one.
 		if (refreshesTracks(key)) this.refreshTracks();
 	}
 }

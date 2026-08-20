@@ -28,35 +28,8 @@ Source comments SHALL be retained for local contracts, units and ranges, non-obv
 
 #### Scenario: Comment audit is reviewed
 
-- **WHEN** the TypeScript comment cleanup is complete
+- **WHEN** a change removes or rewrites TypeScript comments
 - **THEN** removed non-obvious current constraints can be traced to specs, tests, or design; adjacent code remains understandable; and no source comment uses `CLAUDE.md` as its explanation target
-
-### Requirement: Documentation migration preserves runtime behavior
-
-The documentation and comment migration SHALL NOT intentionally change executable TypeScript, plugin APIs, user settings, persisted data, runtime dependencies, or bundle semantics.
-
-#### Scenario: Migration is validated
-
-- **WHEN** the migration is complete
-- **THEN** formatting, linting, typechecking, tests, coverage gates, and production build all pass, and any executable diff is either absent or separately justified as a correction to documentation-only scaffolding
-
-### Requirement: Local development uses the relocated jot vault
-
-The maintainer's ignored local `.env` SHALL target `../../Obsidian/jot/.obsidian/plugins/advanced-maps`, while committed setup examples SHALL remain portable and describe the vault target generically.
-
-#### Scenario: Development watcher starts locally
-
-- **WHEN** `npm run dev` is launched from this repository with the local environment file
-- **THEN** builds are written to the relocated jot vault without relying on a `/mnt/c/...` mount
-
-### Requirement: Obsolete reload troubleshooting is removed
-
-Maintainer documentation and source comments SHALL NOT retain warnings, recovery procedures, or test preconditions that assert repeated plugin reload leaves orphaned layers or requires a full-window recovery. Factual build/watch and plugin-reload commands MAY remain where they are still useful.
-
-#### Scenario: Reload references are audited
-
-- **WHEN** repository documentation is searched after migration
-- **THEN** the obsolete repeated-reload/orphan-layer narrative and old mounted path are absent, while ordinary reload terminology describing actual product lifecycle or a command is not removed merely for containing the word
 
 ### Requirement: Settings remain declarative and current
 
@@ -287,7 +260,7 @@ continuous-integration step.
 
 ### Requirement: Shipped user-facing behavior reaches the user guide
 
-A change that adds, removes, or alters behavior a reader can invoke, see, or configure SHALL update the user guide in the same change, in every locale the guide supports, by extending an existing page or adding a new one; a change that adds a page SHALL add it under every locale's guide directory and make both the guide index and the published site's navigation point at it. Guide passages naming a command, setting, property, or the place a setting is found SHALL match what the change ships. A change with no user-visible behavior SHALL record that no guide update is needed rather than leaving the question unanswered.
+A change that adds, removes, or alters behavior a reader can invoke, see, or configure SHALL update the user guide in the same change, by extending an existing page or adding a new one. What the resulting guide must look like — that every page exists in both locales and that each locale's navigation reaches it — is the published-documentation capability's, and is checked there; the obligation here is that the change carries it rather than leaving it for later. Guide passages naming a command, setting, property, or the place a setting is found SHALL match what the change ships. A change with no user-visible behavior SHALL record that no guide update is needed rather than leaving the question unanswered.
 
 #### Scenario: A change ships user-visible behavior
 
@@ -330,60 +303,9 @@ Documentation figures SHALL be captured from one persistent demo folder in the m
 
 ### Requirement: Figures are captured against an English interface
 
-Published figures SHALL show Obsidian's English interface, and one figure set SHALL serve every locale of the documentation rather than one set per locale. A figure whose meaning depends on interface text SHALL be described in the surrounding prose of each locale, so a reader of another locale is not left to translate the picture.
+Published figures SHALL show Obsidian's English interface. That one set then serves every locale, and what each locale's prose must therefore say, is stated by the published-documentation capability; the rule here is the one that applies while a figure is being taken.
 
 #### Scenario: A figure is captured
 
 - **WHEN** a figure showing Obsidian's interface is captured
 - **THEN** the interface language is English, and the same file is referenced by every locale of the guide
-
-#### Scenario: A figure shows a named control
-
-- **WHEN** a figure shows a command, setting, or menu label
-- **THEN** the page's prose names that control in the page's own locale, rather than relying on the figure's English text alone
-
-### Requirement: A feature that appears where it was not asked for carries a switch
-
-Anything this plugin puts into a surface the reader did not open for it SHALL be
-switchable off: an item added to a menu the host owns, an option or control added
-to a map, a file extension claimed across the vault, or a structure handed to
-another plugin's object. A command SHALL NOT need a switch of its own, being
-invoked rather than encountered, and a command belonging to a switched feature
-SHALL follow that feature's switch.
-
-A switch SHALL take away everything its feature does rather than only what is
-visible: with it off, the surface SHALL be what it would be with this plugin
-absent. The feature's own configuration SHALL be kept rather than cleared, and
-SHALL stay on screen where it is configured, inert, so a reader can see what
-switching back on returns to them.
-
-Flipping a switch SHALL reach what is already open — menus, maps and the settings
-pane alike — rather than waiting for a restart. Where something already built
-cannot be reached, what needs reopening SHALL be stated where the reader is,
-rather than left to be discovered.
-
-A switch SHALL default so that an upgrading reader keeps the plugin they already
-had. Where a feature's on state costs a reader who does not use it something they
-cannot otherwise avoid, the default SHALL instead be off, and a reader whose
-existing configuration shows they use it SHALL be switched on once, when their
-settings are read.
-
-#### Scenario: A feature is switched off
-
-- **WHEN** the reader switches off a feature that adds an item to a menu the host
-  owns
-- **THEN** the next time that menu is opened the item is absent, the feature's
-  own commands are unavailable, and the menu is what it would be with this plugin
-  absent
-
-#### Scenario: A switched-off feature's configuration
-
-- **WHEN** a settings page for a switched-off feature is opened
-- **THEN** what was configured is on screen, stating what it holds, and cannot be
-  edited until the feature is switched on
-
-#### Scenario: A reader upgrades into a new switch
-
-- **WHEN** settings written before a switch existed are read
-- **THEN** the feature is on where it was on before, and off only where leaving it
-  on would charge a reader who does not use it

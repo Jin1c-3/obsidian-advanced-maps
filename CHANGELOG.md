@@ -4,6 +4,35 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [1.18.6]
+
+### Fixed
+
+- **Place search and reverse geocoding survive a settings file they cannot
+  read.** A search provider this build does not know — hand-edited, restored
+  from a backup, or synced from a build that knows one more than it does — took
+  both commands down without a word: the hotkey did nothing at all. Any setting
+  that must be one of a fixed list is now read as its default when the stored
+  value is not on that list, and what is on disk is left where it is, so a build
+  that does know the value still reads it back.
+
+- **Nominatim's one-second interval holds when two features ask at once.** A
+  search box with a query in flight and the reverse-geocode command on a hotkey
+  each waited out the same second and then sent together — the burst the
+  interval exists to prevent. They now take their turn, and one that is
+  abandoned while waiting still leaves the second free for whoever is behind it.
+
+- **A hover row no longer describes the track you were pointing at before the
+  map was rebuilt.** When a map view replaced its map, the last-pointed track or
+  photo was left behind, and the next popup to open — an ordinary pin's
+  included — could carry a row about it.
+
+- **An inline route map no longer goes down with the Maps plugin's colour
+  resolver.** A map in a note asked that undocumented internal for a colour
+  bare, so a Maps build without it, or one that threw from it, left the map
+  undrawn; the maps in a base already carried on. Both now fall back to the
+  colour they were handed.
+
 ## [1.18.5]
 
 ### Added
@@ -1196,6 +1225,7 @@ one vault; the behaviour is unchanged, everything around it is new.
   base's first map view, and the menu label falls back to the localized default.
 
 [Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.2...HEAD
+[1.18.6]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.5...1.18.6
 [1.18.5]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.4...1.18.5
 [1.18.4]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.3...1.18.4
 [1.18.3]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.2...1.18.3

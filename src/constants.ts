@@ -135,7 +135,6 @@ export const MEASURING_CLASS = 'advanced-maps-measuring';
  */
 export const SNAP_PX = 12;
 
-/** Bounded retry window for a lazily-created map targeted by a pop-up. */
 /**
  * The gestures that mean the reader has taken the wheel, so auto-framing stops
  * moving the map underneath them.
@@ -158,6 +157,7 @@ export const USER_GESTURE_EVENTS = ['dragstart', 'zoomstart', 'rotatestart', 'pi
 export const ADOPTION_RETRY_MS = 250;
 export const ADOPTION_TRIES = 40;
 
+/** Bounded retry window for a lazily-created map targeted by a pop-up. */
 export const FOCUS_RETRY_MS = 100;
 export const FOCUS_TRIES = 30;
 
