@@ -4,6 +4,33 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [1.18.4]
+
+### Fixed
+
+- **Add tile pack works.** The button wrote a row that was thrown away before it
+  reached your settings, so the list stayed empty and 1.18.3's tile packs were
+  unreachable for anyone who did not already have one configured. A row is now
+  yours from the moment you add it, and stays until you fill it in or remove it.
+
+- **A row that no map can use says so.** Under the boxes, in the same place a
+  path missing `{z}`, `{x}` or `{y}` was already reported: a name another row
+  already carries, or a path with no name beside it. Both were silently left out
+  of every menu before.
+
+- **Clearing a zoom level box no longer sets it to 0.** Selecting the number and
+  deleting it — on the way to typing another — read as zero, which for a highest
+  level is the whole world in a single tile. The box now keeps the level it had
+  until you type the new one.
+
+- **Removing a pack clears the default that named it.** Renaming one already
+  carried the **Default background** setting along; deleting one left it naming
+  a pack that was gone.
+
+- **The skip list can be added to after you empty it.** Under Location, deleting
+  every row from **Skip these folders** left its add button doing nothing, with
+  no way back but editing the settings file.
+
 ## [1.18.3]
 
 ### Added
@@ -1138,6 +1165,7 @@ one vault; the behaviour is unchanged, everything around it is new.
   base's first map view, and the menu label falls back to the localized default.
 
 [Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.2...HEAD
+[1.18.4]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.3...1.18.4
 [1.18.3]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.2...1.18.3
 [1.18.2]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.1...1.18.2
 [1.18.1]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.0...1.18.1

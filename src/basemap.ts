@@ -58,27 +58,48 @@ export interface TilePack {
 }
 
 /**
- * Whatever a stored settings file holds, read as a list of packs.
+ * Every row a stored settings file holds, as the reader has them on screen —
+ * including one just added and not yet typed into.
  *
  * Every field is checked rather than trusted: this is read back from a
- * `data.json` an older — or newer — version of this plugin wrote, and a row
- * missing its name would otherwise become a background nothing can name.
+ * `data.json` an older — or newer — version of this plugin wrote. The *list* is
+ * not filtered, which is the whole difference between this and `tilePacks`
+ * below: a row has to survive being stored before it can be given a name, and a
+ * pane that dropped it on the way in would have an add button that does nothing.
+ * Same split as `exclusionRows` and `excludedFragments`.
  */
-export function tilePacks(value: unknown): TilePack[] {
+export function packRows(value: unknown): TilePack[] {
 	if (!Array.isArray(value)) return [];
-	const packs: TilePack[] = [];
-	const named = new Set<string>();
+	const rows: TilePack[] = [];
 	for (const row of value) {
 		if (!row || typeof row !== 'object') continue;
 		const entry = row as Partial<TilePack>;
-		const name = typeof entry.name === 'string' ? entry.name.trim() : '';
-		const path = typeof entry.path === 'string' ? entry.path.trim() : '';
+		rows.push({
+			name: typeof entry.name === 'string' ? entry.name.trim() : '',
+			path: typeof entry.path === 'string' ? entry.path.trim() : '',
+			minZoom: level(entry.minZoom, 0),
+			maxZoom: level(entry.maxZoom, TILE_ZOOM_MAX),
+		});
+	}
+	return rows;
+}
+
+/**
+ * The rows a map can actually be pointed at — what every reader outside the
+ * settings pane means by "the packs".
+ *
+ * A row missing its name would otherwise become a background nothing can name.
+ */
+export function tilePacks(value: unknown): TilePack[] {
+	const packs: TilePack[] = [];
+	const named = new Set<string>();
+	for (const row of packRows(value)) {
 		// A name is how this pack is referred to everywhere else, so two packs
 		// sharing one are one pack as far as every reference is concerned. The
 		// first wins, which is the one the reader typed first.
-		if (name === '' || named.has(name)) continue;
-		named.add(name);
-		packs.push({ name, path, minZoom: level(entry.minZoom, 0), maxZoom: level(entry.maxZoom, TILE_ZOOM_MAX) });
+		if (row.name === '' || named.has(row.name)) continue;
+		named.add(row.name);
+		packs.push(row);
 	}
 	return packs;
 }
@@ -171,6 +192,33 @@ export type TilesProblem = 'placeholders';
 export function tilesProblem(template: string): TilesProblem | null {
 	const text = template.trim();
 	return TILE_PLACEHOLDERS.every((forms) => forms.some((form) => text.includes(form))) ? null : 'placeholders';
+}
+
+/** Everything one settings row can be wrong about: the two that keep it out of
+ *  `tilePacks` entirely, and then what is wrong with its template. */
+export type PackProblem = TilesProblem | 'unnamed' | 'duplicate';
+
+/**
+ * Why this row is not a pack any map can be pointed at, or null when it is one.
+ *
+ * The name comes first because it is the reference: a row without one, or with
+ * one another row already has, is left out of every menu — and a menu cannot
+ * explain the item it is not showing. Both rows of a clashing pair are told, not
+ * just the one that loses, because the reader is looking at whichever one they
+ * are typing in.
+ *
+ * An untouched row is not a wrong one, and neither is a name whose path has not
+ * been filled in yet.
+ */
+export function packProblem(rows: readonly TilePack[], index: number): PackProblem | null {
+	const row = rows[index];
+	if (!row) return null;
+	const name = row.name.trim();
+	const path = row.path.trim();
+	if (name === '' && path === '') return null;
+	if (name === '') return 'unnamed';
+	if (rows.some((other, at) => at !== index && other.name.trim() === name)) return 'duplicate';
+	return path === '' ? null : tilesProblem(path);
 }
 
 /** An absolute path on either family: a POSIX root, or a Windows drive letter. */

@@ -32,9 +32,22 @@ scheme the web view will refuse.
 A vault-relative template SHALL resolve against the vault on every platform,
 including those whose vault storage is not a plain file system directory.
 
-A template that does not carry all three placeholders SHALL be reported as
-unusable where it is entered, and SHALL leave the map's own background in place
-rather than replacing it with something that cannot draw.
+Configuring a pack SHALL be possible in any order, so a pack being entered SHALL
+be kept as the reader has it: a row exists from the moment it is added, whether
+or not it yet carries a name or a path, and only the reader removes it. What can
+be drawn is decided where a map is drawn, not where one is typed.
+
+A row that cannot be one of those packs SHALL say so where it is entered, SHALL
+be left out of every place a pack is offered rather than being silently absent
+from them, and SHALL leave the map's own background in place rather than
+replacing it with something that cannot draw. A template missing one of its
+placeholders, a row with no name, and a row whose name another row already
+carries are each reported this way, because each has the same consequence: no map
+can be pointed at that row.
+
+Where a pack is referred to by name, removing it SHALL take the references the
+reader cannot see with it — a stored default naming a pack that has just been
+removed SHALL become no default rather than a name nothing answers to.
 
 #### Scenario: A pack is configured
 
@@ -49,6 +62,25 @@ rather than replacing it with something that cannot draw.
   zoom bounds
 - **THEN** each is offered under its own name, and drawing one leaves the others
   configured and available
+
+#### Scenario: A pack is added to the list
+
+- **WHEN** the reader adds a pack and has not yet typed anything into it
+- **THEN** the row is there to type into, and stays there across a re-render and
+  a restart, while no map is offered a background for it
+
+#### Scenario: A row that no map can be pointed at
+
+- **WHEN** a row carries a path but no name, or a name another row already
+  carries
+- **THEN** the row says which of the two is wrong, is left out of everywhere a
+  background is offered, and stays on screen to be corrected
+
+#### Scenario: The pack the default names is removed
+
+- **WHEN** the reader removes the pack that the default background names
+- **THEN** the default becomes none, and every map that was following it draws
+  the background the native view resolves
 
 #### Scenario: The application is restarted
 

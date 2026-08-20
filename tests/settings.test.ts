@@ -9,6 +9,8 @@ import {
 	migratedPack,
 	packNameFromPath,
 	refreshesTracks,
+	storedExclusions,
+	typedLevel,
 	type AdvancedMapsSettings,
 	type LegacyBasemap,
 } from '../src/settings';
@@ -85,6 +87,39 @@ describe('the skip list', () => {
 
 	it('has no rows at all for an empty list', () => {
 		expect(exclusionRows('')).toEqual([]);
+	});
+
+	it('survives the round trip, one blank row included', () => {
+		// The blank row is the case a join cannot state: `['']` joins to `''`, and
+		// `''` reads back as no rows at all — so adding a row to an emptied list
+		// used to add one that was gone before it could be drawn.
+		for (const rows of [[], [''], ['templates'], ['templates', ''], ['templates', 'archive']]) {
+			expect(exclusionRows(storedExclusions(rows)), JSON.stringify(rows)).toEqual(rows);
+		}
+	});
+
+	it('excludes nothing on the strength of a blank row', () => {
+		expect(excludedFragments(storedExclusions(['']))).toEqual([]);
+		expect(isExcluded('anywhere/at/all.md', storedExclusions(['']))).toBe(false);
+	});
+});
+
+describe('a zoom level typed by hand', () => {
+	it('holds what was typed inside the range a tile pyramid has', () => {
+		expect(typedLevel('4', 16)).toBe(4);
+		expect(typedLevel('4.6', 16)).toBe(5);
+		expect(typedLevel('-2', 16)).toBe(0);
+		expect(typedLevel('99', 16)).toBe(22);
+	});
+
+	it('keeps the level the pack had when the box is emptied to type a new one', () => {
+		// `Number('')` is 0, and 0 as a deepest level is the whole world in a
+		// single tile — a pack silently ruined between two keystrokes.
+		expect(typedLevel('', 16)).toBe(16);
+		expect(typedLevel('   ', 16)).toBe(16);
+		expect(typedLevel('nine', 16)).toBe(16);
+		expect(typedLevel(undefined, 16)).toBe(16);
+		expect(typedLevel(null, 16)).toBe(16);
 	});
 });
 
