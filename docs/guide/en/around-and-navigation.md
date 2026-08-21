@@ -136,6 +136,8 @@ close on the place it started. The point you placed last is never offered, since
 a leg from a point to itself measures nothing. Hold **Alt** while pointing and
 clicking to ignore all of it and measure the bare ground.
 
+![A measurement being placed: a ring appears on a pin as the pointer nears it, the leg follows the pointer with a live distance, and each click lands the point on that thing's own coordinate](../../images/measure-snap.gif)
+
 On a phone the point still lands on the thing's own coordinate, but there is no
 ring to aim by, because the ring is what hovering draws. Put the tap on the
 marker, waypoint or photo itself rather than near it. **Alt** has no equivalent

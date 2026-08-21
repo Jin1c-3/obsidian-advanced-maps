@@ -30,6 +30,8 @@ The dialog says how many places the file holds, shows the first few names, and
 asks for a destination folder. It defaults to a folder named after the file,
 beside the file. Nothing is written until you confirm.
 
+![The import dialog: the file it read, how many places it holds, the first few of their names, and the folder the notes will land in](../../images/import-places.png)
+
 Each place becomes one note:
 
 ```markdown
@@ -90,6 +92,8 @@ nothing is exported nameless.
 **Save as** is a path inside your vault. A folder that is not there yet is
 created; a path that is already taken blocks the export rather than overwriting
 the file there, and the written path is reported when it is done.
+
+![The export dialog: how many places the map shows, the format, what each place is named by, and the path it will write](../../images/export-places.png)
 
 The CSV also carries each place's note path, so a spreadsheet can lead back to
 the note. GPX and KML carry the name and the coordinate, which is what a device

@@ -113,6 +113,8 @@ the plugin settings.
 | `fitMaxZoom`   | Max zoom when fitting  | How far automatic framing may zoom in |
 | `coordSystem`  | Tile coordinate system | Blank follows the plugin default      |
 
+![A map view's Configure view panel with the groups Advanced Maps adds open: Tracks and its three sliders, Coordinate system, and Basemap, which is there because this vault has offline basemaps switched on](../../images/view-options.png)
+
 ## Where to go next
 
 - Use [Photo maps](photo-maps.md) for linked photos, external folders, display
