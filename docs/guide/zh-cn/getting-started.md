@@ -103,6 +103,8 @@ views:
 | `fitMaxZoom`   | 自动缩放上限 | 自动取景最多放大到哪一级 |
 | `coordSystem`  | 瓦片坐标系   | 留空则跟随插件默认值     |
 
+![地图视图的配置面板，Advanced Maps 加的几组都展开着：轨迹（Tracks）的三个滑块、坐标系（Coordinate system），以及底图（Basemap）——它出现是因为这个仓库开了离线底图](../../images/view-options.png)
+
 ## 接下来
 
 - [照片地图](photo-maps.md)：笔记链接的照片、外部目录、显示控制和照片索引。

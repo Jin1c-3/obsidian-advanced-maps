@@ -16,6 +16,8 @@ notes stops needing a network. Everything else already worked offline — the
 notes, the routes, the photos and their thumbnails are files in your vault — so
 this is the last piece.
 
+![A Base map drawn from a tile pack on disk: satellite imagery read from local files, with two walking routes, their direction arrows, start and end markers and a note's pin drawn over it](../../images/offline-basemap-drawn.jpg)
+
 You can keep more than one. A pack is regional, so someone who has one usually
 has two: the city they live in and the trail they walk. Each gets a name, and the
 name is how you pick between them.
@@ -99,6 +101,8 @@ filled in per tile; `{-y}` works too, for packs laid out in TMS row order.
 otherwise. Leave it at _None_ and your packs stay configured and stay pickable
 without changing any map until you ask for one.
 
+![The Offline basemap page: the switch and what it says off costs, two tile packs with their paths and zoom bounds, and the default background under them](../../images/offline-basemap-settings.png)
+
 Give each pack a name of its own. Two packs sharing a name are one pack as far as
 everything that refers to one is concerned, and the second is left out.
 
@@ -128,6 +132,8 @@ the map is bounded by whichever pack it is currently drawing.
 Your packs appear in the map's own **layers** button — the stack of squares in
 the top-right corner, the same menu the Maps plugin lists its own backgrounds in.
 Each pack is there under the name you gave it, beside them.
+
+![The map's layers menu open, with two packs listed under the names they were given, beside the Maps plugin's own backgrounds](../../images/offline-basemap-layers.png)
 
 Choosing one draws it, with that pack's own zoom bounds. Choosing one of the
 Maps plugin's backgrounds puts the map on that instead, and it stays there: the
@@ -181,6 +187,8 @@ option. See [Coordinates and services](coordinates-and-services.md).
 The same settings draw the same packs in the Obsidian mobile app, the same two
 layouts apply, and the layers button offers them the same way. There is no
 separate mobile row to fill in.
+
+![The same layers button on a phone: a sheet over the map listing the Maps plugin's backgrounds with the tile pack under them](../../images/mobile-basemap-layers.png)
 
 **Settings that stay on the device.** Give the phone absolute paths of its own —
 `/sdcard/Download/tiles/{z}/{x}/{y}.png` and the like, whatever your file manager

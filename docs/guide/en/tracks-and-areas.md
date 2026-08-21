@@ -104,6 +104,8 @@ until you tap somewhere else, since there is no pointer to leave.
 
 ![A live GPX embed followed by distance, ascent, times, pace, and a hoverable elevation profile](../../images/inline-embed.png)
 
+![The same kind of embed on a phone: the route, the statistics line, and the elevation profile with its readout left where a tap put it](../../images/mobile-inline-track.png)
+
 Ascent ignores changes below 5 m to suppress GPS drift. Moving time counts
 speeds above 0.9 km/h so slow walking and stairs still count.
 

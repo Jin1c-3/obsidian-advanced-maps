@@ -30,6 +30,8 @@ Base or Around map without creating another map in the note.
 topic. Open one to reach its rows; the entry states what it is set to, so the
 pane answers the common questions without being opened.
 
+![The Advanced Maps settings pane open on its eleven entries, each stating what it is set to beside its own name](../../images/settings-entries.png)
+
 | Entry                | Holds                                                                                                                                                    |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Coordinate system    | The default datum for inline maps and for views that set none                                                                                            |
@@ -125,6 +127,12 @@ synthetic demo notes or the author's own photographs—animals only. The
 thumbnail-thinning animation copies those photographs onto real landmark
 coordinates so it can demonstrate a large album without publishing where
 anybody has been.
+
+The offline-basemap figure is drawn from a tile pack built for it out of
+[Sentinel-2 cloudless 2016](https://s2maps.eu) by EOX IT Services GmbH
+(Contains modified Copernicus Sentinel data 2016), used under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — the one basemap here
+whose licence allows an offline copy to be made in the first place.
 
 Advanced Maps bundles no map data. Basemap copyright, licensing, and survey
 requirements belong to the selected provider and user. If you hold rights to
