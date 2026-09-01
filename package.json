@@ -58,7 +58,7 @@
     "@types/node": "^26.2.0",
     "@vitest/coverage-v8": "^4.1.10",
     "esbuild": "^0.28.2",
-    "eslint": "^9.18.0",
+    "eslint": "^10.9.1",
     "eslint-plugin-obsidianmd": "^0.4.1",
     "globals": "^15.14.0",
     "happy-dom": "^20.11.2",
