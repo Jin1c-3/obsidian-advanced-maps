@@ -4,6 +4,31 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [1.19.0]
+
+### Added
+
+- **A note can map geotagged photos outside the vault.** Add an inline Markdown
+  `file:` link or image embed for each photo: a Base map treats it as an
+  attachment of that note, and an inline route map draws it beside the route
+  without adding it to the route's statistics. The same synchronized note can
+  carry a Windows path and an Android path; each device uses only what it can
+  read and safely skips the other paths.
+
+- **External photos keep the complete photo interaction.** Their thumbnails,
+  hover previews, full-size modal and route back to the owning note work like
+  vault photos. Reads remain bounded to the EXIF-sized prefix, cached metadata
+  is trusted only after the current file is validated, and a later map sync
+  notices a photo replaced outside Obsidian.
+
+### Known boundaries
+
+- External folder URLs are not scanned; link individual photos, or generate
+  those links with a macro. Android paths outside the vault require Obsidian's
+  **All files access** permission, and the Android note renderer may show a raw
+  `file:` image embed as broken even while the map can read it through the
+  host's local-resource route.
+
 ## [1.18.6]
 
 ### Fixed
@@ -1224,7 +1249,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.2...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.19.0...HEAD
+[1.19.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.6...1.19.0
 [1.18.6]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.5...1.18.6
 [1.18.5]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.4...1.18.5
 [1.18.4]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.3...1.18.4

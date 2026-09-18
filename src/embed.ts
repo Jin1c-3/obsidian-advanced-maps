@@ -1,6 +1,7 @@
 /* Inline ![[track.gpx]] map built from a headless native Maps view. */
 
-import { Component, Keymap, TFile } from 'obsidian';
+import { Component, Keymap } from 'obsidian';
+import type { TFile } from 'obsidian';
 import type { FeatureCollection, Geometry } from 'geojson';
 import { boundOfflineSource, restyleForBasemap } from './basemap';
 import {
@@ -46,12 +47,13 @@ import {
 	type TrackStats,
 } from './stats';
 import { PhotoModal } from './photo-modal';
+import { sourceExtension, sourceKey, sourceName, sourceResourceUrl, type MapSource } from './map-source';
 import { pooled, projectedFeatures, recordProfile, recordStats, type TrackRecord } from './track-cache';
 import type AdvancedMapsPlugin from './main';
 import type { BasesMapView, MapLibreMap, MapMouseEvent } from './types/obsidian-internals';
 
 /** One of the host note's photos, and what its EXIF head parsed to. */
-type PhotoEntry = { file: TFile; rec: TrackRecord };
+type PhotoEntry = { source: MapSource; rec: TrackRecord };
 
 /**
  * The track extensions no other embed handler owns.
@@ -170,17 +172,19 @@ export class TrackEmbed extends Component {
 			return [];
 		}
 		const datum = this.plugin.settings.photoDatum;
-		const files = this.plugin.resolveTracks(host).filter((f) => PHOTO_EXTS.has(f.extension));
+		const sources = (await this.plugin.resolveMapSources(host)).filter((source) =>
+			PHOTO_EXTS.has(sourceExtension(source))
+		);
 		// Recorded before the GPS filter below: a picture taken indoors resolves
 		// every time and draws never, so comparing against the drawn set would
 		// read as a change on every edit of the host note.
-		this.photoSources = files.map((f) => f.path);
+		this.photoSources = sources.map(sourceKey);
 		// Bounded like the map layer's, and in note order, because that order is
 		// what the album and the modal's next/previous follow.
 		const loaded = await pooled(
-			files,
+			sources,
 			READ_CONCURRENCY,
-			async (file) => ({ file, rec: await this.plugin.tracks.load(file, datum) }),
+			async (source) => ({ source, rec: await this.plugin.tracks.load(source, datum) }),
 			alive
 		);
 		// A photo whose EXIF carried no coordinate parses to a record with no
@@ -203,13 +207,15 @@ export class TrackEmbed extends Component {
 	 * comparison is order-sensitive on purpose: note order is what the album and
 	 * the modal's next/previous follow.
 	 */
-	hostPhotosMoved(): boolean {
+	async hostPhotosMoved(): Promise<boolean> {
 		if (!this.plugin.settings.showPhotos || !this.sourcePath) return false;
 		const host = this.plugin.app.vault.getFileByPath(this.sourcePath);
 		if (!host) return false;
-		const now = this.plugin.resolveTracks(host).filter((f) => PHOTO_EXTS.has(f.extension));
+		const now = (await this.plugin.resolveMapSources(host)).filter((source) =>
+			PHOTO_EXTS.has(sourceExtension(source))
+		);
 		if (now.length !== this.photoSources.length) return true;
-		return now.some((file, i) => file.path !== this.photoSources[i]);
+		return now.some((source, i) => sourceKey(source) !== this.photoSources[i]);
 	}
 
 	/** The embed API calls this when the file is swapped underneath us. */
@@ -453,7 +459,9 @@ export class TrackEmbed extends Component {
 			type: 'FeatureCollection',
 			features: [
 				...trackData.features,
-				...this.photos.flatMap((p) => trackFeatures(projectedFeatures(p.rec, system), color, 0, p.file.path)),
+				...this.photos.flatMap((p) =>
+					trackFeatures(projectedFeatures(p.rec, system), color, 0, sourceKey(p.source))
+				),
 			],
 		};
 
@@ -511,9 +519,10 @@ export class TrackEmbed extends Component {
 	 */
 	private framingSignature(system: CoordSystem): string {
 		const parts: string[] = [system, this.plugin.settings.photoDatum];
-		// mtime, so an edit to a file counts even though its path has not moved.
-		for (const file of [this.file, ...this.photos.map((photo) => photo.file)]) {
-			parts.push(file.path, String(file.stat.mtime));
+		// Revision, so an edit counts even though its source identity has not moved.
+		parts.push(this.file.path, String(this.file.stat.mtime));
+		for (const photo of this.photos) {
+			parts.push(sourceKey(photo.source), photo.rec.revision ?? String(photo.rec.mtime));
 		}
 		return parts.join('\0');
 	}
@@ -523,7 +532,7 @@ export class TrackEmbed extends Component {
 	private ensurePhotoIcons(system: CoordSystem): void {
 		const icons: PhotoIconSource[] = [];
 		for (const photo of this.photos) {
-			const icon = photoIconSource(photo.file.path, photo.rec, system);
+			const icon = photoIconSource(sourceKey(photo.source), photo.rec, system);
 			if (icon) icons.push(icon);
 		}
 		// Kept whether or not they are drawn, so switching thumbnails back on
@@ -602,13 +611,22 @@ export class TrackEmbed extends Component {
 		}
 		const path = ev.features?.[0]?.properties?.amPath;
 		if (typeof path !== 'string' || path === '') return;
-		const file = this.plugin.app.vault.getFileByPath(path);
-		if (!file) return;
+		const source = this.photos.find((photo) => sourceKey(photo.source) === path)?.source;
+		if (!source) return;
 		if (ev.originalEvent && Keymap.isModEvent(ev.originalEvent)) {
-			void this.plugin.app.workspace.openLinkText(path, this.sourcePath, Keymap.isModEvent(ev.originalEvent));
+			if (source.kind === 'vault') {
+				void this.plugin.app.workspace.openLinkText(
+					source.file.path,
+					this.sourcePath,
+					Keymap.isModEvent(ev.originalEvent)
+				);
+			} else window.open(source.uri, '_blank');
 			return;
 		}
-		new PhotoModal(this.plugin.app, file).open();
+		new PhotoModal(this.plugin.app, {
+			name: sourceName(source),
+			resourceUrl: sourceResourceUrl(this.plugin.app, source),
+		}).open();
 	}
 
 	/** Show a photo preview, resolving its stored vault path again at hover time. */
@@ -632,27 +650,27 @@ export class TrackEmbed extends Component {
 			this.positionTooltip(point);
 			return;
 		}
-		const abstract = this.plugin.app.vault.getAbstractFileByPath(path);
-		const file = abstract instanceof TFile ? abstract : null;
+		const source = this.photos.find((photo) => sourceKey(photo.source) === path)?.source;
 		// A file that failed to resolve still has a name worth showing — take it
 		// off the path itself rather than leaving the tooltip empty.
-		const name = file?.name ?? (path.split('/').pop() || path);
+		const name = source ? sourceName(source) : path.split('/').pop() || path;
 
 		this.tooltipEl ??= this.rootEl.createDiv('advanced-maps-waypoint-tooltip');
 		this.tooltipEl.addClass('advanced-maps-photo-tooltip');
 		this.tooltipEl.empty();
 
-		if (file) {
-			// getResourcePath never throws on a real TFile in practice, but this
-			// tooltip is not worth losing to an internal it did not expect — no
+		if (source) {
+			// Resource resolution normally succeeds for a source already drawn, but
+			// this tooltip is not worth losing to an answer it did not expect — no
 			// image is exactly the "fall back to the file name alone" case below,
 			// so a thrown resource path lands there rather than on a blank box.
 			try {
-				const src = this.plugin.app.vault.getResourcePath(file);
+				const src = sourceResourceUrl(this.plugin.app, source);
 				const img = this.tooltipEl.createEl('img', {
 					cls: 'advanced-maps-photo-tooltip-img',
 					attr: { src, alt: name },
 				});
+				img.addEventListener('error', () => img.remove());
 				// The image decodes asynchronously, so the flip decision inside
 				// positionTooltip() — based on the tooltip's *current* rendered
 				// height — is only right for the bare-filename box it is called

@@ -35,9 +35,30 @@ const markdownIn = (dir) =>
 		return entry.name.endsWith('.md') ? [path] : [];
 	});
 
-/** Link and image targets, minus the ones no local check can resolve. */
+/** Code samples may deliberately demonstrate links that do not name repo files. */
+function proseOnly(text) {
+	let fence = null;
+	return text
+		.match(/.*(?:\r?\n|$)/g)
+		.filter((line) => line !== '')
+		.map((line) => {
+			const match = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+			if (fence) {
+				if (match && match[1][0] === fence.mark && match[1].length >= fence.length) fence = null;
+				return '';
+			}
+			if (match) {
+				fence = { mark: match[1][0], length: match[1].length };
+				return '';
+			}
+			return line;
+		})
+		.join('');
+}
+
+/** Link and image targets, minus code and the ones no local check can resolve. */
 function* referencesOf(text) {
-	for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) {
+	for (const match of proseOnly(text).matchAll(/\]\(([^)\s]+)\)/g)) {
 		const target = match[1];
 		if (/^(https?:|mailto:|#|\/)/.test(target)) continue;
 		yield target;

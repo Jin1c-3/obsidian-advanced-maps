@@ -45,6 +45,7 @@ import {
 	type BaseView,
 } from './map-block';
 import { MapModal } from './modal';
+import { isExternalSourceKey, type MapSource } from './map-source';
 import { currentCoords, NotePickerModal, ReplaceCoordsModal } from './note-picker';
 import { PhotoIndex, pluginIndexIO } from './photo-index';
 import { noteName, placesFrom, type Place } from './places';
@@ -163,8 +164,13 @@ export default class AdvancedMapsPlugin extends Plugin {
 		this.registerEvent(
 			this.app.metadataCache.on('changed', (file: TFile) => {
 				for (const embed of this.embeds) {
-					if (embed.hostPath !== file.path || !embed.hostPhotosMoved()) continue;
-					embed.refresh().catch((e) => console.error('Advanced Maps: could not redraw embed', e));
+					if (embed.hostPath !== file.path) continue;
+					void embed
+						.hostPhotosMoved()
+						.then((moved) => {
+							if (moved) return embed.refresh();
+						})
+						.catch((e) => console.error('Advanced Maps: could not redraw embed', e));
 				}
 			})
 		);
@@ -267,7 +273,9 @@ export default class AdvancedMapsPlugin extends Plugin {
 	/** Drop stored entries for photos the vault no longer has. */
 	private async prunePhotoIndex(): Promise<void> {
 		await this.photoIndex.ready();
-		this.photoIndex.prune((path) => this.app.vault.getFileByPath(path) !== null);
+		// External rows cannot be proven absent by asking the vault. They remain
+		// derivable and bounded by LRU, and are trusted only after a current probe.
+		this.photoIndex.prune((path) => isExternalSourceKey(path) || this.app.vault.getFileByPath(path) !== null);
 	}
 
 	/** Discard the index outright. Nothing on screen changes; later reads refill it. */
@@ -544,6 +552,10 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	resolveTracks(file: TFile): TFile[] {
 		return this.attachments.resolveTracks(file);
+	}
+
+	resolveMapSources(file: TFile): Promise<MapSource[]> {
+		return this.attachments.resolveMapSources(file);
 	}
 
 	/**

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PHOTO_INDEX_TOUCH_MS } from '../src/constants';
 import { indexEntry, PhotoIndex, storedExif, type PhotoIndexEntry, type PhotoIndexIO } from '../src/photo-index';
 import { photoTrack, type PhotoExif } from '../src/exif';
+import { isExternalSourceKey } from '../src/map-source';
 
 /** An in-memory stand-in for the plugin's own data file. */
 function store(initial: string | null = null) {
@@ -119,6 +120,21 @@ describe('PhotoIndex storage', () => {
 		expect(index.size).toBe(2);
 		const written = JSON.parse(backing.state.text!) as { entries: Record<string, PhotoIndexEntry> };
 		expect(Object.keys(written.entries).sort()).toEqual(['middle.jpg', 'recent.jpg']);
+	});
+
+	it('retains namespaced external rows through vault pruning and still bounds them', async () => {
+		const backing = store();
+		const index = new PhotoIndex(backing.io, 2);
+		await index.ready();
+		index.set('missing-vault.jpg', { size: 1, mtime: 1, used: NOW - 3000 });
+		index.set('external:file:///one.jpg', { size: 1, mtime: 1, used: NOW - 2000 });
+		index.set('external:file:///two.jpg', { size: 1, mtime: 1, used: NOW - 1000 });
+
+		expect(index.prune((path) => isExternalSourceKey(path))).toBe(1);
+		await index.flush();
+		expect(index.size).toBe(2);
+		const written = JSON.parse(backing.state.text!) as { entries: Record<string, PhotoIndexEntry> };
+		expect(Object.keys(written.entries).sort()).toEqual(['external:file:///one.jpg', 'external:file:///two.jpg']);
 	});
 
 	it('rewrites for a use only once the stamp is a day stale', async () => {

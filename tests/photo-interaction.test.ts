@@ -1,5 +1,5 @@
 import { Keymap, TFile } from 'obsidian';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
 	AREA_LAYER,
 	LINE_LAYER,
@@ -9,6 +9,7 @@ import {
 	PHOTO_LAYER,
 } from '../src/constants';
 import { PhotoModal } from '../src/photo-modal';
+import { externalPhotoSource, sourceKey, vaultMapSource, type MapSource } from '../src/map-source';
 import { TrackLayer } from '../src/track-layer';
 import type AdvancedMapsPlugin from '../src/main';
 import type { BasesMapView, MapLibreMap, MapMouseEvent } from '../src/types/obsidian-internals';
@@ -18,6 +19,29 @@ interface LayerRegistration {
 	layer: string;
 	listener: (event: MapMouseEvent) => void;
 }
+
+beforeAll(() => {
+	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+	proto.createEl = function (
+		this: HTMLElement,
+		tag: string,
+		opts?: { text?: string; cls?: string; attr?: Record<string, string> }
+	) {
+		const el = document.createElement(tag);
+		if (opts?.text) el.textContent = opts.text;
+		if (opts?.cls) el.className = opts.cls;
+		for (const [name, value] of Object.entries(opts?.attr ?? {})) el.setAttribute(name, value);
+		this.append(el);
+		return el;
+	};
+	proto.createDiv = function (this: HTMLElement, opts?: { text?: string; cls?: string } | string) {
+		const value = typeof opts === 'string' ? { cls: opts } : opts;
+		return (proto.createEl as (tag: string, options?: unknown) => HTMLElement).call(this, 'div', value);
+	};
+	proto.appendText = function (this: HTMLElement, text: string) {
+		this.append(document.createTextNode(text));
+	};
+});
 
 class InteractionMap {
 	readonly registrations: LayerRegistration[] = [];
@@ -62,21 +86,24 @@ function file(path: string): TFile {
 	return value;
 }
 
-function harness(): {
+function harness(mapped?: MapSource): {
 	layer: TrackLayer;
 	map: InteractionMap;
 	note: TFile;
 	photo: TFile;
+	source: MapSource;
 	openLinkText: ReturnType<typeof vi.fn>;
 } {
 	const map = new InteractionMap();
 	const note = file('note.md');
 	const photo = file('photo.jpg');
+	const source = mapped ?? vaultMapSource(photo);
 	const openLinkText = vi.fn();
 	const view = {
 		app: {
 			vault: {
 				getFileByPath: (path: string) => (path === photo.path ? photo : path === note.path ? note : null),
+				getResourcePath: (file: TFile) => `app://vault/${file.path}`,
 			},
 			workspace: { openLinkText },
 		},
@@ -88,10 +115,10 @@ function harness(): {
 		followTarget: vi.fn(() => null),
 	} as unknown as AdvancedMapsPlugin;
 	const layer = new TrackLayer(plugin, view);
-	Reflect.set(layer, 'items', [{ entry: { file: note }, file: note, trackFiles: [], color: '#fff' }]);
+	Reflect.set(layer, 'items', [{ entry: { file: note }, file: note, sources: [source], color: '#fff' }]);
 	const bind = Reflect.get(layer, 'bindInteractions') as () => void;
 	bind.call(layer);
-	return { layer, map, note, photo, openLinkText };
+	return { layer, map, note, photo, source, openLinkText };
 }
 
 function event(originalEvent: MouseEvent, photoPath?: string): MapMouseEvent {
@@ -144,6 +171,52 @@ describe('base-map photo click precedence', () => {
 
 		expect(openLinkText).toHaveBeenCalledWith(photo.path, note.path, true);
 		expect(openModal).not.toHaveBeenCalled();
+	});
+
+	it('opens an external source with its current resource URL and keeps note context', () => {
+		const source = externalPhotoSource('file:///tmp/Outside%20Photo.jpg', 'app://session/')!;
+		const { layer, map, note, openLinkText } = harness(source);
+		const openModal = vi.spyOn(PhotoModal.prototype, 'open').mockImplementation(() => undefined);
+		const photoClick = map.registrations.find(
+			(registration) => registration.type === 'click' && registration.layer === PHOTO_LAYER
+		)!;
+
+		photoClick.listener(event(new MouseEvent('click'), sourceKey(source)));
+
+		expect(openModal).toHaveBeenCalledTimes(1);
+		const modal = openModal.mock.instances[0] as object;
+		expect(Reflect.get(modal, 'photo')).toEqual({
+			name: 'Outside Photo.jpg',
+			resourceUrl: 'app://session/tmp/Outside%20Photo.jpg',
+		});
+		expect(Reflect.get(modal, 'onOpenNote')).toEqual(expect.any(Function));
+		expect(openLinkText).not.toHaveBeenCalled();
+		expect(note.path).toBe('note.md');
+
+		const card = document.createElement('div');
+		const describe = Reflect.get(layer, 'describe') as (card: HTMLElement, pointed: unknown) => void;
+		describe.call(layer, card, { role: 'photo', path: source.key, name: '', source });
+		const image = card.querySelector('img');
+		expect(image?.getAttribute('src')).toBe(source.resourceUrl);
+		expect(card.textContent).toContain(source.name);
+		image?.dispatchEvent(new Event('error'));
+		expect(card.querySelector('img')).toBeNull();
+		expect(card.textContent).toContain(source.name);
+	});
+
+	it('modifier-opens the canonical external URI instead of asking the vault', () => {
+		vi.spyOn(Keymap, 'isModEvent').mockReturnValue(true);
+		const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+		const source = externalPhotoSource('file:///tmp/outside.jpg', 'app://session/')!;
+		const { map, openLinkText } = harness(source);
+		const click = map.registrations.find(
+			(registration) => registration.type === 'click' && registration.layer === PHOTO_LAYER
+		)!;
+
+		click.listener(event(new MouseEvent('click'), source.key));
+
+		expect(open).toHaveBeenCalledWith(source.uri, '_blank');
+		expect(openLinkText).not.toHaveBeenCalled();
 	});
 
 	it('never lets an area take a click from what is drawn over it', () => {

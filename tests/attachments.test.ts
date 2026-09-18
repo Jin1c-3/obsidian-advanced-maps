@@ -30,6 +30,10 @@ function host(files: TFile[]): App {
 			getFirstLinkpathDest: (link: string) => byPath.get(link) ?? null,
 			getFileCache: () => null,
 		},
+		vault: {
+			adapter: {},
+			cachedRead: async () => '',
+		},
 	} as unknown as App;
 }
 
@@ -196,5 +200,71 @@ describe('photos for an explicit command', () => {
 		const r = new AttachmentResolver(app, false);
 		expect(r.resolveTracks(NOTE)).toEqual([gpx]);
 		expect(r.resolvePhotos(NOTE)).toEqual([photo]);
+	});
+});
+
+describe('asynchronous sources used by maps', () => {
+	const gpx = file('tracks/day.gpx');
+	const photo = file('photos/summit.jpg');
+
+	function withText(refs: CachedMetadata, text: string): { app: App; reads: { count: number } } {
+		const app = host([gpx, photo]);
+		(app.metadataCache as unknown as { getFileCache: () => CachedMetadata }).getFileCache = () => refs;
+		const reads = { count: 0 };
+		(app.vault as unknown as { cachedRead: () => Promise<string> }).cachedRead = async () => {
+			reads.count++;
+			return text;
+		};
+		return { app, reads };
+	}
+
+	it('keeps vault order, then adds canonical external body order once', async () => {
+		const refs = cache({ embeds: ['photos/summit.jpg'], links: ['tracks/day.gpx'] });
+		const { app } = withText(
+			refs,
+			'[one](<file:///tmp/one.jpg>)\n![two](<file:///tmp/two.heic>)\n[one again](file:///tmp/one.jpg)'
+		);
+		const sources = await new AttachmentResolver(app, true).resolveMapSources(NOTE);
+		expect(sources.map((source) => (source.kind === 'vault' ? source.file.path : source.name))).toEqual([
+			'photos/summit.jpg',
+			'tracks/day.gpx',
+			'one.jpg',
+			'two.heic',
+		]);
+	});
+
+	it('memoizes the text read by metadata identity and drops it with the other memos', async () => {
+		const refs = cache({});
+		const { app, reads } = withText(refs, '[photo](<file:///tmp/one.jpg>)');
+		const resolver = new AttachmentResolver(app, true);
+		await resolver.resolveMapSources(NOTE);
+		await resolver.resolveMapSources(NOTE);
+		expect(reads.count).toBe(1);
+		resolver.forgetAll();
+		await resolver.resolveMapSources(NOTE);
+		expect(reads.count).toBe(2);
+	});
+
+	it('does not read note text while photos are disabled', async () => {
+		const { app, reads } = withText(cache({ links: ['tracks/day.gpx'] }), '[photo](<file:///tmp/one.jpg>)');
+		const sources = await new AttachmentResolver(app, false).resolveMapSources(NOTE);
+		expect(sources.map((source) => (source.kind === 'vault' ? source.file.path : source.name))).toEqual([
+			'tracks/day.gpx',
+		]);
+		expect(reads.count).toBe(0);
+	});
+
+	it('a new metadata object gets a new external answer', async () => {
+		let refs = cache({});
+		const { app } = withText(refs, '[photo](<file:///tmp/one.jpg>)');
+		let text = '[photo](<file:///tmp/one.jpg>)';
+		(app.vault as unknown as { cachedRead: () => Promise<string> }).cachedRead = async () => text;
+		(app.metadataCache as unknown as { getFileCache: () => CachedMetadata }).getFileCache = () => refs;
+		const resolver = new AttachmentResolver(app, true);
+		expect((await resolver.resolveMapSources(NOTE)).at(-1)?.kind).toBe('external-photo');
+		text = '[photo](<file:///tmp/two.jpg>)';
+		refs = cache({});
+		const latest = await resolver.resolveMapSources(NOTE);
+		expect(latest.at(-1)).toMatchObject({ kind: 'external-photo', name: 'two.jpg' });
 	});
 });

@@ -7,6 +7,7 @@ import type AdvancedMapsPlugin from '../src/main';
 import type { TrackRecord } from '../src/track-cache';
 import type { OfflineBasemap } from '../src/basemap';
 import { UNNAMED_PLACE } from '../src/places';
+import { externalPhotoSource, sourceKey, vaultMapSource, type MapSource } from '../src/map-source';
 import type { BasesMapView, MapLibreMap, NativeMapsPlugin, NativeTileSet } from '../src/types/obsidian-internals';
 
 function mapAt(
@@ -111,6 +112,7 @@ function plugin(
 		},
 		layers: new Set(),
 		resolveTracks: () => [],
+		resolveMapSources: async () => [],
 		tilePacks: () =>
 			on(
 				ids.map((id) => ({ name: id.slice('pack:'.length), path: 'x', minZoom: 0, maxZoom: 16 })),
@@ -384,15 +386,16 @@ describe('bounded attachment reads', () => {
 			tracks: {
 				isFresh: () => false,
 				get: (path: string) => records.get(path),
-				load: (file: TFile) => {
-					started.push(file.path);
+				load: (source: MapSource) => {
+					const key = sourceKey(source);
+					started.push(key);
 					active++;
 					peak = Math.max(peak, active);
 					let release!: () => void;
 					const promise = new Promise<TrackRecord>((resolve) => {
 						release = () => {
 							const rec: TrackRecord = { mtime: 1, features: [] };
-							records.set(file.path, rec);
+							records.set(key, rec);
 							active--;
 							resolve(rec);
 						};
@@ -426,6 +429,7 @@ describe('bounded attachment reads', () => {
 			},
 			layers: new Set(),
 			resolveTracks,
+			resolveMapSources: async () => resolveTracks().map(vaultMapSource),
 			tracks,
 		} as unknown as AdvancedMapsPlugin;
 	}
@@ -450,7 +454,7 @@ describe('bounded attachment reads', () => {
 
 		const running = layer.sync();
 		// Only the first window may have started before anything was released.
-		expect(g.started).toHaveLength(READ_CONCURRENCY);
+		await vi.waitFor(() => expect(g.started).toHaveLength(READ_CONCURRENCY));
 
 		await g.drain();
 		await running;
@@ -473,7 +477,7 @@ describe('bounded attachment reads', () => {
 		);
 
 		const stale = layer.sync();
-		expect(g.started).toHaveLength(READ_CONCURRENCY);
+		await vi.waitFor(() => expect(g.started).toHaveLength(READ_CONCURRENCY));
 
 		// The newer sync claims the revision and needs no reads of its own.
 		resolved = [];
@@ -498,13 +502,118 @@ describe('bounded attachment reads', () => {
 		).attach();
 
 		const running = layer.sync();
-		expect(g.started).toHaveLength(READ_CONCURRENCY);
+		await vi.waitFor(() => expect(g.started).toHaveLength(READ_CONCURRENCY));
 
 		layer.detach();
 		g.releaseAll();
 		await running;
 
 		expect(g.started.length).toBeLessThan(files.length);
+	});
+
+	it('does not start sources resolved by a superseded collection', async () => {
+		vi.stubGlobal('createDiv', () => document.createElement('div'));
+		const files = attachments(2);
+		let release!: (sources: MapSource[]) => void;
+		const first = new Promise<MapSource[]>((resolve) => (release = resolve));
+		let asks = 0;
+		const load = vi.fn(async () => ({ mtime: 1, features: [] }));
+		const p = syncPlugin({ isFresh: () => false, get: () => undefined, load }, () => []);
+		p.resolveMapSources = () => (asks++ === 0 ? first : Promise.resolve([]));
+		const v = view(mapAt());
+		v.data = { data: [noteEntry()], properties: [] };
+		const layer = new TrackLayer(p, v);
+
+		const stale = layer.sync();
+		await Promise.resolve();
+		await layer.sync();
+		release(files.map(vaultMapSource));
+		await stale;
+
+		expect(load).not.toHaveBeenCalled();
+	});
+});
+
+describe('mixed vault and external draw sources', () => {
+	it('keys external features and signatures by the committed source revision', () => {
+		const vaultFile = new TFile();
+		vaultFile.path = 'tracks/walk.geojson';
+		vaultFile.extension = 'geojson';
+		const vault = vaultMapSource(vaultFile);
+		const external = externalPhotoSource('file:///tmp/photo.jpg', 'app://session/')!;
+		const records = new Map<string, TrackRecord>([
+			[
+				vaultFile.path,
+				{
+					mtime: 1,
+					features: [{ type: 'Feature', properties: null, geometry: { type: 'Point', coordinates: [1, 2] } }],
+				},
+			],
+			[
+				external.key,
+				{
+					mtime: 1000,
+					revision: '4:1000',
+					features: [
+						{
+							type: 'Feature',
+							properties: { amRole: 'photo', amPath: external.key },
+							geometry: { type: 'Point', coordinates: [3, 4] },
+						},
+					],
+				},
+			],
+		]);
+		const p = plugin();
+		p.tracks = { get: (key: string) => records.get(key) } as never;
+		(p.settings as { photoDatum: string; trackColor?: string }).photoDatum = 'auto';
+		const layer = new TrackLayer(p, view(mapAt()));
+		const note = new TFile();
+		note.path = 'notes/trip.md';
+		const item = { entry: { file: note }, file: note, sources: [vault, external], color: '#fff' };
+		const build = Reflect.get(layer, 'build') as (
+			items: unknown[],
+			system: string
+		) => {
+			features: Array<{ properties: Record<string, unknown> }>;
+		};
+		const signature = Reflect.get(layer, 'signature') as (items: unknown[], system: string) => string;
+
+		const data = build.call(layer, [item], 'wgs84');
+		expect(data.features.map((feature) => feature.properties.amPath)).toEqual([vaultFile.path, external.key]);
+		const before = signature.call(layer, [item], 'wgs84');
+		records.get(external.key)!.revision = '4:2000';
+		expect(signature.call(layer, [item], 'wgs84')).not.toBe(before);
+	});
+
+	it('leaves an unreadable external sibling out without dropping the vault track', () => {
+		const file = new TFile();
+		file.path = 'tracks/walk.geojson';
+		file.extension = 'geojson';
+		const vault = vaultMapSource(file);
+		const external = externalPhotoSource('file:///tmp/missing.jpg', 'app://session/')!;
+		const records = new Map<string, TrackRecord>([
+			[
+				file.path,
+				{
+					mtime: 1,
+					features: [{ type: 'Feature', properties: null, geometry: { type: 'Point', coordinates: [1, 2] } }],
+				},
+			],
+			[external.key, { mtime: 0, features: [], error: 'unavailable', photoDatum: 'auto' }],
+		]);
+		const p = plugin();
+		p.tracks = { get: (key: string) => records.get(key) } as never;
+		const layer = new TrackLayer(p, view(mapAt()));
+		const note = new TFile();
+		const build = Reflect.get(layer, 'build') as (items: unknown[], system: string) => { features: unknown[] };
+		expect(
+			build.call(
+				layer,
+				[{ entry: { file: note }, file: note, sources: [vault, external], color: '#fff' }],
+				'wgs84'
+			).features
+		).toHaveLength(1);
 	});
 });
 

@@ -5,6 +5,7 @@ import { projectGeometry, type CoordSystem } from './coords';
 import { elevationProfile, trackStats, type ProfileSample, type TrackStats } from './stats';
 import { PHOTO_EXTS, PHOTO_HEAD_BYTES, PHOTO_ICON_PREFIX } from './constants';
 import { indexEntry, storedExif, type PhotoIndex } from './photo-index';
+import { sourceBasename, sourceKey, vaultMapSource, type ExternalPhotoSource, type MapSource } from './map-source';
 
 /**
  * A photo's thumbnail state.
@@ -29,6 +30,8 @@ export interface PhotoThumbnailState {
 
 export interface TrackRecord extends ParsedTrack {
 	mtime: number;
+	/** External resource revision; vault records continue to use `mtime`. */
+	revision?: string;
 	error?: string;
 	/** Tile-space geometry memoized per non-WGS coordinate system. */
 	projected?: Map<CoordSystem, ParsedTrack['features']>;
@@ -40,6 +43,72 @@ export interface TrackRecord extends ParsedTrack {
 	photo?: PhotoThumbnailState;
 	/** Coordinate setting used for this photo; part of cache freshness. */
 	photoDatum?: PhotoDatum;
+}
+
+function mapSource(input: TFile | MapSource): MapSource {
+	return 'kind' in input ? input : vaultMapSource(input);
+}
+
+export interface ExternalPhotoRead {
+	bytes: Uint8Array;
+	size?: number;
+	mtime?: number;
+	revision?: string;
+}
+
+function responseState(response: Response): Pick<ExternalPhotoRead, 'size' | 'mtime' | 'revision'> {
+	const range = response.headers.get('Content-Range');
+	const rangedSize = range ? /\/([0-9]+)$/.exec(range)?.[1] : undefined;
+	const length = response.status === 200 ? response.headers.get('Content-Length') : null;
+	const size = Number(rangedSize ?? length);
+	const modified = response.headers.get('Last-Modified');
+	const mtime = modified ? Date.parse(modified) : Number.NaN;
+	if (!Number.isSafeInteger(size) || size <= 0 || !isFinite(mtime)) return {};
+	return { size, mtime, revision: `${size}:${mtime}` };
+}
+
+async function externalRange(source: ExternalPhotoSource, end: number, keep: number): Promise<ExternalPhotoRead> {
+	const response = await fetch(source.resourceUrl, { headers: { Range: `bytes=0-${end}` } });
+	if (!response.ok) throw new Error(`ranged read failed: ${response.status}`);
+	const bytes = new Uint8Array(await response.arrayBuffer()).slice(0, keep);
+	return { bytes, ...responseState(response) };
+}
+
+/** One-byte availability/revision probe before trusting an external index row. */
+export function probeExternalPhoto(source: ExternalPhotoSource): Promise<ExternalPhotoRead> {
+	// Keep a whole ignored-Range head: some local servers return status 200 and
+	// the entire file. Retaining only the useful prefix avoids a second request.
+	return externalRange(source, 0, PHOTO_HEAD_BYTES);
+}
+
+/** Read and retain no more than one EXIF-sized prefix from an external photo. */
+export async function readExternalHead(
+	source: ExternalPhotoSource,
+	bytes: number,
+	knownSize?: number
+): Promise<ExternalPhotoRead> {
+	try {
+		const end = knownSize == null ? bytes - 1 : Math.min(bytes, knownSize) - 1;
+		if (end < 0) throw new Error('empty file');
+		return await externalRange(source, end, bytes);
+	} catch (rangedError) {
+		// A host that cannot range the local resource may still serve it normally.
+		// Match the vault fallback: the transfer can be full, but parsing and retained
+		// memory remain bounded to the prefix.
+		const response = await fetch(source.resourceUrl);
+		if (!response.ok) throw rangedError;
+		const head = new Uint8Array(await response.arrayBuffer()).slice(0, bytes);
+		return { bytes: head, ...responseState(response) };
+	}
+}
+
+function headRevision(bytes: Uint8Array): string {
+	let hash = 2166136261;
+	for (const byte of bytes) {
+		hash ^= byte;
+		hash = Math.imul(hash, 16777619);
+	}
+	return `head:${bytes.length}:${hash >>> 0}`;
 }
 
 /** The single formula for a photo's `map.addImage` id. */
@@ -124,7 +193,12 @@ export class TrackCache {
 	) {}
 
 	/** Freshness includes photo datum because that setting changes the projected coordinate. */
-	isFresh(file: TFile, datum: PhotoDatum): boolean {
+	isFresh(input: TFile | MapSource, datum: PhotoDatum): boolean {
+		const source = mapSource(input);
+		// An external file has no vault event to keep this answer current. Its
+		// lightweight revision probe is the freshness check at each data sync.
+		if (source.kind === 'external-photo') return false;
+		const file = source.file;
 		const rec = this.entries.get(file.path);
 		if (!rec || rec.mtime !== file.stat.mtime) return false;
 		if (PHOTO_EXTS.has(file.extension) && rec.photoDatum !== datum) return false;
@@ -148,7 +222,12 @@ export class TrackCache {
 	}
 
 	/** `datum` participates only in photo cache identity; ordinary tracks ignore it. */
-	load(file: TFile, datum: PhotoDatum): Promise<TrackRecord> {
+	load(input: TFile | MapSource, datum: PhotoDatum): Promise<TrackRecord> {
+		const source = mapSource(input);
+		return source.kind === 'vault' ? this.loadVault(source.file, datum) : this.loadExternal(source, datum);
+	}
+
+	private loadVault(file: TFile, datum: PhotoDatum): Promise<TrackRecord> {
 		// Everything identifying this read is captured before the first await. A
 		// TFile is mutable: Obsidian updates its path/stat object in place, so
 		// reading either after I/O can stamp old bytes with a new mtime.
@@ -213,7 +292,7 @@ export class TrackCache {
 				file.stat.mtime !== mtime ||
 				(this.generations.get(path) ?? 0) !== generation
 			) {
-				return this.load(file, datum);
+				return this.loadVault(file, datum);
 			}
 
 			// Two different snapshots (most commonly a photo-datum setting change)
@@ -223,7 +302,7 @@ export class TrackCache {
 				const newest = this.latest.get(path);
 				if (newest && newest.id > request.id) return newest.promise;
 				const committed = this.entries.get(path);
-				return committed ?? this.load(file, datum);
+				return committed ?? this.loadVault(file, datum);
 			}
 
 			this.entries.set(path, rec);
@@ -236,6 +315,97 @@ export class TrackCache {
 		this.pending.set(key, request);
 		this.latest.set(path, request);
 		return promise;
+	}
+
+	/** External sources are re-probed at every map sync because no vault event owns them. */
+	private loadExternal(source: ExternalPhotoSource, datum: PhotoDatum): Promise<TrackRecord> {
+		const path = source.key;
+		const generation = this.generations.get(path) ?? 0;
+		const key = [path, 'external', datum, String(generation)].join('\0');
+		const pending = this.pending.get(key);
+		if (pending) {
+			if (this.latest.get(path) !== pending) {
+				pending.id = (this.requestIds.get(path) ?? 0) + 1;
+				this.requestIds.set(path, pending.id);
+				this.latest.set(path, pending);
+			}
+			return pending.promise;
+		}
+
+		const requestId = (this.requestIds.get(path) ?? 0) + 1;
+		this.requestIds.set(path, requestId);
+		const request = {
+			id: requestId,
+			promise: Promise.resolve({ mtime: 0, features: [], photoDatum: datum } as TrackRecord),
+		};
+		const promise = (async (): Promise<TrackRecord> => {
+			let rec: TrackRecord;
+			try {
+				rec = await this.loadExternalPhoto(source, datum);
+			} catch (e) {
+				// A note may deliberately carry paths for several devices. An unreadable
+				// sibling is an empty answer here, not a warning on every synchronization.
+				rec = {
+					mtime: 0,
+					features: [],
+					photoDatum: datum,
+					error: e instanceof Error ? e.message : String(e),
+				};
+			}
+
+			if ((this.generations.get(path) ?? 0) !== generation) return this.loadExternal(source, datum);
+			if (this.requestIds.get(path) !== request.id) {
+				const newest = this.latest.get(path);
+				if (newest && newest.id > request.id) return newest.promise;
+				const committed = this.entries.get(path);
+				return committed ?? this.loadExternal(source, datum);
+			}
+			this.entries.set(path, rec);
+			return rec;
+		})().finally(() => {
+			if (this.pending.get(key) === request) this.pending.delete(key);
+			if (this.latest.get(path) === request) this.latest.delete(path);
+		});
+		request.promise = promise;
+		this.pending.set(key, request);
+		this.latest.set(path, request);
+		return promise;
+	}
+
+	private async loadExternalPhoto(source: ExternalPhotoSource, datum: PhotoDatum): Promise<TrackRecord> {
+		const probe = await probeExternalPhoto(source);
+		const trusted = probe.size != null && probe.mtime != null && probe.revision != null;
+		const cached = this.entries.get(source.key);
+		if (trusted && cached && cached.revision === probe.revision && cached.photoDatum === datum) return cached;
+
+		if (trusted && this.index) {
+			await this.index.ready();
+			const stored = this.index.get(source.key, probe.size!, probe.mtime!, Date.now());
+			if (stored) {
+				return this.photoRecord(
+					source,
+					storedExif(stored),
+					datum,
+					probe.mtime!,
+					stored.thumb === true,
+					undefined,
+					probe.revision
+				);
+			}
+		}
+
+		const enough =
+			probe.size == null ? probe.bytes.length > 1 : probe.bytes.length >= Math.min(PHOTO_HEAD_BYTES, probe.size);
+		const read = enough ? probe : await readExternalHead(source, PHOTO_HEAD_BYTES, probe.size);
+		const revision = read.revision ?? headRevision(read.bytes);
+		if (!trusted && cached && cached.revision === revision && cached.photoDatum === datum) return cached;
+
+		const exif = parseExif(read.bytes);
+		if (read.size != null && read.mtime != null) {
+			if (this.index) await this.index.ready();
+			this.index?.set(source.key, indexEntry(exif, read.size, read.mtime, Date.now()));
+		}
+		return this.photoRecord(source, exif, datum, read.mtime ?? 0, !!exif?.thumbnail, exif?.thumbnail, revision);
 	}
 
 	private async loadTrack(file: TFile, extension: string, mtime: number): Promise<TrackRecord> {
@@ -261,7 +431,8 @@ export class TrackCache {
 		// even pay the microtask — it reads exactly as it did before there was one.
 		if (this.index) await this.index.ready();
 		const stored = this.index?.get(file.path, size, mtime, Date.now());
-		if (stored) return this.photoRecord(file, storedExif(stored), datum, mtime, stored.thumb === true);
+		if (stored)
+			return this.photoRecord(vaultMapSource(file), storedExif(stored), datum, mtime, stored.thumb === true);
 
 		const head = await readHead(this.app, file, PHOTO_HEAD_BYTES);
 		const exif = parseExif(head);
@@ -270,28 +441,30 @@ export class TrackCache {
 		// in place, so re-reading `file.stat` here could stamp these bytes with a
 		// newer file — which is the one way a stored entry could misplace a pin.
 		this.index?.set(file.path, indexEntry(exif, size, mtime, Date.now()));
-		return this.photoRecord(file, exif, datum, mtime, !!exif?.thumbnail, exif?.thumbnail);
+		return this.photoRecord(vaultMapSource(file), exif, datum, mtime, !!exif?.thumbnail, exif?.thumbnail);
 	}
 
 	/** The one shape a photo becomes, whether its values were read or restored. */
 	private photoRecord(
-		file: TFile,
+		source: MapSource,
 		exif: PhotoExif | null,
 		datum: PhotoDatum,
 		mtime: number,
 		hasThumbnail: boolean,
-		thumbnail?: ExifThumbnail
+		thumbnail?: ExifThumbnail,
+		revision?: string
 	): TrackRecord {
-		if (!exif) return { features: [], mtime, photoDatum: datum };
+		if (!exif) return { features: [], mtime, photoDatum: datum, revision };
 
-		const track = photoTrack(exif, file.basename, datum);
+		const track = photoTrack(exif, sourceBasename(source), datum);
 		const feature = track.features[0];
 		// Stamp the same id the thumbnail registrar later passes to map.addImage.
-		const imageId = hasThumbnail ? photoImageId(file.path) : undefined;
+		const path = sourceKey(source);
+		const imageId = hasThumbnail ? photoImageId(path) : undefined;
 		const properties: Record<string, unknown> = {
 			...feature.properties,
 			amRole: 'photo',
-			amPath: file.path,
+			amPath: path,
 		};
 		if (imageId) properties.amPhoto = imageId;
 
@@ -299,12 +472,13 @@ export class TrackCache {
 		const rec: TrackRecord = {
 			features: [{ ...feature, properties }],
 			mtime,
+			revision,
 			photoDatum: datum,
 			photo,
 		};
 		// Only a restored record carries a loader: one that read its own file
 		// already has whatever bytes that file held.
-		if (hasThumbnail && !thumbnail) photo.load = () => this.readThumbnail(file, rec);
+		if (hasThumbnail && !thumbnail) photo.load = () => this.readThumbnail(source, rec);
 		return rec;
 	}
 
@@ -317,19 +491,27 @@ export class TrackCache {
 	 * after the read: a file rewritten in between would otherwise hand these
 	 * bytes to a point derived from the old one.
 	 */
-	private async readThumbnail(file: TFile, rec: TrackRecord): Promise<ExifThumbnail | undefined> {
+	private async readThumbnail(source: MapSource, rec: TrackRecord): Promise<ExifThumbnail | undefined> {
 		const photo = rec.photo;
 		if (!photo) return undefined;
 		if (photo.thumbnail) return photo.thumbnail;
 		photo.reading ??= (async () => {
 			try {
-				const head = await readHead(this.app, file, PHOTO_HEAD_BYTES);
-				if (file.stat.mtime !== rec.mtime) return undefined;
+				let head: Uint8Array;
+				if (source.kind === 'vault') {
+					head = await readHead(this.app, source.file, PHOTO_HEAD_BYTES);
+					if (source.file.stat.mtime !== rec.mtime) return undefined;
+				} else {
+					const read = await readExternalHead(source, PHOTO_HEAD_BYTES);
+					const revision = read.revision ?? headRevision(read.bytes);
+					if (rec.revision !== revision) return undefined;
+					head = read.bytes;
+				}
 				const thumbnail = parseExif(head)?.thumbnail;
 				if (thumbnail) photo.thumbnail = thumbnail;
 				return thumbnail;
 			} catch (e) {
-				console.warn(`Advanced Maps: could not read a thumbnail from ${file.path}:`, e);
+				console.warn(`Advanced Maps: could not read a thumbnail from ${sourceKey(source)}:`, e);
 				return undefined;
 			} finally {
 				// Cleared either way: a failed read should be retried the next time

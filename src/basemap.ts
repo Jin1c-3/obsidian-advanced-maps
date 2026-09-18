@@ -260,6 +260,21 @@ function encodePath(path: string): string {
 }
 
 /**
+ * One absolute filesystem path behind the local-resource prefix this host uses.
+ *
+ * Shared with external photos: both MapLibre tiles and image/EXIF requests run
+ * in the same web view, so making a second path encoder would make spaces,
+ * Windows drives or non-ASCII folders work for one local resource and not the
+ * other. The prefix is resolved by the caller because it is per application
+ * launch and must never be persisted.
+ */
+export function localFileUrl(path: string, prefix: string): string | null {
+	const normalized = path.replace(/\\/g, '/');
+	if (prefix === '' || !isAbsolute(normalized)) return null;
+	return prefix + encodePath(normalized);
+}
+
+/**
  * A vault-relative name to ask both path questions about. Nothing is read and
  * the file need not exist: both answers are string arithmetic on the vault's own
  * location. Plain ASCII deliberately — a name carrying a space or a CJK
@@ -366,7 +381,7 @@ export function offlineTileUrl(template: string, prefix: string, vaultBase: stri
 		if (base === '') return null;
 		path = `${base}/${path.replace(/^\.\//, '')}`;
 	}
-	return prefix + encodePath(path);
+	return localFileUrl(path, prefix);
 }
 
 /** What a pack draws and how far the map may go over it. */

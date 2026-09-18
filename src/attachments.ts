@@ -2,6 +2,13 @@
 
 import type { App, CachedMetadata, TFile } from 'obsidian';
 import { PHOTO_EXTS, TRACK_EXTS } from './constants';
+import {
+	externalPhotoSources,
+	externalResourcePrefix,
+	vaultMapSource,
+	type ExternalPhotoSource,
+	type MapSource,
+} from './map-source';
 
 /**
  * The attachments a note points at, and the memo over that answer.
@@ -15,6 +22,8 @@ import { PHOTO_EXTS, TRACK_EXTS } from './constants';
 export class AttachmentResolver {
 	/** Which files a note points at, memoised against the metadata that answered. */
 	private memo = new WeakMap<CachedMetadata, TFile[]>();
+	/** External body links require note text, so their memo holds the read itself. */
+	private externalMemo = new WeakMap<CachedMetadata, Promise<ExternalPhotoSource[]>>();
 
 	constructor(
 		private readonly app: App,
@@ -60,6 +69,7 @@ export class AttachmentResolver {
 	 */
 	forgetAll(): void {
 		this.memo = new WeakMap();
+		this.externalMemo = new WeakMap();
 	}
 
 	/**
@@ -109,6 +119,34 @@ export class AttachmentResolver {
 		const out = this.linked(file, cache, (extension) => this.isTrackFile(extension));
 		this.memo.set(cache, out);
 		return out;
+	}
+
+	/**
+	 * Every source a map draws, including supported explicit external photos.
+	 *
+	 * Kept beside rather than in `resolveTracks`: commands that only understand
+	 * vault files stay synchronous, while maps — already asynchronous because
+	 * they load attachments — opt into the source-text read deliberately.
+	 */
+	async resolveMapSources(file: TFile): Promise<MapSource[]> {
+		const vault = this.resolveTracks(file).map(vaultMapSource);
+		if (!this.photos || file.extension !== 'md') return vault;
+		const cache = this.app.metadataCache.getFileCache(file);
+		if (!cache) return vault;
+
+		let external = this.externalMemo.get(cache);
+		if (!external) {
+			const prefix = externalResourcePrefix(this.app);
+			external = this.app.vault
+				.cachedRead(file)
+				.then((text) => externalPhotoSources(text, prefix))
+				.catch((e: unknown) => {
+					console.warn(`Advanced Maps: could not inspect external photo links in ${file.path}:`, e);
+					return [];
+				});
+			this.externalMemo.set(cache, external);
+		}
+		return [...vault, ...(await external)];
 	}
 
 	/**

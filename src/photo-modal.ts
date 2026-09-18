@@ -1,13 +1,18 @@
 /* A modal preserves the active map leaf; optional note opening stays caller-owned. */
 
 import { Modal, setIcon } from 'obsidian';
-import type { App, TFile } from 'obsidian';
+import type { App } from 'obsidian';
 import { t } from './i18n';
+
+export interface PhotoPresentation {
+	name: string;
+	resourceUrl: string;
+}
 
 export class PhotoModal extends Modal {
 	constructor(
 		app: App,
-		private readonly photo: TFile,
+		private readonly photo: PhotoPresentation,
 		/** When absent, omit the open-note row. */
 		private readonly onOpenNote?: () => void
 	) {
@@ -18,12 +23,13 @@ export class PhotoModal extends Modal {
 		this.modalEl.addClass('advanced-maps-photo-modal');
 		this.titleEl.setText(this.photo.name);
 
-		// `getResourcePath` carries the file's mtime as a query parameter, so an
-		// edited photo is not served from the last one's cache entry.
-		this.contentEl.createEl('img', {
+		const image = this.contentEl.createEl('img', {
 			cls: 'advanced-maps-photo-modal-image',
-			attr: { src: this.app.vault.getResourcePath(this.photo), alt: this.photo.name },
+			attr: { src: this.photo.resourceUrl, alt: this.photo.name },
 		});
+		// The title and optional note route remain useful if the source vanished
+		// after the point was drawn; remove the browser's broken-image placeholder.
+		image.addEventListener('error', () => image.remove());
 
 		if (!this.onOpenNote) return;
 		const open = this.onOpenNote;

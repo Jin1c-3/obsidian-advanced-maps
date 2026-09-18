@@ -66,6 +66,7 @@ import {
 } from './layers';
 import { customMapLabel, customMapUrl, customMaps, enabledBuiltins, externalMapUrl, resolveBuiltins } from './maplinks';
 import { PhotoModal } from './photo-modal';
+import { sourceKey, sourceName, sourceResourceUrl, type MapSource } from './map-source';
 import { UNNAMED_PLACE, valueText, type Place } from './places';
 import { ExportPlacesModal, exportStem, type ExportSource } from './places-modal';
 import { iconOffsetExpression, spreadFactor, spreadPins, type SpreadPin, type SpreadPlan } from './spread';
@@ -91,7 +92,7 @@ import type {
 interface DrawItem {
 	entry: BasesEntry;
 	file: TFile;
-	trackFiles: TFile[];
+	sources: MapSource[];
 	color: string;
 }
 
@@ -99,10 +100,12 @@ interface DrawItem {
 interface PointedFeature {
 	/** '', 'start', 'end' or 'photo'. */
 	role: string;
-	/** Vault path of the file this feature was read from. */
+	/** Map-source key of the file this feature was read from. */
 	path: string;
 	/** A waypoint's own name; empty for everything else. */
 	name: string;
+	/** Present for a photo that still belongs to the current draw revision. */
+	source?: MapSource;
 }
 
 /** The last path segment, for a file that no longer resolves in the vault. */
@@ -1396,18 +1399,21 @@ export class TrackLayer {
 
 	/* ---- data ---- */
 
-	/** Build the draw list: every entry in the query that owns a track file. */
-	private collect(data: BasesData | undefined): DrawItem[] {
+	/** Build the draw list, bounding note-source reads like attachment reads. */
+	private async collect(data: BasesData | undefined, alive: () => boolean): Promise<DrawItem[]> {
 		const entries = data?.data ?? [];
-		const items: DrawItem[] = [];
-		for (const entry of entries) {
-			const file = entry && entry.file;
-			if (!file) continue;
-			const trackFiles = this.plugin.resolveTracks(file);
-			if (trackFiles.length === 0) continue;
-			items.push({ entry, file, trackFiles, color: this.colorFor(entry) });
-		}
-		return items;
+		const loaded = await pooled(
+			entries,
+			READ_CONCURRENCY,
+			async (entry): Promise<DrawItem | null> => {
+				const file = entry && entry.file;
+				if (!file) return null;
+				const sources = await this.plugin.resolveMapSources(file);
+				return sources.length === 0 ? null : { entry, file, sources, color: this.colorFor(entry) };
+			},
+			alive
+		);
+		return loaded.filter((item): item is DrawItem => !!item);
 	}
 
 	/** A track belongs to its note, so it is drawn in that note's marker colour. */
@@ -1425,10 +1431,11 @@ export class TrackLayer {
 	private build(items: DrawItem[], system: CoordSystem): FeatureCollection<Geometry, TrackFeatureProps> {
 		const features: TrackFeature[] = [];
 		items.forEach((item, index) => {
-			for (const trackFile of item.trackFiles) {
-				const rec = this.plugin.tracks.get(trackFile.path);
+			for (const source of item.sources) {
+				const key = sourceKey(source);
+				const rec = this.plugin.tracks.get(key);
 				if (!rec || rec.error) continue;
-				features.push(...trackFeatures(projectedFeatures(rec, system), item.color, index, trackFile.path));
+				features.push(...trackFeatures(projectedFeatures(rec, system), item.color, index, key));
 			}
 		});
 		return { type: 'FeatureCollection', features };
@@ -1441,7 +1448,11 @@ export class TrackLayer {
 			parts.push(item.color);
 			// mtime, so a track edited in place counts as different even though its
 			// path has not moved.
-			for (const trackFile of item.trackFiles) parts.push(trackFile.path, String(trackFile.stat.mtime));
+			for (const source of item.sources) {
+				const key = sourceKey(source);
+				const rec = this.plugin.tracks.get(key);
+				parts.push(key, rec?.revision ?? String(rec?.mtime ?? 0));
+			}
 		}
 		// '\0' written as an escape, not as a raw NUL byte in the source: a literal
 		// one makes `grep -rn` treat this file as binary and skip it in silence,
@@ -1457,12 +1468,15 @@ export class TrackLayer {
 		const view = this.view;
 		if (this.detached || !view.map) return;
 
-		const items = this.collect(data ?? view.data);
+		const alive = () => revision === this.syncRevision && !this.detached && !!view.map;
+		const items = await this.collect(data ?? view.data, alive);
+		if (!alive()) return;
 
-		const pending = new Set<TFile>();
+		const pending = new Map<string, MapSource>();
 		for (const item of items) {
-			for (const trackFile of item.trackFiles) {
-				if (!this.plugin.tracks.isFresh(trackFile, this.plugin.settings.photoDatum)) pending.add(trackFile);
+			for (const source of item.sources) {
+				if (!this.plugin.tracks.isFresh(source, this.plugin.settings.photoDatum))
+					pending.set(sourceKey(source), source);
 			}
 		}
 		// Bounded, because `pending` is as large as the base result: a query that
@@ -1471,10 +1485,10 @@ export class TrackLayer {
 		// rather than at the revision check below.
 		if (pending.size > 0)
 			await pooled(
-				pending,
+				pending.values(),
 				READ_CONCURRENCY,
-				(f) => this.plugin.tracks.load(f, this.plugin.settings.photoDatum),
-				() => revision === this.syncRevision && !this.detached && !!view.map
+				(source) => this.plugin.tracks.load(source, this.plugin.settings.photoDatum),
+				alive
 			);
 		if (revision !== this.syncRevision || this.detached || !view.map) return;
 
@@ -1544,9 +1558,10 @@ export class TrackLayer {
 		const system = this.system();
 		const records: PhotoIconSource[] = [];
 		for (const item of items) {
-			for (const trackFile of item.trackFiles) {
-				const rec = this.plugin.tracks.get(trackFile.path);
-				const icon = rec && photoIconSource(trackFile.path, rec, system);
+			for (const source of item.sources) {
+				const key = sourceKey(source);
+				const rec = this.plugin.tracks.get(key);
+				const icon = rec && photoIconSource(key, rec, system);
 				if (icon) records.push(icon);
 			}
 		}
@@ -1635,6 +1650,10 @@ export class TrackLayer {
 		return typeof index === 'number' ? (this.items[index] ?? null) : null;
 	}
 
+	private sourceFrom(item: DrawItem, key: string): MapSource | null {
+		return item.sources.find((source) => sourceKey(source) === key) ?? null;
+	}
+
 	/** Layer-scoped handlers may deliver one DOM event twice; handle it once. */
 	private open(ev: MapMouseEvent): void {
 		// Measuring owns the map's clicks; see the popup and menu wrappers above.
@@ -1654,16 +1673,22 @@ export class TrackLayer {
 
 	/** Normal click opens the modal, mod-click opens the file, and a stale path falls back to its note. */
 	private openPhoto(path: string, item: DrawItem, mod: PaneType | boolean): void {
-		const file = this.view.app.vault.getFileByPath(path);
-		if (!file) {
+		const source = this.sourceFrom(item, path);
+		if (!source) {
 			this.openNote(item.file.path, mod);
 			return;
 		}
 		if (mod) {
-			void this.view.app.workspace.openLinkText(path, item.file.path, mod);
+			if (source.kind === 'vault')
+				void this.view.app.workspace.openLinkText(source.file.path, item.file.path, mod);
+			else window.open(source.uri, '_blank');
 			return;
 		}
-		new PhotoModal(this.view.app, file, () => this.openNote(item.file.path, false)).open();
+		new PhotoModal(
+			this.view.app,
+			{ name: sourceName(source), resourceUrl: sourceResourceUrl(this.view.app, source) },
+			() => this.openNote(item.file.path, false)
+		).open();
 	}
 
 	/** Plain clicks on a following map use its followed pane; every other case preserves native behavior. */
@@ -1731,7 +1756,8 @@ export class TrackLayer {
 		// synchronously. Cleared again on the way out because the host builds no
 		// card at all for a note whose displayed properties are empty — the
 		// wrapper would never run, and a native pin hover would inherit this.
-		this.pointed = { role, path, name };
+		const source = role === 'photo' ? (this.sourceFrom(item, path) ?? undefined) : undefined;
+		this.pointed = { role, path, name, source };
 		try {
 			show(
 				item.entry,
@@ -1757,12 +1783,12 @@ export class TrackLayer {
 	private describe(card: HTMLElement, pointed: PointedFeature): void {
 		const app = this.view.app;
 		if (pointed.role === 'photo') {
-			const file = app.vault.getFileByPath(pointed.path);
-			const name = file?.name ?? basename(pointed.path);
+			const source = pointed.source;
+			const name = source ? sourceName(source) : basename(pointed.path);
 			let image: PointedDetail['image'];
-			if (file) {
+			if (source) {
 				try {
-					image = { src: app.vault.getResourcePath(file), alt: name };
+					image = { src: sourceResourceUrl(app, source), alt: name };
 				} catch {
 					/* no resource path for this file — the row keeps its name alone */
 				}
