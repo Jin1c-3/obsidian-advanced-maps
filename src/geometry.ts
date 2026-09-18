@@ -244,11 +244,11 @@ export interface TrackFeatureProps extends Record<string, unknown> {
 	/** MapLibre image id for a photo thumbnail. */
 	amPhoto?: string;
 	/**
-	 * Vault path of the file this feature was read from — the photo a marker
+	 * Map-source key of the file this feature was read from — the photo a marker
 	 * opens, and the track file a line was drawn from. `amIndex` names the note,
 	 * which is not enough on its own: one note may link several tracks, and
 	 * telling them apart is what lets a hover describe the track pointed at. The
-	 * path doubles as the cache key, so `plugin.tracks.get(amPath)` is how a
+	 * key doubles as the cache key, so `plugin.tracks.get(amPath)` is how a
 	 * drawn feature reaches the record it came from.
 	 */
 	amPath?: string;

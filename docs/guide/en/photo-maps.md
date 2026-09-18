@@ -94,6 +94,57 @@ frontmatter all count. Each resolved photo participates once. The Base does not
 need to include the attachment folder, and an actual embed is needed only when
 you also want the image visible in the note.
 
+### Link individual photos outside the vault
+
+An inline Markdown `file:` destination can name a supported photo that Obsidian
+does not index. A normal link puts it on the map without displaying it in the
+note; add `!` to ask Obsidian to display it there too. Both forms count for the
+map, though the host may not render a raw external embed on every platform:
+
+```markdown
+[desktop photo](<file:///G:\My Drive\Camera\P 20260911 091346.jpg>)
+![phone photo](file:///storage/emulated/0/DCIM/Camera/P_20260911_091346.jpg)
+```
+
+These are absolute, device-specific paths. A synchronized note can contain one
+destination per device: Advanced Maps uses the supported files the current
+device can read and skips the others without dropping the note's tracks or
+vault photos. Repeating the same destination as a link and an embed still maps
+it once.
+
+On Android, a path outside the vault is readable only when Obsidian has **All
+files access**. A vault in **Device storage** asks for that permission during
+setup; **App storage** does not. Enable it for Obsidian under Android's special
+app access settings before using a `/storage/emulated/0/...` destination. A
+`file:` image embed may still look broken in the note because Android's web view
+does not display that raw URL; Advanced Maps uses the host's local-resource
+route for the map. Use an ordinary link when only the map needs the photo.
+
+Only inline Markdown links and image embeds in the note body count. Raw HTML,
+reference-style links, frontmatter values, network URLs, external tracks, and
+text inside code do not. **Set coordinates from a photo** also continues to use
+vault attachments only.
+
+> [!IMPORTANT]
+> The absolute paths are stored in the note and travel wherever that note is
+> synced, so consider whether their folder names disclose anything private. A
+> `file:` URL naming a directory is not an album: Advanced Maps never traverses
+> it. Use the [directory-link setup above](#put-a-onedrive-or-other-external-album-inside-the-vault)
+> when a desktop needs a whole external folder in a Base.
+
+External files have no Obsidian vault events. A file changed by another program
+is validated again on the next map data refresh or when the map is reopened; it
+is not watched for an immediate redraw. Where the device supplies trustworthy
+file revision metadata, the photo index can restore unchanged derived metadata.
+Otherwise Advanced Maps performs a current bounded head read rather than trust
+an unverifiable stored result.
+
+Verified on the maintained Android 16 emulator with Obsidian 1.13.7: a readable
+`file:///storage/emulated/0/...` photo was served through the host-derived
+`http://localhost/_capacitor_file_/storage/emulated/0/...` route and drawn beside
+its vault GPX, while an unavailable `file:///G:\...` desktop link in the same
+note was skipped.
+
 ![One note's own walk on satellite imagery, its photos drawn as thumbnails wherever their EXIF says they were taken](../../images/photo-map.jpg)
 
 ## Coordinates and display

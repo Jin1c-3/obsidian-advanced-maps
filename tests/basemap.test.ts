@@ -4,6 +4,7 @@ import {
 	applyOfflineTiles,
 	boundOfflineSource,
 	localResourcePrefix,
+	localFileUrl,
 	offlineTileUrl,
 	offlineZoomBounds,
 	findPack,
@@ -143,6 +144,18 @@ describe('localResourcePrefix', () => {
 		).toBeNull();
 		// An answer that is not a string is not a path to subtract from.
 		expect(localResourcePrefix({ getFullPath: () => 42, getResourcePath: () => 42 })).toBeNull();
+	});
+});
+
+describe('localFileUrl', () => {
+	it('uses the shared local-resource encoding for POSIX and Windows files', () => {
+		expect(localFileUrl('/mnt/My 相片/photo.jpg', PREFIX)).toBe(`${PREFIX}mnt/My%20%E7%9B%B8%E7%89%87/photo.jpg`);
+		expect(localFileUrl('G:\\My Drive\\photo.jpg', PREFIX)).toBe(`${PREFIX}G%3A/My%20Drive/photo.jpg`);
+	});
+
+	it('rejects a relative path or missing prefix', () => {
+		expect(localFileUrl('photos/one.jpg', PREFIX)).toBeNull();
+		expect(localFileUrl('/photos/one.jpg', '')).toBeNull();
 	});
 });
 

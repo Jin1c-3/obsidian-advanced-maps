@@ -205,6 +205,22 @@ export const Keymap = {
 	isModEvent: (): boolean => false,
 };
 
+export const Platform = {
+	isDesktop: true,
+	isMobile: false,
+	isDesktopApp: true,
+	isMobileApp: false,
+	isIosApp: false,
+	isAndroidApp: false,
+	isPhone: false,
+	isTablet: false,
+	isMacOS: false,
+	isWin: false,
+	isLinux: true,
+	isSafari: false,
+	resourcePathPrefix: 'app://test/',
+};
+
 export function setIcon(_el: HTMLElement, _icon: string): void {}
 
 /** Obsidian answers this from the language it stored; so does the stub. */

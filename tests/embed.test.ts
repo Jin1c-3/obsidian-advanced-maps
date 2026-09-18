@@ -1,9 +1,41 @@
-import { describe, expect, it, vi } from 'vitest';
-import { TFile } from 'obsidian';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { Keymap, TFile } from 'obsidian';
 import { READ_CONCURRENCY } from '../src/constants';
 import { claimableExtensions, TrackEmbed } from '../src/embed';
+import { externalPhotoSource, sourceExtension, sourceKey, vaultMapSource, type MapSource } from '../src/map-source';
+import { PhotoModal } from '../src/photo-modal';
 import type AdvancedMapsPlugin from '../src/main';
+import type { TrackRecord } from '../src/track-cache';
 import type { BasesMapView, MapLibreMap } from '../src/types/obsidian-internals';
+
+beforeAll(() => {
+	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+	proto.createEl = function (
+		this: HTMLElement,
+		tag: string,
+		opts?: { text?: string; cls?: string; attr?: Record<string, string> }
+	) {
+		const el = document.createElement(tag);
+		if (opts?.text) el.textContent = opts.text;
+		if (opts?.cls) el.className = opts.cls;
+		for (const [name, value] of Object.entries(opts?.attr ?? {})) el.setAttribute(name, value);
+		this.append(el);
+		return el;
+	};
+	proto.createDiv = function (this: HTMLElement, opts?: { text?: string; cls?: string } | string) {
+		const value = typeof opts === 'string' ? { cls: opts } : opts;
+		return (proto.createEl as (tag: string, options?: unknown) => HTMLElement).call(this, 'div', value);
+	};
+	proto.addClass = function (this: HTMLElement, ...classes: string[]) {
+		this.classList.add(...classes);
+	};
+	proto.toggleClass = function (this: HTMLElement, name: string, on: boolean) {
+		this.classList.toggle(name, on);
+	};
+	proto.empty = function (this: HTMLElement) {
+		this.replaceChildren();
+	};
+});
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
 	let resolve!: () => void;
@@ -244,10 +276,14 @@ describe('TrackEmbed bounded companion reads', () => {
 			app: { vault: { getFileByPath: () => host } },
 			embeds: new Set(),
 			resolveTracks: () => photos,
+			resolveMapSources: async () => photos.map(vaultMapSource),
 			tracks: {
-				load: vi.fn((file: TFile) => {
-					if (file.extension !== 'jpg') return Promise.resolve(trackRec);
-					started.push(file.path);
+				load: vi.fn((input: TFile | MapSource) => {
+					const source = 'kind' in input ? input : vaultMapSource(input);
+					const extension = sourceExtension(source);
+					const key = sourceKey(source);
+					if (extension !== 'jpg') return Promise.resolve(trackRec);
+					started.push(key);
 					return new Promise((resolve) => gates.push(() => resolve({ mtime: 1, features: [] })));
 				}),
 			},
@@ -282,6 +318,8 @@ describe('TrackEmbed bounded companion reads', () => {
 	it('reads a large album under the limit without dropping a photo', async () => {
 		const album = albumEmbed(READ_CONCURRENCY * 3);
 		const running = album.embed.refresh();
+		await Promise.resolve();
+		await Promise.resolve();
 		expect(album.started).toHaveLength(READ_CONCURRENCY);
 
 		await album.drain();
@@ -293,6 +331,8 @@ describe('TrackEmbed bounded companion reads', () => {
 	it('stops starting companion reads once the embed is torn down', async () => {
 		const album = albumEmbed(64);
 		const running = album.embed.refresh();
+		await Promise.resolve();
+		await Promise.resolve();
 		const firstWindow = album.started.length;
 
 		album.embed.onunload();
@@ -301,6 +341,120 @@ describe('TrackEmbed bounded companion reads', () => {
 
 		expect(album.started.length).toBe(firstWindow);
 		expect(album.started.length).toBeLessThan(album.photos.length);
+	});
+});
+
+describe('TrackEmbed external host photos', () => {
+	function sourceHarness() {
+		const container = document.createElement('div');
+		const track = Object.assign(new TFile(), { name: 'route.gpx', path: 'route.gpx', extension: 'gpx' });
+		track.stat = { mtime: 1, ctime: 1, size: 10 };
+		const host = Object.assign(new TFile(), { name: 'trip.md', path: 'notes/trip.md', extension: 'md' });
+		const first = externalPhotoSource('file:///tmp/first.jpg', 'app://session/')!;
+		const second = externalPhotoSource('file:///tmp/second.jpg', 'app://session/')!;
+		let sources: MapSource[] = [first];
+		let externalRecord: TrackRecord = {
+			mtime: 1000,
+			revision: '4:1000',
+			photoDatum: 'auto',
+			features: [
+				{
+					type: 'Feature',
+					properties: { amRole: 'photo', amPath: first.key },
+					geometry: { type: 'Point', coordinates: [1, 2] },
+				},
+			],
+		};
+		const openLinkText = vi.fn();
+		const plugin = {
+			settings: { showPhotos: true, photoDatum: 'auto' },
+			app: {
+				vault: { getFileByPath: (path: string) => (path === host.path ? host : null) },
+				workspace: { openLinkText },
+			},
+			resolveMapSources: async () => sources,
+			tracks: { load: async () => externalRecord },
+		} as unknown as AdvancedMapsPlugin;
+		const embed = new TrackEmbed(container, plugin, track, host.path);
+		return {
+			embed,
+			first,
+			second,
+			openLinkText,
+			setSources(next: MapSource[]) {
+				sources = next;
+			},
+			setRecord(next: TrackRecord) {
+				externalRecord = next;
+			},
+		};
+	}
+
+	it('loads a readable external photo and notices source-sequence changes', async () => {
+		const h = sourceHarness();
+		const loadPhotos = Reflect.get(h.embed, 'loadPhotos') as (alive: () => boolean) => Promise<unknown[]>;
+		const loaded = await loadPhotos.call(h.embed, () => true);
+		expect(loaded).toHaveLength(1);
+		expect(loaded[0]).toMatchObject({ source: h.first, rec: { revision: '4:1000' } });
+		expect(await h.embed.hostPhotosMoved()).toBe(false);
+
+		h.setSources([h.second]);
+		expect(await h.embed.hostPhotosMoved()).toBe(true);
+	});
+
+	it('drops an unavailable external sibling from the draw set', async () => {
+		const h = sourceHarness();
+		h.setRecord({ mtime: 0, features: [], error: 'unavailable', photoDatum: 'auto' });
+		const loadPhotos = Reflect.get(h.embed, 'loadPhotos') as (alive: () => boolean) => Promise<unknown[]>;
+		await expect(loadPhotos.call(h.embed, () => true)).resolves.toEqual([]);
+	});
+
+	it('opens and identifies an external inline photo without asking the vault', () => {
+		const h = sourceHarness();
+		const root = document.createElement('div');
+		Reflect.set(h.embed, 'rootEl', root);
+		Reflect.set(h.embed, 'photos', [{ source: h.first, rec: { mtime: 1, features: [] } }]);
+		const openModal = vi.spyOn(PhotoModal.prototype, 'open').mockImplementation(() => undefined);
+		const openPhoto = Reflect.get(h.embed, 'openPhoto') as (event: unknown) => void;
+
+		openPhoto.call(h.embed, {
+			originalEvent: new MouseEvent('click'),
+			features: [{ properties: { amPath: h.first.key } }],
+		});
+		expect(openModal).toHaveBeenCalledTimes(1);
+		expect(Reflect.get(openModal.mock.instances[0] as object, 'photo')).toEqual({
+			name: 'first.jpg',
+			resourceUrl: h.first.resourceUrl,
+		});
+		expect(h.openLinkText).not.toHaveBeenCalled();
+
+		const hover = Reflect.get(h.embed, 'hoverPhoto') as (event: unknown) => void;
+		hover.call(h.embed, {
+			originalEvent: new MouseEvent('mousemove'),
+			point: { x: 10, y: 10 },
+			features: [{ properties: { amPath: h.first.key } }],
+		});
+		const image = root.querySelector('img');
+		expect(image?.getAttribute('src')).toBe(h.first.resourceUrl);
+		expect(root.textContent).toContain('first.jpg');
+		image?.dispatchEvent(new Event('error'));
+		expect(root.querySelector('img')).toBeNull();
+		expect(root.textContent).toContain('first.jpg');
+	});
+
+	it('modifier-opens the external URI from an inline map', () => {
+		vi.spyOn(Keymap, 'isModEvent').mockReturnValue(true);
+		const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+		const h = sourceHarness();
+		Reflect.set(h.embed, 'photos', [{ source: h.first, rec: { mtime: 1, features: [] } }]);
+		const openPhoto = Reflect.get(h.embed, 'openPhoto') as (event: unknown) => void;
+		openPhoto.call(h.embed, {
+			originalEvent: new MouseEvent('click'),
+			features: [{ properties: { amPath: h.first.key } }],
+		});
+
+		expect(open).toHaveBeenCalledWith(h.first.uri, '_blank');
+		expect(h.openLinkText).not.toHaveBeenCalled();
 	});
 });
 

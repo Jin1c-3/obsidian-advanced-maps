@@ -103,6 +103,10 @@ describe('appendDetail', () => {
 		expect(img?.getAttribute('alt')).toBe('lake.jpg');
 		expect(img?.className).toBe('advanced-maps-popup-photo');
 		expect(el.querySelector('.bases-map-popup-property-value')?.textContent).toBe('lake.jpg');
+
+		img?.dispatchEvent(new Event('error'));
+		expect(el.querySelector('img')).toBeNull();
+		expect(el.querySelector('.bases-map-popup-property-value')?.textContent).toBe('lake.jpg');
 	});
 
 	it('adds nothing at all when the pointed feature has nothing to say', () => {

@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TFile, type App } from 'obsidian';
-import { pooled, projectedFeatures, readHead, recordStats, TrackCache, type TrackRecord } from '../src/track-cache';
+import {
+	pooled,
+	projectedFeatures,
+	readExternalHead,
+	readHead,
+	recordStats,
+	TrackCache,
+	type TrackRecord,
+} from '../src/track-cache';
 import { PhotoIndex, type PhotoIndexEntry } from '../src/photo-index';
 import { gcj2wgs } from '../src/coords';
+import { externalPhotoSource } from '../src/map-source';
 
 interface Deferred<T> {
 	promise: Promise<T>;
@@ -305,6 +314,130 @@ describe('TrackCache over a persistent index', () => {
 		const rec = await cache.load(photoFile(), 'wgs84');
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(rec.features).toEqual([]);
+	});
+});
+
+describe('TrackCache over explicit external photos', () => {
+	const NOW = 1755300000000;
+	const SOURCE = externalPhotoSource('file:///tmp/walk.jpg', 'app://local/')!;
+	const MTIME = 1000;
+
+	function response(bytes: number[], options: { size?: number; mtime?: number; status?: number } = {}) {
+		const headers = new Headers();
+		const status = options.status ?? 206;
+		if (options.size != null) {
+			if (status === 206)
+				headers.set('Content-Range', `bytes 0-${Math.max(0, bytes.length - 1)}/${options.size}`);
+			else headers.set('Content-Length', String(options.size));
+		}
+		if (options.mtime != null) headers.set('Last-Modified', new Date(options.mtime).toUTCString());
+		return {
+			ok: true,
+			status,
+			headers,
+			arrayBuffer: async () => Uint8Array.from(bytes).buffer,
+		};
+	}
+
+	async function primed(entries: Record<string, PhotoIndexEntry>): Promise<PhotoIndex> {
+		const index = new PhotoIndex({
+			read: async () => JSON.stringify({ version: 1, entries }),
+			write: async () => undefined,
+			remove: async () => undefined,
+		});
+		await index.ready();
+		return index;
+	}
+
+	function point(rec: TrackRecord): number[] {
+		const geometry = rec.features[0]?.geometry;
+		if (geometry?.type !== 'Point') throw new Error(`expected one Point, got ${geometry?.type ?? 'nothing'}`);
+		return geometry.coordinates;
+	}
+
+	it('validates a stored row with a one-byte probe before restoring it', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(response([0], { size: 4096, mtime: MTIME }));
+		vi.stubGlobal('fetch', fetchMock);
+		const index = await primed({
+			[SOURCE.key]: { size: 4096, mtime: MTIME, used: NOW, lng: 120.1, lat: 30.1, orientation: 6 },
+		});
+		const cache = new TrackCache(appWith({}), index);
+
+		const rec = await cache.load(SOURCE, 'wgs84');
+		expect(point(rec)).toEqual([120.1, 30.1]);
+		expect(rec.revision).toBe('4096:1000');
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock).toHaveBeenCalledWith(SOURCE.resourceUrl, { headers: { Range: 'bytes=0-0' } });
+	});
+
+	it('re-reads the bounded head when the external revision changed', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(response([0], { size: 4, mtime: 2000 }))
+			.mockResolvedValueOnce(response([0, 1, 2, 3], { size: 4, mtime: 2000 }));
+		vi.stubGlobal('fetch', fetchMock);
+		const index = await primed({
+			[SOURCE.key]: { size: 4, mtime: MTIME, used: NOW, lng: 120.1, lat: 30.1, orientation: 1 },
+		});
+		const cache = new TrackCache(appWith({}), index);
+
+		const rec = await cache.load(SOURCE, 'auto');
+		expect(rec.features).toEqual([]);
+		expect(rec.revision).toBe('4:2000');
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(index.get(SOURCE.key, 4, 2000, NOW)).toBeDefined();
+	});
+
+	it('uses a current head fingerprint when revision headers are unavailable', async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(response([0]))
+			.mockResolvedValueOnce(response([0, 1, 2, 3]));
+		vi.stubGlobal('fetch', fetchMock);
+		const index = await primed({
+			[SOURCE.key]: { size: 4, mtime: MTIME, used: NOW, lng: 120.1, lat: 30.1, orientation: 1 },
+		});
+		const rec = await new TrackCache(appWith({}), index).load(SOURCE, 'auto');
+
+		expect(rec.features).toEqual([]);
+		expect(rec.revision).toMatch(/^head:4:/);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		// The unverifiable current read did not overwrite or trust the stored row.
+		expect(index.get(SOURCE.key, 4, MTIME, NOW)).toBeDefined();
+	});
+
+	it('deduplicates the same in-flight external read', async () => {
+		const gate = deferred<ReturnType<typeof response>>();
+		const fetchMock = vi.fn(() => gate.promise);
+		vi.stubGlobal('fetch', fetchMock);
+		const cache = new TrackCache(appWith({}));
+		const first = cache.load(SOURCE, 'auto');
+		const second = cache.load(SOURCE, 'auto');
+		expect(first).toBe(second);
+		gate.resolve(response([0], { size: 1, mtime: MTIME }));
+		await expect(first).resolves.toMatchObject({ photoDatum: 'auto' });
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('stands down quietly when this device cannot read the destination', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('not on this device')));
+		const rec = await new TrackCache(appWith({})).load(SOURCE, 'auto');
+		expect(rec.features).toEqual([]);
+		expect(rec.error).toBe('not on this device');
+		expect(warn).not.toHaveBeenCalled();
+	});
+
+	it('slices a local server response that ignored Range', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValue(response([0, 1, 2, 3, 4, 5], { size: 6, mtime: MTIME, status: 200 }))
+		);
+		await expect(readExternalHead(SOURCE, 3)).resolves.toMatchObject({
+			bytes: Uint8Array.from([0, 1, 2]),
+			size: 6,
+			mtime: MTIME,
+		});
 	});
 });
 

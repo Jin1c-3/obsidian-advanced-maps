@@ -39,10 +39,13 @@ export function appendDetail(card: HTMLElement, detail: PointedDetail): void {
 	row.createDiv({ cls: CARD_LABEL, text: detail.label });
 	const value = row.createDiv(CARD_VALUE);
 	if (detail.image) {
-		value.createEl('img', {
+		const image = value.createEl('img', {
 			cls: 'advanced-maps-popup-photo',
 			attr: { src: detail.image.src, alt: detail.image.alt },
 		});
+		// Keep the note/file name row when an external path disappears or a
+		// resource URL stops resolving; a broken-image glyph is not a preview.
+		image.addEventListener('error', () => image.remove());
 	}
 	if (text !== '') value.appendText(text);
 }
