@@ -2,6 +2,26 @@
 
 ## Getting set up
 
+With [mise](https://mise.jdx.dev/) (recommended), the repository selects Node
+24 — the same major CI, documentation and release jobs use — and provides the
+OpenSpec CLI plus the common project commands:
+
+```bash
+mise install
+mise run setup
+cp .env.example .env      # point OBSIDIAN_PLUGIN_DIR at a test vault
+mise run dev
+```
+
+Run `mise tasks` to see the other entry points; `mise run check` is the
+CI-equivalent check and `mise run docs:dev` serves the guide. These tasks
+delegate to `package.json`, which remains the source of truth for project
+commands.
+
+Without mise, use Node 24 and the npm commands directly. `package.json` retains
+`node >=20` as its accepted engine floor, but Node 24 is the maintained local
+and CI baseline:
+
 ```bash
 npm install
 cp .env.example .env      # point OBSIDIAN_PLUGIN_DIR at a test vault
@@ -30,9 +50,27 @@ narrow implementation constraints.
 Use an OpenSpec change when work adds or changes a stable behavior, invariant,
 compatibility boundary, or maintainer contract. Keep executable proof in tests
 rather than copying transcripts into documentation. Proposing, applying and
-archiving one needs the `openspec` CLI, which this repository does not install:
+archiving one needs the `openspec` CLI. The repository's mise setup provides the
+supported version; without mise, install it with
 `npm install -g @fission-ai/openspec`, or run it through `npx`. Work that carries
 no OpenSpec change never needs it.
+
+### Linux and WSL Obsidian
+
+Linux and WSLg contributors can launch the tested official desktop distribution
+without installing it globally:
+
+```bash
+mise run obsidian:linux
+```
+
+Inside that task, `obsidian` names the mise-managed desktop executable. The
+standalone `obsidian` command used elsewhere in this document is a different,
+small CLI client registered by the running application: open **Settings →
+General**, enable **Command line interface**, and follow the registration
+prompt. The desktop application must be running for commands such as
+`obsidian plugin:reload` and `obsidian dev:errors` to work. WSL needs WSLg (or
+another working display server) to show the desktop window.
 
 The patching code reaches undocumented Obsidian internals. Wrap instances rather
 than prototypes, validate every runtime shape before use, and record any new
@@ -129,15 +167,21 @@ among them — and shows touch-sized layout. It draws none of Obsidian's own mob
 chrome and runs none of Android's web view.
 
 **An emulator for most of the rest.** An Android emulator runs the real APK in a
-real Android web view, which is the part emulation cannot reach. Any
-cmdline-tools install works; with mise it is:
+real Android web view, which is the part emulation cannot reach. The Android
+tools are task-scoped: the normal `mise install` does not download them. This
+one-time setup activates Java 21 and Android SDK 23.0, installs the Android 16
+image and creates an `obs` Pixel 7 AVD when it does not already exist:
 
 ```bash
-mise use -g java@21 android-sdk@latest
-sdkmanager "platform-tools" "emulator" "system-images;android-36;google_apis;x86_64"
-avdmanager create avd -n obs -k "system-images;android-36;google_apis;x86_64" -d pixel_7
-emulator -avd obs -gpu swiftshader_indirect
+mise run android:setup
+mise run android:emulator
 ```
+
+Without mise, install JDK 21 and Android command-line tools, then run the same
+`sdkmanager`, `avdmanager` and `emulator` commands printed by `mise task info
+android:setup` and `mise task info android:emulator`. For an occasional SDK
+command without changing global configuration, use, for example,
+`mise x java@21 android-sdk@23.0 -- adb devices`.
 
 Sideload the APK from the same
 [releases](https://github.com/obsidianmd/obsidian-releases/releases) page as the

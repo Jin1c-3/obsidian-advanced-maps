@@ -1,0 +1,52 @@
+[tools]
+node = "24"
+"npm:@fission-ai/openspec" = "1.11.0"
+
+[tasks.setup]
+description = "Install project dependencies"
+run = "npm install"
+
+[tasks.dev]
+description = "Watch and deploy a development build to OBSIDIAN_PLUGIN_DIR"
+run = "npm run dev"
+
+[tasks.check]
+description = "Run the CI-equivalent project checks"
+run = "npm run check"
+
+[tasks."docs:dev"]
+description = "Serve the bilingual documentation site"
+run = "npm run docs:dev"
+
+[tasks."docs:build"]
+description = "Build the bilingual documentation site"
+run = "npm run docs:build"
+
+# These tools are intentionally task-scoped. `mise install` stays lightweight;
+# the Android toolchain is installed only when one of these tasks is run.
+[tasks."android:setup"]
+description = "Install Android 16 emulator packages and create the obs AVD"
+tools = { java = "21", android-sdk = "23.0" }
+raw = true
+run = [
+  'sdkmanager "platform-tools" "emulator" "system-images;android-36;google_apis;x86_64"',
+  '''
+  if [ "$(emulator -list-avds | sed -n '/^obs$/p')" != "obs" ]; then
+    printf 'no\n' | avdmanager create avd -n obs -k "system-images;android-36;google_apis;x86_64" -d pixel_7
+  fi
+  ''',
+]
+
+[tasks."android:emulator"]
+description = "Start the obs Android emulator with SwiftShader"
+tools = { java = "21", android-sdk = "23.0" }
+raw = true
+run = "emulator -avd obs -gpu swiftshader_indirect"
+
+# Linux/WSL only. Inside this task, `obsidian` is the official desktop build;
+# outside it, `obsidian` remains the CLI client registered by the running app.
+[tasks."obsidian:linux"]
+description = "Launch the mise-managed Obsidian 1.13.7 Linux desktop build"
+tools = { "github:obsidianmd/obsidian-releases" = "1.13.7" }
+raw = true
+run = "obsidian --no-sandbox"
