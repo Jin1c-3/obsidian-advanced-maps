@@ -1,7 +1,7 @@
 ---
 title: 'Advanced Maps 用户指南'
-description: '在 Obsidian 原生地图视图之上的照片相册、链接轨迹与区域、周围视图、地图导航和坐标工具。'
-tagline: '把 Obsidian 原生 Maps 视图变成照片地图和轨迹浏览器，还能摊开当前笔记周围的关联笔记。'
+description: '在 Obsidian 的 Maps 视图之上做照片相册、链接的轨迹与区域、周围视图、地图导航和坐标工具。'
+tagline: '把 Obsidian 的 Maps 视图变成照片相册和轨迹地图，还能摊开当前笔记周围的关联笔记。'
 ---
 
 # Advanced Maps 用户指南
@@ -12,9 +12,9 @@ tagline: '把 Obsidian 原生 Maps 视图变成照片地图和轨迹浏览器，
 
 <!-- nav:end -->
 
-Advanced Maps 在 Obsidian 原生 Maps 视图上增加照片相册、链接的轨迹与区域、周围视
-图、地图导航和坐标工具。第一次使用请从[快速开始](getting-started.md)复制一份完
-整 Base；之后可以把下面各页当作配方和参考。
+Advanced Maps 在 Obsidian 的 Maps 视图上加了照片相册、链接的轨迹与区域、周围视图、地图
+导航和坐标工具。第一次使用请从[快速开始](getting-started.md)开始——那一页末尾有一份可以
+直接复制的 Base；之后可以把下面各页当作配方和参考。
 
 ![一张 Bases 地图同时显示 GPX 轨迹、方向箭头、照片缩略图和不同颜色的笔记图钉](../../images/map-view.png)
 

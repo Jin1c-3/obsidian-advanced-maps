@@ -1,6 +1,6 @@
 ---
 title: 'Tracks and areas'
-description: 'Draw GPX, GeoJSON, KML, and TCX routes and polygon areas, write route statistics into properties, and embed an inline map.'
+description: 'Draw GPX, GeoJSON, KML, and TCX routes and areas on a map, read route statistics, and write them into note properties.'
 ---
 
 # Tracks and areas
@@ -11,14 +11,16 @@ description: 'Draw GPX, GeoJSON, KML, and TCX routes and polygon areas, write ro
 
 <!-- nav:end -->
 
-Advanced Maps reads GPX, GeoJSON, KML, and TCX files. A track file can be a
-direct Base result or be linked from a matched note. Linked files inherit their
-owning note's marker colour.
+Link a GPX, GeoJSON, KML, or TCX file from a note and the map draws it. A track
+file can also be a result of its own in a Base — a Base is an Obsidian file that
+collects notes and files you filter for, and shows them as a table or a map. A
+track file linked from a note is drawn in that note's marker colour.
 
 ## Draw a route on an existing Base map
 
-Use a normal link—no `!`—when you want the route on the Base map without
-creating another map in the note:
+Use a plain link, with no `!`, to put the route on the Base map without adding a
+second map to the note. The `coords` line below is frontmatter: the properties
+block at the top of a note.
 
 ```markdown
 ---
@@ -28,14 +30,14 @@ coords: 30.215709,120.130799
 [[track.gpx]]
 ```
 
-When the Base includes this note, its map draws the route. A frontmatter link
+When the Base includes this note, its map draws the route. A link in frontmatter
 works the same way:
 
 ```yaml
 track: '[[track.gpx]]'
 ```
 
-Use an embed only when you deliberately want a second, inline route map:
+Use an embed only when you want a second route map inside the note:
 
 ```markdown
 ![[track.gpx]]
@@ -47,9 +49,8 @@ Use an embed only when you deliberately want a second, inline route map:
 | `track: "[[track.gpx]]"` | Draws the route    | No                           |
 | `![[track.gpx]]`         | Draws the route    | Yes                          |
 
-Normal body links, embeds, and file links in frontmatter are resolved
-separately and de-duplicated. An actual embed is the only form that creates the
-inline map.
+Body links, embeds, and file links in frontmatter are read separately and then
+de-duplicated. Only an actual embed creates the inline map.
 
 ## Route markers
 
@@ -64,21 +65,20 @@ Hovering a route opens the note's own popup — the same card its pin opens — 
 one row added for the thing under the pointer. On a phone, tap the route
 instead; the same popup opens, with the same row.
 
-- **A route** adds that one file's distance, climb and elapsed time, labelled
-  with the file's own name. A note carrying a morning hike and an afternoon ride
-  reports each on its own, rather than summing them into a number that describes
-  neither.
+- **A route** adds that file's distance, climb and elapsed time, labelled with
+  the file's own name. A note carrying a morning hike and an afternoon ride
+  reports each file on its own. The two are not added together.
 - **A named waypoint** adds its name instead. **Show track markers** turns that
   off along with the markers themselves.
-- **An area** adds nothing. A boundary is not a distance travelled.
+- **An area** adds nothing. An area has no distance, climb, or time to report.
 
 Only the figures a file recorded appear: a GPX with no elevations shows distance
 and time, one with no timestamps shows distance and climb. The rest — descent,
-elevation range, moving time, pace and the profile — stays under an inline
-`![[track.gpx]]`, where there is room for it.
+elevation range, moving time, pace, and the elevation profile, a chart of height
+along the route — stays under an inline `![[track.gpx]]`.
 
 If a note's displayed properties are all empty, the built-in map raises no popup
-for it at all, so there is nothing to add a row to. That is its own rule for
+for it at all, so there is no popup to add a row to. That is its own rule for
 pins, and it applies here unchanged.
 
 ## GeoJSON and KML areas
@@ -97,22 +97,22 @@ marker, waypoint, or photo inside an area keeps its own click.
 An inline `![[track.gpx]]` is a live map with distance, ascent and descent,
 elevation range, elapsed and moving time, pace, and an elevation profile.
 Missing source data is omitted instead of shown as zero. Hovering the profile
-moves a cursor along the route and vice versa. On a phone both directions
-answer to a tap: tap the profile and the cursor moves along the route, tap the
-route and the profile's readout follows. The reading stays where you put it
-until you tap somewhere else, since there is no pointer to leave.
+moves a cursor along the route, and hovering the route moves the profile's
+readout. On a phone both directions answer to a tap: tap the profile and the
+cursor moves along the route, tap the route and the profile's readout follows.
+The reading stays where you put it until you tap somewhere else, since there is
+no pointer to leave.
 
 ![A live GPX embed followed by distance, ascent, times, pace, and a hoverable elevation profile](../../images/inline-embed.png)
 
 ![The same kind of embed on a phone: the route, the statistics line, and the elevation profile with its readout left where a tap put it](../../images/mobile-inline-track.png)
 
-Ascent ignores changes below 5 m to suppress GPS drift. Moving time counts
-speeds above 0.9 km/h so slow walking and stairs still count.
+Ascent ignores changes under 5 m, so GPS drift is not counted. Moving time counts
+speeds above 0.9 km/h, so slow walking and stairs still count.
 
 **Inline route maps** under settings → **Tracks** decides whether any of this
-happens. With it off this plugin claims no track file at all, so an embedded
-`![[track.gpx]]` is the embed Obsidian makes of it — the state a vault without
-this plugin is in. A note already on screen shows that after you open it again.
+happens. With it off, `![[track.gpx]]` shows the file embed Obsidian makes on
+its own. A note already on screen shows that after you open it again.
 
 An inline track map also draws geotagged photos linked from its host note. Route
 statistics continue to describe the route alone.
@@ -149,8 +149,8 @@ track-start: 2024-05-01T09:30
 | `track-speed-kmh`    | kilometres per hour, 1 decimal | Distance over moving time                 |
 | `track-start`        | local datetime, to the minute  | Earliest timestamp, in this device's zone |
 
-The unit is in the name because a bare number in frontmatter is otherwise
-unlabelled. Now a Base can sort a column of rides by distance, filter to
+The unit is in the name because a bare number in frontmatter says nothing about
+what it measures. Now a Base can sort a column of rides by distance, filter to
 `track-ascent-m > 800`, or total a month. `track-start` stops at the minute for
 the same reason: that is the shape Obsidian types as a **Datetime** property,
 and with seconds on the end it would be plain text.
@@ -172,7 +172,7 @@ Three things worth knowing:
   is first stamp to last, so it spans the gap between a morning hike and an
   afternoon ride; and pace is the total distance over the total moving time, so
   pairing a timed GPX with an untimed GeoJSON reads faster than either ride was.
-  All of that is exactly what one two-segment file already reports.
+  One file holding those two segments reports the same figures.
 - **It owns the names it is currently writing, and nothing else.** Anything
   outside them is never read, written, or removed — and if a name would collide
   with the coordinate or place property, or two figures would share one name, the
@@ -183,10 +183,9 @@ Three things worth knowing:
 Settings → **Tracks** → **Track properties** gives each figure one row: the name
 it is written under, and a switch beside it, all nine on to begin with. Turn one
 off and the command stops reaching it: nothing is written for it, and a property
-already in a note under its name is left exactly where it is — turning a figure
-off is a decision about the next write, not permission to delete what you already
-have. So a walking log can keep distance and start time and leave the other seven
-out of every note it touches.
+already in a note under its name is left exactly where it is. Turning a figure
+off decides the next write; it does not delete what you already have. A walking
+log that switches off seven figures writes distance and start time only.
 
 With every figure switched off there is nothing to write, and the command says
 so rather than reporting that it wrote nothing.

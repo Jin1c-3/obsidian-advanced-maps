@@ -11,6 +11,19 @@ schema: spec-driven
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
+# These cover a change's own artifacts. The rules for guide prose itself live in
+# the published-documentation capability, where they are checked against the
+# pages.
+rules:
+  proposal:
+    - Write in plain language, one idea per sentence, with the answer before the caveat
+    - Address the reader as "you"; never argue why a limitation is reasonable
+    - Explain any term a vault user may not know at its first use, in one clause
+    - Do not describe the plugin as "this plugin" where a sentence can say what happens instead
+  tasks:
+    - Write each task in plain language, as one sentence naming the file and the observable result
+    - A task names no implementation detail except a label, path, or value the reader or reviewer can find
+    - Each task states how to verify completion — a command, a check, or an observable outcome
 # Example:
 #   rules:
 #     proposal:
