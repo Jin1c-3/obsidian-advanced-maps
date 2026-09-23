@@ -1,6 +1,6 @@
 ---
 title: 'Getting started'
-description: 'Install Advanced Maps from the community store, learn how a Base becomes a map, and copy a complete base file to start from.'
+description: 'Install Advanced Maps, turn a Base into your first map, and copy a complete base file to start from.'
 ---
 
 # Getting started
@@ -11,14 +11,18 @@ description: 'Install Advanced Maps from the community store, learn how a Base b
 
 <!-- nav:end -->
 
+Advanced Maps turns Obsidian's Maps view into a photo album and a route map.
+Install the plugin, point a Base at some notes or photos, and the map appears.
+This page walks through both, and ends with a base file you can copy.
+
 ## Requirements
 
 > [!IMPORTANT]
-> Advanced Maps requires Obsidian 1.13.1 or newer with **Bases** enabled and the
-> first-party **Maps** plugin installed. It adds to that native view instead of
-> replacing it: Maps still supplies MapLibre, backgrounds, controls, markers,
-> popups, and its built-in options. If the Maps view is unavailable, Advanced
-> Maps skips the affected enhancements and leaves Obsidian usable.
+> You need Obsidian 1.13.1 or newer, with **Bases** turned on and the built-in
+> **Maps** plugin installed. Advanced Maps adds to that Maps view; it does not
+> replace it. Maps still draws the map, and still supplies its controls, markers,
+> popups, and options. If the Maps view is missing, the extra features are
+> skipped and Obsidian keeps working.
 
 ## Install
 
@@ -26,13 +30,12 @@ Advanced Maps is in Obsidian's community plugin store.
 
 1. Open **Settings → Community plugins**.
 2. If Obsidian is in **Restricted mode**, turn it off. Obsidian first explains
-   what a community plugin can do on your device, then asks you to **Allow
-   community plugins**.
-3. Beside **Community plugins**, select **Browse**, and search for
+   what a community plugin can do on your device, then asks you to allow them.
+3. Next to **Community plugins**, select **Browse**, and search for
    `Advanced Maps`.
 4. Select **Install**, then **Enable**.
 
-The store listing is also readable on the web at
+You can also read the store page on the web:
 [community.obsidian.md/plugins/advanced-maps](https://community.obsidian.md/plugins/advanced-maps).
 
 <details>
@@ -47,36 +50,38 @@ The store listing is also readable on the web at
 
 ## On mobile
 
-Advanced Maps runs in the Obsidian mobile app, and draws there what it draws on
-the desktop: note markers with their icons and colours, GPX, GeoJSON, KML and
-TCX routes with direction arrows, photo thumbnails at the positions their EXIF
-gives, the tape measure, and inline `![[track.gpx]]` maps with their statistics
-and elevation profile.
+The mobile app draws the same map: note markers with their icons and colours,
+GPX, GeoJSON, KML and TCX routes with direction arrows, photo thumbnails at the
+places their photos were taken, the tape measure, and inline `![[track.gpx]]`
+maps with their statistics and elevation profile.
 
 ![A Base map open in the Obsidian mobile app: a route around West Lake drawn with direction arrows, coloured note markers, two photo thumbnails, and the map's controls down the right edge](../../images/mobile-map-view.png)
 
-A phone has no mouse, so two words in this guide need translating as you read.
+A phone has no mouse, so two words in this guide mean different things there.
 
-- **Long press** wherever a page says right-click. That opens the map's own
-  menu, and a file's menu in the file explorer.
+- **Long press** wherever a page says right-click. That opens the map's own menu,
+  and a file's menu in the file explorer.
 - **Tap** wherever a page says hover. A tap opens a route's popup and moves the
-  elevation profile's cursor. Two of them go further than a hover did: a tap on
-  a note's marker opens that note instead of previewing it, and a tap on a photo
+  elevation profile's cursor. Two taps go further than a hover did: tapping a
+  note's marker opens that note instead of previewing it, and tapping a photo
   opens the photo itself, which carries **Open note** inside it.
 
-An [offline basemap](offline-basemap.md) draws here as well, from a pack on the
-device's own storage; that page says which platform the claim was measured on.
+An [offline basemap](offline-basemap.md) draws here too, read from the device's
+own storage.
 
 ## How a Base becomes a map
 
-A Base filter is the boundary of a map. Advanced Maps expands each matched note
-into its linked tracks and photos. A supported photo or track file can also be a
-Base result itself, which is what makes whole-folder photo atlases and
-file-oriented route collections possible.
+A Base is an Obsidian file that collects the notes and files you filter for and
+shows them as a table or a map. Its filter is the boundary of your map: whatever
+the filter matches is what can appear on it.
 
-The snippet below is a complete `.base` file. Save it as `atlas.base` in the
-root of your vault, replace the two folder paths, open it, and choose its map
-view. You can keep editing filters and view options in the Bases interface.
+Advanced Maps then adds more. Each matched note brings the tracks and photos it
+links to. A photo or track file can also be a Base result in its own right, which
+is what makes a whole-folder photo album possible.
+
+The snippet below is a complete `.base` file. Save it as `atlas.base` in the root
+of your vault, replace the two folder paths, open it, and choose its map view.
+You can keep editing the filter and the view options in the Bases interface.
 
 ```yaml
 filters:
@@ -92,24 +97,26 @@ views:
     fitMaxZoom: 16
 ```
 
-The first branch supplies notes whose `coords` property becomes a normal marker.
-The second supplies photo files directly. JPG, JPEG, PNG, WebP, HEIC, HEIF, and
-AVIF are supported.
+The first branch takes notes from a folder and turns each note's `coords`
+property into a marker. That property sits in the note's frontmatter — the
+properties block at the top of the note. The second branch takes photo files
+directly. JPG, JPEG, PNG, WebP, HEIC, HEIF, and AVIF are supported.
 
-“Every photo” means every photo with readable GPS metadata. A file with no GPS
-remains in the Base results but gets no fabricated marker. A photo with GPS but
-no usable embedded thumbnail still gets a plain dot.
+“Every photo” means every photo that carries a location. A camera stores that
+location inside the photo, as EXIF data. A photo with no location stays in the
+Base results but gets no marker, because nothing is invented for it. A photo with
+a location but no usable embedded thumbnail still gets a plain dot.
 
 ## View keys added by Advanced Maps
 
-The last three keys in the example are options the plugin appends to the Bases
-interface under **Tracks** and **Coordinate system**. Leave them out to follow
-the plugin settings.
+The last three keys in the example are options Advanced Maps adds to the Bases
+interface, under **Tracks** and **Coordinate system**. Leave them out and the map
+follows your plugin settings instead.
 
-| Key            | Option in the view     | Meaning                               |
+| Key            | Option in the view     | What it does                          |
 | -------------- | ---------------------- | ------------------------------------- |
-| `trackWeight`  | Line width             | Track stroke width                    |
-| `trackOpacity` | Line opacity           | Track stroke opacity                  |
+| `trackWeight`  | Line width             | How thick a route line is drawn       |
+| `trackOpacity` | Line opacity           | How transparent a route line is       |
 | `fitMaxZoom`   | Max zoom when fitting  | How far automatic framing may zoom in |
 | `coordSystem`  | Tile coordinate system | Blank follows the plugin default      |
 
@@ -117,11 +124,11 @@ the plugin settings.
 
 ## Where to go next
 
-- Use [Photo maps](photo-maps.md) for linked photos, external folders, display
-  controls, and the photo index.
-- Use [Tracks and areas](tracks-and-areas.md) to choose between a normal link and
-  an inline map.
-- Use [Around and navigation](around-and-navigation.md) to configure one reusable
-  Base for note navigation.
-- Use [Coordinates and services](coordinates-and-services.md) when the basemap
-  datum or an external service matters.
+- [Photo maps](photo-maps.md) — map a photo folder, or the photos your notes
+  link to.
+- [Tracks and areas](tracks-and-areas.md) — choose between a normal link and an
+  inline map.
+- [Around and navigation](around-and-navigation.md) — set up one Base for note
+  navigation.
+- [Coordinates and services](coordinates-and-services.md) — fix a basemap that
+  sits a few streets off, or open a place in another map app.

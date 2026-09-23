@@ -1,6 +1,6 @@
 ---
 title: 'Marker icons and colors in a Bases map'
-description: 'Give each note its own Lucide icon and color on an Obsidian Bases map, drive both from a Base formula, and recognise the icon names that silently render blank.'
+description: 'Give each note its own icon and color on an Obsidian Bases map, drive both from a Base formula, and recognise the icon names that render blank.'
 sidebarLabel: 'Marker icons and colors'
 ---
 
@@ -12,26 +12,29 @@ sidebarLabel: 'Marker icons and colors'
 
 <!-- nav:end -->
 
-**Marker icon** and **Marker color** belong to Obsidian's first-party Maps view,
-not to Advanced Maps. They work whether or not this plugin is installed, and
-Advanced Maps leaves them exactly as you configure them.
+Every note can carry its own icon and its own color on a map. This page shows
+where to set them, which icon names draw something, and what to check when a
+marker does not look right.
 
-This page collects what those two options accept, which icon names render and
-which ones quietly render nothing, and how to drive both from a Base formula.
-Obsidian ships a worked example of the basics in the
+**Marker icon** and **Marker color** are Obsidian's own map options. They work
+whether or not Advanced Maps is installed, and installing it changes nothing
+about how you set them. Obsidian ships a worked example of the basics in the
 [Maps plugin's example vault](https://github.com/obsidianmd/obsidian-maps/tree/main/examples).
 
 ## Where the options live
 
 Open a Base, switch to its map view, click the view name, and open **Markers**.
+A Base is an Obsidian file that collects notes and files you filter for, and
+shows them as a table or a map.
 
 Both options take a **property**, not a literal value. Any note property or Base
-formula works as long as its value reads as plain text.
+formula works, as long as its value reads as plain text. Note properties come
+from frontmatter, the properties block at the top of a note.
 
-| Option           | Give it                                             | It expects                                                               |
-| ---------------- | --------------------------------------------------- | ------------------------------------------------------------------------ |
-| **Marker icon**  | a property such as `note.icon` or `formula.My icon` | the name of an icon from the [Lucide library](https://lucide.dev/icons/) |
-| **Marker color** | a property such as `note.color`                     | any CSS color value                                                      |
+| Option           | Give it                                             | It expects                                                                                                         |
+| ---------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Marker icon**  | a property such as `note.icon` or `formula.My icon` | the name of an icon from Lucide, the icon set Obsidian's markers use — [Lucide library](https://lucide.dev/icons/) |
+| **Marker color** | a property such as `note.color`                     | any CSS color value                                                                                                |
 
 A note with neither property still gets a marker: a small dot on a circle filled
 with `--bases-map-marker-background`, the map's default marker color.
@@ -40,8 +43,8 @@ with `--bases-map-marker-background`, the map's default marker color.
 
 > [!WARNING]
 > An icon name has to match Lucide's own spelling exactly. When it does not, the
-> marker is **not** an error and **not** a fallback dot—it is a filled circle
-> with no icon inside, and nothing is written to the console.
+> marker is a filled circle with no icon inside. Nothing is written to the
+> console.
 
 ![Three columns of real map markers: five that render an icon, four that render as filled circles with no icon, and two that fall back to a dot](../../images/marker-icon-names.png)
 
@@ -58,8 +61,8 @@ with `--bases-map-marker-background`, the map's default marker color.
 | the property is absent or empty        | the default dot                                                             |
 | the literal text `null` or `undefined` | the default dot                                                             |
 
-A filled circle with no icon therefore points to a misspelled name, while a dot
-means the value is missing. The marker itself tells you which one to check.
+A filled circle with no icon points to a misspelled name. A dot means the value
+is missing. The marker tells you which one to check.
 
 ## Colors
 
@@ -95,8 +98,9 @@ can restyle:
 
 ## Driving both from a formula
 
-Formulas are the reason these options take a property rather than a value. A
-formula gives every note an icon without any note storing one.
+A Base formula is a small expression that gives every note a value it does not
+store. A formula gives every note an icon without any note storing one, which is
+why these options take a property rather than a value.
 
 Decide from another property:
 
@@ -124,13 +128,12 @@ views:
     markerColor: note.color
 ```
 
-A formula is also the repair for inconsistent notes. If some notes already carry
-`Star` or an emoji, a formula that maps those values onto real Lucide names fixes
-every marker at once, without editing a single note.
+Some notes may already carry `Star` or an emoji. A formula that maps those values
+onto real Lucide names fixes every marker at once, and no note has to be edited.
 
 ## With Advanced Maps installed
 
-Advanced Maps adds layers to the native map; it does not replace native markers.
+Advanced Maps adds layers to the native map; native markers stay as they are.
 Your icons and colors are drawn by Obsidian exactly as configured. Two
 interactions are worth knowing:
 
@@ -150,5 +153,3 @@ interactions are worth knowing:
 | Every marker is the same color         | **Marker color** is unset, so the map's default is used for all of them.  |
 | A flat near-black or near-white marker | The color value is not valid CSS, so it resolved to the theme text color. |
 | Nothing changed after editing a note   | The property is set but not selected under **Markers**.                   |
-
-Measured against the first-party Maps plugin 0.2.2.

@@ -1,6 +1,6 @@
 ---
 title: 'Offline basemap'
-description: 'Draw the basemap from tile packs already on disk — several of them, picked from the map or named per view, with zoom bounds and no network at all.'
+description: 'Draw the map background from tiles already on your disk — several packs of them, picked from the map, with no network at all.'
 ---
 
 # Offline basemap
@@ -11,24 +11,23 @@ description: 'Draw the basemap from tile packs already on disk — several of th
 
 <!-- nav:end -->
 
-Point a map at a folder of tiles already on your disk, and the ground under your
-notes stops needing a network. Everything else already worked offline — the
-notes, the routes, the photos and their thumbnails are files in your vault — so
-this is the last piece.
+Point a map at a folder of map tiles already on your disk and the ground under
+your notes stops needing a network. Your notes, routes, and photos are files in
+your vault already, so the background is the last piece.
 
 ![A Base map drawn from a tile pack on disk: satellite imagery read from local files, with two walking routes, their direction arrows, start and end markers and a note's pin drawn over it](../../images/offline-basemap-drawn.jpg)
 
-You can keep more than one. A pack is regional, so someone who has one usually
-has two: the city they live in and the trail they walk. Each gets a name, and the
-name is how you pick between them.
+You can keep more than one pack. Packs are regional, so if you have one you
+probably have two: the city you live in and the trail you walk. Each gets a name,
+and the name is how you pick between them.
 
-Advanced Maps **does not download tiles**. Fetching a provider's tiles in bulk is
-theirs to permit, not this plugin's to do on your behalf. What this does is point
-at a pack you already have, and read it.
+Advanced Maps does not download tiles. Fetching a provider's tiles in bulk is
+theirs to permit. What this does is read a pack you already have.
 
 ## What a tile pack is
 
-A folder of image files in `z/x/y` order, the way every slippy map addresses
+A tile pack is a folder of small map images in `z/x/y` order — one folder per
+zoom level, one per column, one image per row — the way every online map labels
 them:
 
 ```text
@@ -42,42 +41,41 @@ tiles/
       50.png
 ```
 
-Anything that unpacks into that shape works. A single-file `.mbtiles` or
-`.pmtiles` archive does not, yet. `.pmtiles` is being worked on; what is holding
-it up is a bug in Obsidian on Android, not the format. Until that lands, unpack
-the archive into a directory tree once and the result is a tile pack.
+Any tool that unpacks into that shape works. A single-file `.mbtiles` or
+`.pmtiles` archive does not, yet. `.pmtiles` support is waiting on an Obsidian bug
+on Android, not on the format. Until that is fixed, unpack the archive into a
+folder tree once and the result is a tile pack.
 
 > [!WARNING]
-> Keep each pack **out of the vault's index** — a regional pack is easily a
-> hundred thousand files, and an indexed one slows down search, links and every
-> Base you have. The two layouts below both avoid that cost; choose based on
-> whether your plugin settings sync between devices.
+> Keep each pack out of your vault's index. A regional pack is easily a hundred
+> thousand files, and an indexed one slows down search, links, and every Base you
+> have. Both layouts below avoid that cost. Pick between them by whether your
+> plugin settings sync between devices.
 
 | Your settings        | Put the pack                  | And type                 |
 | -------------------- | ----------------------------- | ------------------------ |
 | Stay on one device   | anywhere on that device       | an absolute path         |
 | Sync between devices | a dot-folder inside the vault | `.tiles/{z}/{x}/{y}.png` |
 
-A path is a single string, so settings that sync hand every device the same one —
-and an absolute path can only be right on the machine it was typed on. A
-dot-folder is what gets round that: Obsidian skips a folder whose name begins
-with a dot, the way it skips `.obsidian`, so the tiles are never indexed, never
-searched, never a Base result and never in the file explorer, while one relative
-path is resolved by each device against its own vault.
+A path is a single string, so synced settings hand every device the same one, and
+an absolute path can only be right on the machine it was typed on. A dot-folder
+gets around that. Obsidian skips a folder whose name starts with a dot, the way it
+skips `.obsidian`, so the tiles are never indexed, never searched, never a Base
+result, and never shown in the file explorer. Each device resolves that one
+relative path against its own vault.
 
-If your settings stay put, there is nothing to solve — give each device an
+If your settings stay put, there is nothing to solve: give each device an
 absolute path of its own. See [On a phone](#on-a-phone) for what that looks like
 there.
 
 ## Add a pack
 
-**Settings → Community plugins → Advanced Maps → Offline basemap.**
+Open **Settings → Community plugins → Advanced Maps → Offline basemap**.
 
 **Use offline basemaps** is the first row, and it starts **off** unless you had a
-pack configured before this version. Switch it on first: with it off the packs
-below it are shown but cannot be typed into, because a pack nothing draws from is
-a pack the page has no business collecting. Switching it off later keeps every
-pack exactly as you left it.
+pack configured before this version. Turn it on first. With it off, the packs
+below it are shown but cannot be edited, because there is nothing to collect them
+for. Turning it off later keeps every pack exactly as you left it.
 
 Under it, **Add tile pack** gives you a row with four boxes:
 
@@ -88,66 +86,64 @@ Under it, **Add tile pack** gives you a row with four boxes:
 | Lowest zoom level  | The lowest-numbered folder that pack's `z` directories go down to         |
 | Highest zoom level | The highest-numbered one                                                  |
 
-The path may be absolute, or relative to your vault. `{z}`, `{x}` and `{y}` are
-filled in per tile; `{-y}` works too, for packs laid out in TMS row order.
+The path may be absolute, or relative to your vault. `{z}`, `{x}`, and `{y}` are
+filled in per tile. `{-y}` works too, for packs laid out in TMS row order.
 
 > [!WARNING]
 > Type a filesystem path, not a URL. The plugin turns it into one when it builds
-> a map, because the prefix that URL needs is regenerated every time Obsidian
-> starts — a URL written down by hand works until the next restart and then
-> stops.
+> a map, because the prefix that URL needs changes every time Obsidian starts. A
+> URL you typed by hand works until the next restart and then stops.
 
-**Default background** below the list is what every map opens on unless it says
-otherwise. Leave it at _None_ and your packs stay configured and stay pickable
+**Default background**, below the list, is what every map opens on unless the map
+says otherwise. Leave it at _None_ and your packs stay configured and pickable
 without changing any map until you ask for one.
 
 ![The Offline basemap page: the switch and what it says off costs, two tile packs with their paths and zoom bounds, and the default background under them](../../images/offline-basemap-settings.png)
 
-Give each pack a name of its own. Two packs sharing a name are one pack as far as
-everything that refers to one is concerned, and the second is left out.
+Give each pack its own name. Two packs sharing a name count as one, and the
+second is left out.
 
-A row says so when nothing can be pointed at it, under the boxes: a name another
-row already carries, a row with a path and no name, or a path missing one of its
-three placeholders. Such a row stays where it is, waiting to be corrected, and is
-offered nowhere until it is.
+A row says so, under its boxes, when nothing can use it: a name another row
+already has, a path with no name, or a path missing one of its three placeholders.
+The row stays where it is until you correct it, and is offered nowhere before
+then.
 
 ### The two zoom levels
 
-They are the folder names at either end of that pack, and each stops a different
-kind of failure:
+They are the folder names at either end of the pack, and each one stops a
+different failure.
 
-- **Highest zoom level** bounds the tiles themselves. Zoom in past it and the map
-  keeps drawing, magnifying the deepest tiles you have, instead of asking for
-  files that are not there. Set it too low and you lose sharpness you had; too
-  high and the map quietly issues a failed read for every tile past the end.
-- **Lowest zoom level** bounds the camera. Zoom out towards it and the map stops
-  there rather than going blank, because there is nothing above your lowest level
+- **Highest zoom level** bounds the tiles. Zoom in past it and the map keeps
+  drawing by magnifying the deepest tiles you have, instead of asking for files
+  that are not there. Set it too low and you lose sharpness you had. Set it too
+  high and every tile past the end is a failed read.
+- **Lowest zoom level** bounds the camera. Zoom out toward it and the map stops
+  there instead of going blank, because there is nothing above your lowest level
   to magnify.
 
-If a pack covers `z0`–`z14`, put 0 and 14 in. Each pack carries its own pair, and
-the map is bounded by whichever pack it is currently drawing.
+If a pack covers `z0` to `z14`, put 0 and 14 in. Each pack carries its own pair,
+and the map is bounded by whichever pack it is drawing.
 
 ## Pick one from the map
 
-Your packs appear in the map's own **layers** button — the stack of squares in
-the top-right corner, the same menu the Maps plugin lists its own backgrounds in.
-Each pack is there under the name you gave it, beside them.
+Your packs appear in the map's own **layers** button — the stack of squares in the
+top-right corner, the same menu the Maps plugin lists its own backgrounds in.
+Each pack is there under the name you gave it.
 
 ![The map's layers menu open, with two packs listed under the names they were given, beside the Maps plugin's own backgrounds](../../images/offline-basemap-layers.png)
 
-Choosing one draws it, with that pack's own zoom bounds. Choosing one of the
-Maps plugin's backgrounds puts the map on that instead, and it stays there: the
-choice is yours until you make another one, and nothing later puts the pack back
-underneath you.
+Choosing one draws it, with that pack's zoom bounds. Choosing one of the Maps
+plugin's backgrounds puts the map on that instead, and it stays there until you
+choose again. Nothing puts a pack back underneath you.
 
 The layers button appears once there is more than one background to choose from.
-If you have no backgrounds configured in the Maps plugin, one pack is enough to
-make it appear, and the menu gains a **Default background** entry — the way back
-to what the map would draw with no pack at all.
+With no backgrounds configured in the Maps plugin, one pack is enough to make it
+appear, and the menu gains a **Default background** entry — the way back to what
+the map would draw with no pack at all.
 
-A choice made here lasts as long as the map is on screen, exactly as a background
-picked from that menu already did. Close the tab and reopen it and the map is
-back on the background its view names. Nothing is written to a file.
+A choice here lasts as long as the map is on screen. Close the tab and reopen it
+and the map is back on the background its view names. Nothing is written to a
+file.
 
 ## Per map
 
@@ -167,18 +163,18 @@ as the map is built, so choosing _None_ on a view brings back exactly what that
 view had configured, with nothing to undo.
 
 If a view names a pack you have since renamed or removed — or a base file written
-in another vault names a background this one does not have — the map falls back
-to what it would draw with no pack, and the row says so: `Trail — no longer
+in another vault names a background this one does not have — the map falls back to
+what it would draw with no pack, and the row says so: `Trail — no longer
 configured`. Nothing quietly becomes something else.
 
-Inline `![[route.gpx]]` maps have no view options of their own, so they follow
-the plugin default.
+Inline `![[route.gpx]]` maps have no view options of their own, so they follow the
+plugin default.
 
 ## Coordinate systems
 
-A local path names no provider, so **Auto** reads a pack as WGS-84 — right for
-the OpenStreetMap-derived packs almost every pack is. If yours was unpacked from
-a Chinese provider it is GCJ-02, and automatic mode cannot tell: say so in
+A local path names no provider, so **Auto** reads a pack as WGS-84, which is right
+for the OpenStreetMap-derived packs almost every pack is. If yours was unpacked
+from a Chinese provider it is GCJ-02, and automatic mode cannot tell. Say so in
 Settings → **Coordinate system**, or in the view's own **Tile coordinate system**
 option. See [Coordinates and services](coordinates-and-services.md).
 
@@ -190,22 +186,22 @@ separate mobile row to fill in.
 
 ![The same layers button on a phone: a sheet over the map listing the Maps plugin's backgrounds with the tile pack under them](../../images/mobile-basemap-layers.png)
 
-**Settings that stay on the device.** Give the phone absolute paths of its own —
-`/sdcard/Download/tiles/{z}/{x}/{y}.png` and the like, whatever your file manager
-shows you. This is the one to reach for on Android: the packs sit where the phone
+**Settings that stay on the device.** Give the phone absolute paths of its own,
+such as `/sdcard/Download/tiles/{z}/{x}/{y}.png`, whatever your file manager
+shows you. This is the one to use on Android: the packs sit where the phone
 already keeps large downloads, and nothing about them comes near the vault.
 
-**Settings that sync.** Use `.tiles`, on every device including this one. A phone
-handed a desktop's absolute path draws nothing but your own pins over the
-background colour — the path resolves, the tiles are simply not there, and no
-error says so.
+**Settings that sync.** Use `.tiles` on every device, including the phone. A phone
+handed a desktop's absolute path draws your own pins over the background colour
+and nothing else. The path resolves; the tiles simply are not there, and no error
+says so.
 
-Getting a pack onto the phone is the part this plugin has no hand in: a cable, or
-the sync that already carries your vault.
+Getting a pack onto the phone is up to you: a cable, or the sync that already
+carries your vault.
 
-Measured on Android. The address is asked of the running app rather than
-assembled from a platform name, so iOS is expected to follow, but it was not
-tested and this page does not claim it.
+The phone path is asked of the running app rather than built from a platform name.
+It is measured on Android. On iOS the same pack is expected to draw, but iOS was
+not tested; if it does not, the map shows your pins over the background colour.
 
 ## When nothing draws
 
@@ -213,37 +209,36 @@ The map goes to the background colour and your pins and routes still show. Check
 in order:
 
 1. **The path.** It has to be the path to the tiles, `{z}/{x}/{y}` and the file
-   extension included — not the folder above them. `ls` the path with real
-   numbers substituted; if that file is not there, neither is the tile.
-2. **The extension.** `.png`, `.jpg` and `.webp` are all fine, but it has to be
-   the one your files actually use.
+   extension included, not the folder above them. Substitute real numbers and open
+   the file; if that file is not there, neither is the tile.
+2. **The extension.** `.png`, `.jpg`, and `.webp` are all fine, but it has to be
+   the one your files use.
 3. **The zoom levels.** A lowest level higher than where the map is sitting pins
-   the camera; a highest level set to 0 leaves one tile for the whole world.
-4. **Which pack.** The map may be on a different one — open the layers button and
-   see what is checked, or read the view's **This map opens on** row.
+   the camera. A highest level set to 0 leaves one tile for the whole world.
+4. **Which pack.** The map may be on a different one. Open the layers button and
+   see what is selected, or read the view's **This map opens on** row.
 
 ## With it switched off
 
-Off is the state a vault with no pack is in, and it is a real off: nothing of
-this feature reaches a map. The Maps plugin's own background button lists exactly
-what Maps itself has, because the list it is holding is Maps' own — putting your
-packs in that menu means handing the button a list this plugin maintains, and a
-background you add in the Maps settings tab then reaches an open map on its next
-configuration reload rather than the next time you open the menu. That is the
-trade this switch exists to let you decline.
+Off is the state a vault with no pack is in, and it is a real off: nothing of this
+feature reaches a map. The Maps plugin's background button lists exactly what Maps
+itself has, because that list is Maps' own. Adding your packs to that menu means
+handing the button a list this plugin keeps, and a background you add in the Maps
+settings tab then reaches an open map on its next configuration reload rather than
+the next time you open the menu. That is what this switch lets you decline.
 
-A map's own options lose their **This map opens on** row too. A Base file that
+A map's own options lose their **This map opens on** row too. A base file that
 already names a pack keeps the name written in it, unread, and means it again the
 moment you switch back on.
 
 Switching it on reaches a map that is already open through that row. The
-background button on that map catches up when you open the map again — a button
-is handed its list once, when the map is built.
+background button on that map catches up when you open the map again, because a
+button is handed its list once, when the map is built.
 
 ## What this touches
 
-Nothing. A pack is opened for reading and never written to, moved or deleted, and
-no part of this fetches tiles from a provider. Your packs are offered in the Maps
-plugin's own menu without being written into its settings. When a map is drawing
-a pack it makes no tile request to the network at all — see
+Nothing. A pack is opened for reading and never written to, moved, or deleted, and
+nothing here fetches tiles from a provider. Your packs are offered in the Maps
+plugin's own menu without being written into its settings. A map drawing a pack
+makes no tile request over the network at all — see
 [Reference and privacy](reference-and-privacy.md) for what does leave.

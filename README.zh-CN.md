@@ -5,23 +5,22 @@
 
 [English](README.md) · **简体中文** · [用户指南](https://jin1c-3.github.io/obsidian-advanced-maps/zh-cn/)（[仓库内版本](docs/guide/zh-cn/README.md)）
 
-把 Obsidian 原生 **Maps** 视图变成地图相册、轨迹浏览器，以及当前笔记的关联笔记地图。
+把 Obsidian 的 **Maps** 视图变成照片相册、轨迹浏览器，以及当前笔记的关联笔记地图。
 
-Advanced Maps 可以从整个照片目录读取 GPS，绘制 GPX、GeoJSON、KML、TCX 轨迹与区
-域，并从普通 Obsidian 链接创建**周围**视图。它扩展第一方 Maps，而不是替换它：
-MapLibre、底图、图钉、气泡和所有内置地图选项仍然原生提供。不使用 Leaflet，不附带渲
-染器，也没有运行时依赖。
+Advanced Maps 能从整个照片目录读出位置，绘制 GPX、GeoJSON、KML、TCX 轨迹与区域，并用普
+通的 Obsidian 链接生成**周围**视图。它是在 Obsidian 自带的 Maps 视图上做增强，不替换
+它：地图、底图、图钉、气泡和所有内置地图选项都保持原样。
 
 ![同一个 Base 同时包含照片目录和笔记目录：63 条结果——笔记按类别显示为不同颜色的图钉，照片按 EXIF 位置显示缩略图，中间是一条步行 GPX 轨迹，当前缩放放不下缩略图的照片仍保留圆点](docs/images/photo-album.png)
 
-_一个 Base，一张地图：图钉是地点笔记，颜色来自 Base 公式；缩略图按照片自己的 EXIF 落
+_一个 Base，一张地图：图钉是地点笔记，颜色来自 Base 公式；缩略图按照片自己存的位置落
 点，线是某篇笔记链接的 `.gpx`，共 63 条结果。_
 
-## 三个核心用法
+## 能做出三种东西
 
 | 把 Advanced Maps 当作…… | Base 里筛选什么                                                | 地图上出现什么                                         |
 | ----------------------- | -------------------------------------------------------------- | ------------------------------------------------------ |
-| **地图相册**            | 一个照片目录，也可以是指向外部相册的目录链接                   | 每张带可读 GPS 的照片，按 EXIF 位置显示                |
+| **地图相册**            | 一个照片目录，也可以是指向外部相册的目录链接                   | 每张带位置的照片，摆在它被拍下的地方                   |
 | **轨迹浏览器**          | 链接了 `.gpx`、`.geojson`、`.kml` 或 `.tcx` 的笔记，或文件本身 | 轨迹、区域、标记、照片、高程，以及能让 Base 排序的统计 |
 | **周围地图**            | 平时使用的地点笔记集合                                         | 本篇、它的链接与反向链接，以及这些笔记的轨迹和照片     |
 
@@ -29,10 +28,10 @@ _一个 Base，一张地图：图钉是地点笔记，颜色来自 Base 公式�
 
 ## Advanced Maps 与 Map View
 
-[Map View](https://github.com/esm7/obsidian-map-view) 是 Obsidian 上的另一个地图插
-件，它是一套完整的 GIS：自己的地图视图、自己的查询语言、显示规则、编辑模式、路线规
-划，以及它自己的 Bases 视图。Advanced Maps 是另一种形状——它根本没有自己的地图视图，
-只在 Obsidian 官方随 Bases 提供的那个视图上做加法，也不附带任何渲染器。
+[Map View](https://github.com/esm7/obsidian-map-view) 是 Obsidian 上的另一个地图插件，
+它是一套完整的 GIS：自己的地图视图、自己的查询语言、显示规则、编辑模式、路线规划，以及
+它自己的 Bases 视图。Advanced Maps 是另一种形状——它没有自己的地图视图，只在 Obsidian 随
+Bases 提供的那个视图上做加法。
 
 Map View 自己写的[与原生 Maps 的对比](https://esm7.github.io/obsidian-map-view/vs-obsidian-maps/)
 很公道，而那张表里标为「不支持」的那一列，正好是这个插件存在的理由：
@@ -41,24 +40,24 @@ Map View 自己写的[与原生 Maps 的对比](https://esm7.github.io/obsidian-
 | -------------- | ----------------------------------------------------------------------------------- |
 | 不支持轨迹     | 笔记链接的或直接作为文件的 GPX、GeoJSON、KML、TCX，含区域、方向箭头、高程剖面和统计 |
 | 不支持地理编码 | 地点搜索与反向地理编码，可选 OpenStreetMap 或高德                                   |
-| 只能显示       | 坐标可以从地图、粘贴的地图链接、照片 EXIF、搜索结果或设备定位填入                   |
+| 只能显示       | 坐标可以从地图、粘贴的地图链接、照片自己的位置、搜索结果或设备定位填入              |
 | 不支持离线     | 用磁盘上已有的瓦片目录作为每张地图的底图，全程不发出任何请求                        |
 
-图钉自始至终是原生的，这正是「扩展而不是替换」的意义：Base 公式照样决定它的图标和颜
-色，筛选照样生效，所有内置视图选项一个不少。
+图钉自始至终是原生的，这正是「增强而不是替换」的意义：Base 公式照样决定它的图标和颜色，
+筛选照样生效，所有内置视图选项一个不少。
 
-**这些情况请用 Map View**：一篇笔记里要放多个位置、想在正文里写内联地理位置、需要标
-记显示规则、需要内置路线规划，或者根本不想依赖 Bases。这些 Advanced Maps 都不做，
+**这些情况请用 Map View**：一篇笔记里要放多个位置、想在正文里写内联地理位置、需要标记
+显示规则、需要内置路线规划，或者根本不想依赖 Bases。这些 Advanced Maps 都不做，
 [ROADMAP.md](ROADMAP.md) 记录了哪些是刻意的非目标以及为什么。两者都能从属性里读
 `lat,lng` 坐标，所以同一个属性可以喂给任何一方。
 
 ## 环境要求与安装
 
-需要 Obsidian 1.13.1 或更高版本，并启用 **Bases** 和第一方 **Maps** 插件。没有这个原生
-视图时，Advanced Maps 会说明或跳过不可用的增强，让 Obsidian 保持可用。
+需要 Obsidian 1.13.1 或更高版本，并启用 **Bases** 和 **Maps** 插件。没有这个 Maps 视图
+时，增强功能会被跳过，Obsidian 本身照常可用。
 
-在 Obsidian 里安装：打开**设置 → 第三方插件**，如果处于**安全模式**就先关掉，点**浏
-览**，搜索 `Advanced Maps`，然后**安装**并**启用**。市场页面见
+在 Obsidian 里安装：打开**设置 → 第三方插件**，如果处于**安全模式**就先关掉，点**浏览**，
+搜索 `Advanced Maps`，然后**安装**并**启用**。市场页面见
 [community.obsidian.md/plugins/advanced-maps](https://community.obsidian.md/plugins/advanced-maps)。
 
 市场里还没有的版本，可以从 [Releases](https://github.com/Jin1c-3/obsidian-advanced-maps/releases)
@@ -84,14 +83,15 @@ views:
     fitMaxZoom: 16
 ```
 
-第一个分支显示 `coords` 属性中带坐标的笔记，第二个分支直接按 GPS 元数据显示支持的照
-片。Base 边界、视图键、照片格式和后续配方见[快速开始指南](docs/guide/zh-cn/getting-started.md)。
+第一个分支显示 `coords` 属性中带坐标的笔记，第二个分支直接按照片里存的位置显示支持的照
+片。Base 能筛到什么、视图键、照片格式和后续配方见
+[快速开始指南](docs/guide/zh-cn/getting-started.md)。
 
 ## 用户指南
 
 | 主题                                                           | 内容                                                      |
 | -------------------------------------------------------------- | --------------------------------------------------------- |
-| [快速开始](docs/guide/zh-cn/getting-started.md)                | 安装、Base 边界、第一张地图、视图键                       |
+| [快速开始](docs/guide/zh-cn/getting-started.md)                | 安装、Base 能筛到什么、第一张地图、视图键                 |
 | [照片地图](docs/guide/zh-cn/photo-maps.md)                     | 照片目录、OneDrive、链接照片、缩略图、索引                |
 | [轨迹与区域](docs/guide/zh-cn/tracks-and-areas.md)             | 轨迹链接、内联地图、GPX/GeoJSON/KML/TCX、面、统计写进属性 |
 | [周围视图与导航](docs/guide/zh-cn/around-and-navigation.md)    | 周围视图、复用 Base、在地图中打开、跟随、测距、重合图钉   |
