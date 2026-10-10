@@ -25,6 +25,7 @@ import {
 	type CustomDatum,
 	type CustomMap,
 } from './maplinks';
+import { releaseSummaries, releaseText } from './releases';
 import { STATS_FIGURES, statsPropertyName, type StatsFigure } from './stats';
 import type AdvancedMapsPlugin from './main';
 
@@ -665,13 +666,40 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		return options;
 	}
 
+	private releaseItem(): SettingDefinition<ControlKey> {
+		return {
+			name: '',
+			searchable: false,
+			render: (setting: Setting) => {
+				const root = setting.settingEl;
+				root.empty();
+				root.addClass('advanced-maps-release');
+				const version = this.plugin.manifest.version;
+				const { current, history } = releaseSummaries(version);
+				const locale = getLocale();
+				root.createEl('strong', { text: t('settings.release.heading', { version }) });
+				if (current) root.createEl('p', { text: releaseText(current, locale) });
+				if (history.length > 0) {
+					const details = root.createEl('details');
+					details.createEl('summary', { text: t('settings.release.history') });
+					const list = details.createEl('ul');
+					for (const release of history) {
+						const item = list.createEl('li');
+						item.createEl('strong', { text: release.version });
+						item.appendText(` · ${releaseText(release, locale)}`);
+					}
+				}
+				root.createEl('a', {
+					text: t('settings.release.full'),
+					attr: { href: `${REPO_URL}/blob/main/CHANGELOG.md` },
+				});
+			},
+		};
+	}
+
 	/**
-	 * The pane's first row: where the guide is, and the one thing this plugin
-	 * asks for in return.
-	 *
-	 * Not searchable, because it is not a setting — a row that changes nothing
-	 * has no business among the results for one that does. Both addresses are
-	 * links the reader may follow; neither is opened or fetched from here.
+	 * Not searchable, because this information changes no setting. Both addresses
+	 * are links the reader may follow; neither is opened or fetched from here.
 	 */
 	private aboutItem(): SettingDefinition<ControlKey> {
 		return {
@@ -1212,6 +1240,7 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 		for (const datum of PHOTO_DATUMS) photoDatums[datum] = t(`setting.photoDatum.${datum}`);
 
 		return [
+			this.releaseItem(),
 			this.aboutItem(),
 
 			this.page(

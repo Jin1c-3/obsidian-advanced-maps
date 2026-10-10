@@ -314,6 +314,9 @@ const en = {
 	/* ---- settings: the pane's first row ----
 	 * Where the guide is, and the one thing the plugin asks for back. Each badge
 	 * is a link and carries its own emoji, so a locale can replace both. */
+	'settings.release.heading': 'What’s new · {version}',
+	'settings.release.history': 'Previous updates',
+	'settings.release.full': 'Full changelog',
 	'settings.about.guide.link': '📖 User guide',
 	'settings.about.guide': 'Every feature, with pictures and worked examples.',
 	'settings.about.star.link': '⭐ Star on GitHub',
@@ -739,6 +742,9 @@ const zh: Record<TranslationKey, string> = {
 	'settings.state.unset': '未设置',
 	'settings.external.enabled': '已启用 {count} 个',
 
+	'settings.release.heading': '最近更新 · {version}',
+	'settings.release.history': '历史更新',
+	'settings.release.full': '完整更新记录',
 	'settings.about.guide.link': '📖 用户指南',
 	'settings.about.guide': '每项功能都配了截图和实例。',
 	'settings.about.star.link': '⭐ 去 GitHub 点个 star',

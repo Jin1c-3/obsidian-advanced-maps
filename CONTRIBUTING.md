@@ -267,7 +267,11 @@ placeholders.
 ## Releasing
 
 Releases are cut from `main`. Add the matching changelog section and compare
-links first, confirm version metadata and CI are current, then run:
+links first. In `src/releases.json`, add one `{ version, en, zh }` record for the
+new version, with a non-empty, single-line sentence in English and Simplified
+Chinese summarizing its main changes. Maintain these summaries alongside the
+detailed changelog; the settings home displays them without a network request.
+Confirm version metadata and CI are current, then run:
 
 ```bash
 npm version patch|minor|major
@@ -275,5 +279,9 @@ git push --follow-tags
 ```
 
 `version-bump.mjs` synchronizes `package.json`, `manifest.json`, and
-`versions.json`. The tag workflow reruns checks, requires tag/manifest agreement,
-and publishes `main.js`, `manifest.json`, and `styles.css` with build provenance.
+`versions.json`. Run `node .github/scripts/check-manifest.mjs` to verify version
+metadata and summaries; it rejects duplicate summary versions and requires both
+languages for the current manifest version. The same check runs in
+`npm run check` and the tag workflow. The tag workflow also requires tag/manifest
+agreement and publishes `main.js`, `manifest.json`, and `styles.css` with build
+provenance.

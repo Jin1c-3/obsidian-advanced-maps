@@ -45,6 +45,40 @@ if (expected && expected !== manifest.version) {
 	problems.push(`tag ${expected} does not match manifest.json version ${manifest.version}`);
 }
 
+try {
+	const releases = read('src/releases.json');
+	if (!Array.isArray(releases)) {
+		problems.push('src/releases.json must contain an array of { version, en, zh } records');
+	} else {
+		const seen = new Set();
+		for (const release of releases) {
+			if (typeof release?.version !== 'string' || !release.version.trim()) {
+				problems.push('src/releases.json has a record without a non-empty version string');
+				continue;
+			}
+			if (seen.has(release.version)) {
+				problems.push(`src/releases.json has duplicate version ${release.version}`);
+			}
+			seen.add(release.version);
+		}
+		const current = releases.find((release) => release?.version === manifest.version);
+		if (!current) {
+			problems.push(`src/releases.json has no summary for ${manifest.version}`);
+		} else {
+			for (const language of ['en', 'zh']) {
+				const summary = current[language];
+				if (typeof summary !== 'string' || !summary.trim() || /[\r\n\u2028\u2029]/.test(summary)) {
+					problems.push(
+						`src/releases.json summary for ${manifest.version} (${language}) must be a non-empty single-line string`
+					);
+				}
+			}
+		}
+	}
+} catch (error) {
+	problems.push(`src/releases.json could not be read as JSON: ${error.message}`);
+}
+
 if (problems.length > 0) {
 	console.error('Version metadata is inconsistent:');
 	for (const problem of problems) console.error(`  · ${problem}`);
