@@ -1,33 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { appendDetail, statsSummary } from '../src/popup-rows';
 import { trackStats, type TrackStats } from '../src/stats';
+import { installDomHelpers } from './obsidian-stub';
 
-/**
- * Obsidian's own DOM helpers, which happy-dom does not carry. `attr` is here
- * because the photo row is an `<img>`; the rest mirrors what note-picker's
- * suite installs.
- */
 beforeAll(() => {
-	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
-	proto.createEl = function (
-		this: HTMLElement,
-		tag: string,
-		opts?: { text?: string; cls?: string; attr?: Record<string, string> }
-	) {
-		const el = document.createElement(tag);
-		if (opts?.text) el.textContent = opts.text;
-		if (opts?.cls) el.className = opts.cls;
-		for (const [name, value] of Object.entries(opts?.attr ?? {})) el.setAttribute(name, value);
-		this.append(el);
-		return el;
-	};
-	proto.createDiv = function (this: HTMLElement, opts?: { text?: string; cls?: string } | string) {
-		const o = typeof opts === 'string' ? { cls: opts } : opts;
-		return (proto.createEl as (tag: string, o?: unknown) => HTMLElement).call(this, 'div', o);
-	};
-	proto.appendText = function (this: HTMLElement, text: string) {
-		this.append(document.createTextNode(text));
-	};
+	installDomHelpers(['createEl', 'createDiv', 'appendText']);
 });
 
 /** A card in the shape `PopupManager.createPopupContent` returns. */

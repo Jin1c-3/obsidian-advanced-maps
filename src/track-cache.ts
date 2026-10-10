@@ -45,6 +45,11 @@ export interface TrackRecord extends ParsedTrack {
 	photoDatum?: PhotoDatum;
 }
 
+interface TrackRequest {
+	id: number;
+	promise: Promise<TrackRecord>;
+}
+
 function mapSource(input: TFile | MapSource): MapSource {
 	return 'kind' in input ? input : vaultMapSource(input);
 }
@@ -176,10 +181,10 @@ export class TrackCache {
 	private readonly entries = new Map<string, TrackRecord>();
 	/** In-flight reads by an immutable snapshot of the request. Identical calls
 	 *  share one promise instead of reading and parsing the same file twice. */
-	private readonly pending = new Map<string, { id: number; promise: Promise<TrackRecord> }>();
+	private readonly pending = new Map<string, TrackRequest>();
 	/** The newest still-running request per path. An older read may finish, but
 	 *  it must never overwrite or bypass this answer. */
-	private readonly latest = new Map<string, { id: number; promise: Promise<TrackRecord> }>();
+	private readonly latest = new Map<string, TrackRequest>();
 	/** Monotonic request ids remain after completion without retaining a record. */
 	private readonly requestIds = new Map<string, number>();
 	/** Bumped by invalidate(), including while no cache entry exists yet. */
@@ -249,26 +254,7 @@ export class TrackCache {
 		}
 
 		const key = [path, String(mtime), isPhoto ? datum : '', String(generation)].join('\0');
-		const pending = this.pending.get(key);
-		if (pending) {
-			// auto → gcj02 → auto can rejoin the first auto read. Promote that
-			// request back to newest; otherwise its completion redirects to the GCJ
-			// promise and the final caller receives/cache-stamps the wrong datum.
-			if (this.latest.get(path) !== pending) {
-				pending.id = (this.requestIds.get(path) ?? 0) + 1;
-				this.requestIds.set(path, pending.id);
-				this.latest.set(path, pending);
-			}
-			return pending.promise;
-		}
-
-		const requestId = (this.requestIds.get(path) ?? 0) + 1;
-		this.requestIds.set(path, requestId);
-		const request = {
-			id: requestId,
-			promise: Promise.resolve({ mtime, features: [] } as TrackRecord),
-		};
-		const promise = (async (): Promise<TrackRecord> => {
+		return this.request(path, key, { mtime, features: [] }, async (request) => {
 			let rec: TrackRecord;
 			try {
 				rec = isPhoto ? await this.loadPhoto(file, datum, mtime) : await this.loadTrack(file, extension, mtime);
@@ -295,26 +281,8 @@ export class TrackCache {
 				return this.loadVault(file, datum);
 			}
 
-			// Two different snapshots (most commonly a photo-datum setting change)
-			// can overlap without changing the file. Last request wins: an older one
-			// waits for and returns the newer result rather than overwriting it.
-			if (this.requestIds.get(path) !== request.id) {
-				const newest = this.latest.get(path);
-				if (newest && newest.id > request.id) return newest.promise;
-				const committed = this.entries.get(path);
-				return committed ?? this.loadVault(file, datum);
-			}
-
-			this.entries.set(path, rec);
-			return rec;
-		})().finally(() => {
-			if (this.pending.get(key) === request) this.pending.delete(key);
-			if (this.latest.get(path) === request) this.latest.delete(path);
+			return this.commit(path, request, rec, () => this.loadVault(file, datum));
 		});
-		request.promise = promise;
-		this.pending.set(key, request);
-		this.latest.set(path, request);
-		return promise;
 	}
 
 	/** External sources are re-probed at every map sync because no vault event owns them. */
@@ -322,23 +290,7 @@ export class TrackCache {
 		const path = source.key;
 		const generation = this.generations.get(path) ?? 0;
 		const key = [path, 'external', datum, String(generation)].join('\0');
-		const pending = this.pending.get(key);
-		if (pending) {
-			if (this.latest.get(path) !== pending) {
-				pending.id = (this.requestIds.get(path) ?? 0) + 1;
-				this.requestIds.set(path, pending.id);
-				this.latest.set(path, pending);
-			}
-			return pending.promise;
-		}
-
-		const requestId = (this.requestIds.get(path) ?? 0) + 1;
-		this.requestIds.set(path, requestId);
-		const request = {
-			id: requestId,
-			promise: Promise.resolve({ mtime: 0, features: [], photoDatum: datum } as TrackRecord),
-		};
-		const promise = (async (): Promise<TrackRecord> => {
+		return this.request(path, key, { mtime: 0, features: [], photoDatum: datum }, async (request) => {
 			let rec: TrackRecord;
 			try {
 				rec = await this.loadExternalPhoto(source, datum);
@@ -354,22 +306,53 @@ export class TrackCache {
 			}
 
 			if ((this.generations.get(path) ?? 0) !== generation) return this.loadExternal(source, datum);
-			if (this.requestIds.get(path) !== request.id) {
-				const newest = this.latest.get(path);
-				if (newest && newest.id > request.id) return newest.promise;
-				const committed = this.entries.get(path);
-				return committed ?? this.loadExternal(source, datum);
+			return this.commit(path, request, rec, () => this.loadExternal(source, datum));
+		});
+	}
+
+	private request(
+		path: string,
+		key: string,
+		initial: TrackRecord,
+		read: (request: TrackRequest) => Promise<TrackRecord>
+	): Promise<TrackRecord> {
+		const pending = this.pending.get(key);
+		if (pending) {
+			// auto → gcj02 → auto 重新加入最初的请求时，它也恢复为最新请求。
+			if (this.latest.get(path) !== pending) {
+				pending.id = (this.requestIds.get(path) ?? 0) + 1;
+				this.requestIds.set(path, pending.id);
+				this.latest.set(path, pending);
 			}
-			this.entries.set(path, rec);
-			return rec;
-		})().finally(() => {
+			return pending.promise;
+		}
+
+		const id = (this.requestIds.get(path) ?? 0) + 1;
+		this.requestIds.set(path, id);
+		const request: TrackRequest = { id, promise: Promise.resolve(initial) };
+		request.promise = read(request).finally(() => {
 			if (this.pending.get(key) === request) this.pending.delete(key);
 			if (this.latest.get(path) === request) this.latest.delete(path);
 		});
-		request.promise = promise;
 		this.pending.set(key, request);
 		this.latest.set(path, request);
-		return promise;
+		return request.promise;
+	}
+
+	private commit(
+		path: string,
+		request: TrackRequest,
+		record: TrackRecord,
+		retry: () => Promise<TrackRecord>
+	): TrackRecord | Promise<TrackRecord> {
+		// 不同快照可并行读取；旧请求返回最新结果，不能覆盖缓存。
+		if (this.requestIds.get(path) !== request.id) {
+			const newest = this.latest.get(path);
+			if (newest && newest.id > request.id) return newest.promise;
+			return this.entries.get(path) ?? retry();
+		}
+		this.entries.set(path, record);
+		return record;
 	}
 
 	private async loadExternalPhoto(source: ExternalPhotoSource, datum: PhotoDatum): Promise<TrackRecord> {

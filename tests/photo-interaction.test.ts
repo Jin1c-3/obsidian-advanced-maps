@@ -13,6 +13,7 @@ import { externalPhotoSource, sourceKey, vaultMapSource, type MapSource } from '
 import { TrackLayer } from '../src/track-layer';
 import type AdvancedMapsPlugin from '../src/main';
 import type { BasesMapView, MapLibreMap, MapMouseEvent } from '../src/types/obsidian-internals';
+import { installDomHelpers } from './obsidian-stub';
 
 interface LayerRegistration {
 	type: string;
@@ -21,26 +22,7 @@ interface LayerRegistration {
 }
 
 beforeAll(() => {
-	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
-	proto.createEl = function (
-		this: HTMLElement,
-		tag: string,
-		opts?: { text?: string; cls?: string; attr?: Record<string, string> }
-	) {
-		const el = document.createElement(tag);
-		if (opts?.text) el.textContent = opts.text;
-		if (opts?.cls) el.className = opts.cls;
-		for (const [name, value] of Object.entries(opts?.attr ?? {})) el.setAttribute(name, value);
-		this.append(el);
-		return el;
-	};
-	proto.createDiv = function (this: HTMLElement, opts?: { text?: string; cls?: string } | string) {
-		const value = typeof opts === 'string' ? { cls: opts } : opts;
-		return (proto.createEl as (tag: string, options?: unknown) => HTMLElement).call(this, 'div', value);
-	};
-	proto.appendText = function (this: HTMLElement, text: string) {
-		this.append(document.createTextNode(text));
-	};
+	installDomHelpers(['createEl', 'createDiv', 'appendText']);
 });
 
 class InteractionMap {

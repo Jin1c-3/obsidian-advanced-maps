@@ -7,34 +7,10 @@ import { PhotoModal } from '../src/photo-modal';
 import type AdvancedMapsPlugin from '../src/main';
 import type { TrackRecord } from '../src/track-cache';
 import type { BasesMapView, MapLibreMap } from '../src/types/obsidian-internals';
+import { installDomHelpers } from './obsidian-stub';
 
 beforeAll(() => {
-	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
-	proto.createEl = function (
-		this: HTMLElement,
-		tag: string,
-		opts?: { text?: string; cls?: string; attr?: Record<string, string> }
-	) {
-		const el = document.createElement(tag);
-		if (opts?.text) el.textContent = opts.text;
-		if (opts?.cls) el.className = opts.cls;
-		for (const [name, value] of Object.entries(opts?.attr ?? {})) el.setAttribute(name, value);
-		this.append(el);
-		return el;
-	};
-	proto.createDiv = function (this: HTMLElement, opts?: { text?: string; cls?: string } | string) {
-		const value = typeof opts === 'string' ? { cls: opts } : opts;
-		return (proto.createEl as (tag: string, options?: unknown) => HTMLElement).call(this, 'div', value);
-	};
-	proto.addClass = function (this: HTMLElement, ...classes: string[]) {
-		this.classList.add(...classes);
-	};
-	proto.toggleClass = function (this: HTMLElement, name: string, on: boolean) {
-		this.classList.toggle(name, on);
-	};
-	proto.empty = function (this: HTMLElement) {
-		this.replaceChildren();
-	};
+	installDomHelpers(['createEl', 'createDiv', 'addClass', 'toggleClass', 'empty']);
 });
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
