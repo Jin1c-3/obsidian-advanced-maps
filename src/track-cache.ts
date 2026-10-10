@@ -45,9 +45,11 @@ export interface TrackRecord extends ParsedTrack {
 	photoDatum?: PhotoDatum;
 }
 
-interface TrackRequest {
-	id: number;
-	promise: Promise<TrackRecord>;
+class TrackRequest {
+	promise!: Promise<TrackRecord>;
+	reading = true;
+
+	constructor(public id: number) {}
 }
 
 function mapSource(input: TFile | MapSource): MapSource {
@@ -254,7 +256,7 @@ export class TrackCache {
 		}
 
 		const key = [path, String(mtime), isPhoto ? datum : '', String(generation)].join('\0');
-		return this.request(path, key, { mtime, features: [] }, async (request) => {
+		return this.request(path, key, async (request) => {
 			let rec: TrackRecord;
 			try {
 				rec = isPhoto ? await this.loadPhoto(file, datum, mtime) : await this.loadTrack(file, extension, mtime);
@@ -268,6 +270,7 @@ export class TrackCache {
 				console.warn(`Advanced Maps: could not read ${path}:`, e);
 			}
 
+			request.reading = false;
 			// A rename, mtime change or explicit invalidation while the read was in
 			// flight makes this answer stale. Re-entering load() joins the replacement
 			// request when one already exists, or starts it when the modify event only
@@ -290,7 +293,7 @@ export class TrackCache {
 		const path = source.key;
 		const generation = this.generations.get(path) ?? 0;
 		const key = [path, 'external', datum, String(generation)].join('\0');
-		return this.request(path, key, { mtime: 0, features: [], photoDatum: datum }, async (request) => {
+		return this.request(path, key, async (request) => {
 			let rec: TrackRecord;
 			try {
 				rec = await this.loadExternalPhoto(source, datum);
@@ -305,6 +308,7 @@ export class TrackCache {
 				};
 			}
 
+			request.reading = false;
 			if ((this.generations.get(path) ?? 0) !== generation) return this.loadExternal(source, datum);
 			return this.commit(path, request, rec, () => this.loadExternal(source, datum));
 		});
@@ -313,12 +317,11 @@ export class TrackCache {
 	private request(
 		path: string,
 		key: string,
-		initial: TrackRecord,
 		read: (request: TrackRequest) => Promise<TrackRecord>
 	): Promise<TrackRecord> {
 		const pending = this.pending.get(key);
-		if (pending) {
-			// auto → gcj02 → auto 重新加入最初的请求时，它也恢复为最新请求。
+		if (pending?.reading) {
+			// 只有仍在读取的请求可重新成为最新；已经等待替代结果的请求不能反向被依赖。
 			if (this.latest.get(path) !== pending) {
 				pending.id = (this.requestIds.get(path) ?? 0) + 1;
 				this.requestIds.set(path, pending.id);
@@ -329,7 +332,7 @@ export class TrackCache {
 
 		const id = (this.requestIds.get(path) ?? 0) + 1;
 		this.requestIds.set(path, id);
-		const request: TrackRequest = { id, promise: Promise.resolve(initial) };
+		const request = new TrackRequest(id);
 		request.promise = read(request).finally(() => {
 			if (this.pending.get(key) === request) this.pending.delete(key);
 			if (this.latest.get(path) === request) this.latest.delete(path);

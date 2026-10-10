@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { App, PluginManifest } from 'obsidian';
+import AdvancedMapsPlugin from '../src/main';
+import type { BackgroundPicker } from '../src/view-options';
 import {
 	nativeBehind,
 	ownedBy,
@@ -9,7 +12,12 @@ import {
 	type RegistrationOwner,
 	type Stamped,
 } from '../src/registration';
-import type { BasesMapView, BasesViewFactory, BasesViewOptionsFn } from '../src/types/obsidian-internals';
+import type {
+	BasesMapView,
+	BasesViewFactory,
+	BasesViewOptionsFn,
+	BasesViewRegistration,
+} from '../src/types/obsidian-internals';
 
 /** The registration Bases keeps: one mutable slot holding a factory. */
 type Factory = (label: string) => string[];
@@ -119,6 +127,81 @@ describe('registration wrappers', () => {
 		expect(r.enhance).not.toHaveBeenCalled();
 		expect(r.backgroundPicker).not.toHaveBeenCalled();
 	});
+});
+
+describe('main registration lifecycle', () => {
+	it.each(['factory only', 'factory and options', 'foreign factory'] as const)(
+		'uses a fresh owner when Maps replaces %s',
+		(replacement) => {
+			const r = registration();
+			const entry: BasesViewRegistration = { factory: r.factory, options: r.options };
+			const app = {
+				internalPlugins: { getPluginById: () => ({ instance: { registrations: { map: entry } } }) },
+			} as unknown as App;
+			const plugin = new AdvancedMapsPlugin(app, {} as PluginManifest);
+			const seam = plugin as unknown as {
+				owner: RegistrationOwner;
+				patchMapsView(): boolean;
+				unpatchMapsView(): void;
+				enhance(view: BasesMapView, adopted: boolean): void;
+				backgroundPicker(): BackgroundPicker | null;
+				adoptOpenViews(): void;
+			};
+			seam.enhance = r.enhance;
+			seam.backgroundPicker = r.backgroundPicker;
+			const adoptOpenViews = vi.fn();
+			seam.adoptOpenViews = adoptOpenViews;
+			const container = document.createElement('div');
+
+			expect(seam.patchMapsView()).toBe(true);
+			const oldOwner = seam.owner;
+			const oldFactory = entry.factory;
+			const oldOptions = entry.options!;
+			const replacementFactory = vi.fn<BasesViewFactory>((controller, container) =>
+				replacement === 'foreign factory' ? oldFactory(controller, container) : r.view
+			);
+			entry.factory = replacementFactory;
+			if (replacement === 'factory and options') entry.options = r.options;
+
+			expect(seam.patchMapsView()).toBe(true);
+			expect(seam.owner).not.toBe(oldOwner);
+			expect(oldOwner).toEqual({ alive: false, enhance: undefined, backgroundPicker: undefined });
+			expect(ownedBy(entry.factory, seam.owner)).toBe(true);
+			expect(ownedBy(entry.options, seam.owner)).toBe(true);
+			expect(entry.factory({}, container)).toBe(r.view);
+			expect(replacementFactory).toHaveBeenCalledTimes(1);
+			expect(r.enhance).toHaveBeenCalledExactlyOnceWith(r.view, false);
+			const groups = entry.options!();
+			expect(groups.flatMap((group) => group.items).filter((item) => item.key === 'trackWeight')).toHaveLength(1);
+			expect(groups.flatMap((group) => group.items).map((item) => item.key)).toContain('offlineTiles');
+			expect(r.backgroundPicker).toHaveBeenCalledTimes(1);
+
+			r.enhance.mockClear();
+			r.backgroundPicker.mockClear();
+			expect(oldFactory({}, container)).toBe(r.view);
+			expect(oldOptions()).toBe(r.groups);
+			expect(r.enhance).not.toHaveBeenCalled();
+			expect(r.backgroundPicker).not.toHaveBeenCalled();
+
+			const owner = seam.owner;
+			const factory = entry.factory;
+			const options = entry.options;
+			expect(seam.patchMapsView()).toBe(true);
+			expect(seam.owner).toBe(owner);
+			expect(entry.factory).toBe(factory);
+			expect(entry.options).toBe(options);
+			expect(adoptOpenViews).toHaveBeenCalledTimes(2);
+
+			seam.unpatchMapsView();
+			expect(owner).toEqual({ alive: false, enhance: undefined, backgroundPicker: undefined });
+			expect(entry.factory).toBe(replacementFactory);
+			expect(entry.options).toBe(r.options);
+			expect(factory({}, container)).toBe(r.view);
+			expect(options!()).toBe(r.groups);
+			expect(r.enhance).not.toHaveBeenCalled();
+			expect(r.backgroundPicker).not.toHaveBeenCalled();
+		}
+	);
 });
 
 describe('ownedBy', () => {

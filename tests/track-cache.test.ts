@@ -130,6 +130,36 @@ describe('TrackCache concurrency', () => {
 		expect(cache.get(file.path)?.photoDatum).toBe('auto');
 	});
 
+	it('starts a new photo read when the earlier matching request already redirected', async () => {
+		const firstRead = deferred<ArrayBuffer>();
+		const gcjRead = deferred<ArrayBuffer>();
+		const lastRead = deferred<ArrayBuffer>();
+		const fetchMock = vi.fn();
+		for (const read of [firstRead, gcjRead, lastRead]) {
+			fetchMock.mockResolvedValueOnce({ ok: true, arrayBuffer: () => read.promise });
+		}
+		vi.stubGlobal('fetch', fetchMock);
+		const file = new TFile();
+		file.path = 'photo.jpg';
+		file.extension = 'jpg';
+		file.stat = { ...file.stat, mtime: 1, size: 4 };
+		const cache = new TrackCache(appWith({ getResourcePath: () => 'app://vault/photo.jpg' }));
+		const first = cache.load(file, 'auto');
+		const gcj = cache.load(file, 'gcj02');
+		firstRead.resolve(Uint8Array.from([0, 1, 2, 3]).buffer);
+		for (let tick = 0; tick < 12; tick++) await Promise.resolve();
+
+		const last = cache.load(file, 'auto');
+		expect(last).not.toBe(first);
+		lastRead.resolve(Uint8Array.from([0, 1, 2, 3]).buffer);
+		const newest = await last;
+		gcjRead.resolve(Uint8Array.from([0, 1, 2, 3]).buffer);
+		expect(await Promise.all([first, gcj])).toEqual([newest, newest]);
+		expect(newest.photoDatum).toBe('auto');
+		expect(cache.get(file.path)).toBe(newest);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
 	it('keeps a cached latest datum from being overwritten by an older in-flight change', async () => {
 		const gcjResponse = deferred<ArrayBuffer>();
 		const fetchMock = vi
@@ -437,6 +467,33 @@ describe('TrackCache over explicit external photos', () => {
 		gcjRead.resolve(response([0], { size: 1, mtime: MTIME }));
 		await expect(gcj).resolves.toBe(auto);
 		expect(cache.get(SOURCE.key)).toBe(auto);
+	});
+
+	it('starts a new external read when the earlier matching request already redirected', async () => {
+		const firstRead = deferred<ReturnType<typeof response>>();
+		const gcjRead = deferred<ReturnType<typeof response>>();
+		const lastRead = deferred<ReturnType<typeof response>>();
+		const fetchMock = vi
+			.fn()
+			.mockReturnValueOnce(firstRead.promise)
+			.mockReturnValueOnce(gcjRead.promise)
+			.mockReturnValueOnce(lastRead.promise);
+		vi.stubGlobal('fetch', fetchMock);
+		const cache = new TrackCache(appWith({}));
+		const first = cache.load(SOURCE, 'auto');
+		const gcj = cache.load(SOURCE, 'gcj02');
+		firstRead.resolve(response([0], { size: 1, mtime: MTIME }));
+		for (let tick = 0; tick < 12; tick++) await Promise.resolve();
+
+		const last = cache.load(SOURCE, 'auto');
+		expect(last).not.toBe(first);
+		lastRead.resolve(response([0], { size: 1, mtime: MTIME }));
+		const newest = await last;
+		gcjRead.resolve(response([0], { size: 1, mtime: MTIME }));
+		expect(await Promise.all([first, gcj])).toEqual([newest, newest]);
+		expect(newest.photoDatum).toBe('auto');
+		expect(cache.get(SOURCE.key)).toBe(newest);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 
 	it('redirects an older external request to the latest pending datum', async () => {

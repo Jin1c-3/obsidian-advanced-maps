@@ -96,7 +96,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	private nativeFactory: BasesViewFactory | null = null;
 	/** This instance's identity on the wrappers it installs; see `registration.ts`. */
-	private readonly owner: RegistrationOwner = { alive: true };
+	private owner: RegistrationOwner = { alive: true };
 	private patched: {
 		/** What this instance put in the registration, to restore only its own. */
 		factory: BasesViewFactory;
@@ -234,9 +234,13 @@ export default class AdvancedMapsPlugin extends Plugin {
 		const nativeFactory = nativeBehind(entry.factory);
 		const nativeOptions = typeof entry.options === 'function' ? nativeBehind(entry.options) : entry.options;
 		this.nativeFactory = nativeFactory;
-		const owner = this.owner;
-		owner.enhance = (view) => this.enhance(view, false);
-		owner.backgroundPicker = () => this.backgroundPicker();
+		// Retained wrappers must stay retired when Maps replaces either slot.
+		retire(this.owner);
+		const owner = (this.owner = {
+			alive: true,
+			enhance: (view) => this.enhance(view, false),
+			backgroundPicker: () => this.backgroundPicker(),
+		});
 
 		const factory = wrapFactory(nativeFactory, owner);
 		entry.factory = factory;

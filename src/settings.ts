@@ -698,8 +698,11 @@ export class AdvancedMapsSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * Not searchable, because this information changes no setting. Both addresses
-	 * are links the reader may follow; neither is opened or fetched from here.
+	 * Where the guide is, and the one thing this plugin asks for in return.
+	 *
+	 * Not searchable, because it is not a setting — a row that changes nothing
+	 * has no business among the results for one that does. Both addresses are
+	 * links the reader may follow; neither is opened or fetched from here.
 	 */
 	private aboutItem(): SettingDefinition<ControlKey> {
 		return {
