@@ -91,6 +91,7 @@ export interface MeasureLabel {
 export interface MeasureDrawing {
 	data: FeatureCollection<Geometry, MeasureProps>;
 	labels: MeasureLabel[];
+	committedDistance: number;
 }
 
 /**
@@ -176,5 +177,9 @@ export function measureDrawing(measurement: Measurement, project: Project): Meas
 		labels.push({ at: [path[committed][0], path[committed][1]], text: formatDistance(total), draft: true });
 	}
 
-	return { data: { type: 'FeatureCollection', features }, labels };
+	return {
+		data: { type: 'FeatureCollection', features },
+		labels,
+		committedDistance: cumulative.length === 0 ? 0 : cumulative[cumulative.length - 1],
+	};
 }

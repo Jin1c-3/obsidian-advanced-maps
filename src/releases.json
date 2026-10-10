@@ -1,0 +1,192 @@
+[
+  {
+    "version": "1.19.0",
+    "en": "Link individual geotagged photos outside your vault to show them on note and route maps, with thumbnails, previews and full-size viewing.",
+    "zh": "链接仓库外的单张定位照片，即可在笔记地图和路线地图上显示，并查看缩略图、预览和原图。"
+  },
+  {
+    "version": "1.18.6",
+    "en": "Place search handles unfamiliar saved settings and spaces requests correctly, while rebuilt maps clear stale hover details and inline maps keep drawing when colour lookup fails.",
+    "zh": "地点搜索可应对无法识别的已存设置并正确间隔请求，地图重建后不再显示旧悬停信息，内嵌地图在颜色读取失败时仍能绘制。"
+  },
+  {
+    "version": "1.18.5",
+    "en": "Choose which automatic features appear with seven new switches, including offline basemaps, which now start off unless you already have a tile pack configured.",
+    "zh": "新增七个开关，可选择启用哪些自动出现的功能；离线底图默认关闭，已配置瓦片包的用户则继续启用。"
+  },
+  {
+    "version": "1.18.4",
+    "en": "Adding and editing offline tile packs now works reliably, invalid entries explain their problems, and the folder skip list can be refilled after clearing it.",
+    "zh": "离线瓦片包可正常添加和编辑，无效配置会说明原因，跳过文件夹列表清空后也可重新添加。"
+  },
+  {
+    "version": "1.18.3",
+    "en": "Configure several named offline tile packs, switch backgrounds from the map, and choose which background each map opens on without losing your choice during refreshes.",
+    "zh": "可配置多个命名离线瓦片包，在地图上切换背景并指定每个地图的初始背景，刷新时也会保留当前选择。"
+  },
+  {
+    "version": "1.18.2",
+    "en": "The ruler now opens a collapsible measurement readout clear of mobile navigation, follow and measure buttons can be hidden, and settings use shorter descriptions and simpler controls.",
+    "zh": "测距读数移到尺子按钮旁并可折叠，避免被手机导航遮挡；跟随和测距按钮可隐藏，设置说明与操作也更简洁。"
+  },
+  {
+    "version": "1.18.1",
+    "en": "Measurements snap to nearby pins, waypoints, photos and earlier measurement points, and you can choose which track statistics are written to note properties.",
+    "zh": "测距可吸附附近的图钉、途经点、照片及已放置的测量点，并可选择将哪些轨迹统计写入笔记属性。"
+  },
+  {
+    "version": "1.18.0",
+    "en": "Measure distances between points directly on a Base map, and set note coordinates from full Plus Codes or plus.codes links.",
+    "zh": "可直接在 Base 地图上测量各点间的距离，并从完整 Plus Code 或 plus.codes 链接设置笔记坐标。"
+  },
+  {
+    "version": "1.17.2",
+    "en": "Multipart routes now produce statistics, places import from grouped points, and more GPX and TCX exports load correctly, with steadier popups and inline map updates.",
+    "zh": "多段路线可正常统计，成组地点可导入，更多 GPX 和 TCX 导出文件可读取，弹窗与内嵌地图更新也更稳定。"
+  },
+  {
+    "version": "1.17.1",
+    "en": "The bilingual user guide is now a searchable website linked from settings, with updated installation instructions and shared screenshots captured in an English interface.",
+    "zh": "双语指南成为可搜索的网站，设置中提供直接入口，并更新了安装说明和采用英文界面的共用截图。"
+  },
+  {
+    "version": "1.17.0",
+    "en": "Use a local folder of map tiles as an offline background for Base and inline maps, with zoom limits matched to your tile pack.",
+    "zh": "可将本地瓦片文件夹用作 Base 地图和内嵌地图的离线背景，并设置与瓦片包相符的缩放范围。"
+  },
+  {
+    "version": "1.16.0",
+    "en": "Import saved places from KML, GPX or GeoJSON as notes, and export the places on a Base map as GPX, KML or CSV.",
+    "zh": "可将 KML、GPX 或 GeoJSON 中的收藏地点导入为笔记，并把 Base 地图上的地点导出为 GPX、KML 或 CSV。"
+  },
+  {
+    "version": "1.15.0",
+    "en": "Map popups show the hovered route's statistics, waypoint name or photo, track statistic properties can have custom names, and settings are grouped into topic pages.",
+    "zh": "地图弹窗显示所指路线的统计、途经点名称或照片，轨迹统计属性可自定义名称，设置按主题分页。"
+  },
+  {
+    "version": "1.14.0",
+    "en": "Place existing notes from the map, write track statistics to note properties and display filled areas, with correct route drawing and coordinates across the 180th meridian.",
+    "zh": "可从地图为已有笔记设置坐标、将轨迹统计写入属性并显示填充区域，跨越 180 度经线的路线与坐标也能正确处理。"
+  },
+  {
+    "version": "1.13.6",
+    "en": "Photo locations are remembered between sessions for faster map loading, large albums limit simultaneous reads, and empty maps no longer trigger a native map error.",
+    "zh": "照片位置可跨会话缓存，加快地图加载；大型相册限制同时读取的数量，空地图也不再触发原生地图错误。"
+  },
+  {
+    "version": "1.13.5",
+    "en": "Hovering tracks and photos is smoother because popups stop rebuilding on every pointer movement, and a photo on a track now gets the correct hover details.",
+    "zh": "轨迹和照片弹窗不再随每次指针移动重建，悬停更流畅，位于轨迹上的照片也能显示正确的悬停信息。"
+  },
+  {
+    "version": "1.13.4",
+    "en": "Maps keep their enhancements after a plugin reload, photos and inline maps refresh more reliably, and route statistics correctly handle stray elevations and backwards timestamps.",
+    "zh": "插件重载后地图增强可正常恢复，照片和内嵌地图刷新更可靠，轨迹统计也能正确处理偏离路线的高程和倒序时间戳。"
+  },
+  {
+    "version": "1.13.3",
+    "en": "Overlapping pins fan out at the stated zoom with aligned popups, inline maps retain your camera position, and KML coordinates with spaces now load.",
+    "zh": "重叠图钉在指定缩放级别展开且弹窗位置正确，内嵌地图保留手动调整的视角，带空格的 KML 坐标也可读取。"
+  },
+  {
+    "version": "1.13.2",
+    "en": "Already-open maps adopt enhancements safely, closing inline maps releases their resources, overlapping photos open correctly, and HEIC, HEIF and AVIF location tags read more reliably.",
+    "zh": "已打开的地图可安全启用增强，关闭内嵌地图可释放资源，重叠照片能正确打开，HEIC、HEIF 和 AVIF 定位信息读取更可靠。"
+  },
+  {
+    "version": "1.13.1",
+    "en": "Following maps open clicked notes in the correct pane, a cleared skip setting still protects templates, and inline maps keep the last readable track while reporting file errors.",
+    "zh": "跟随地图在正确窗格打开点击的笔记，清空跳过设置仍保护模板，内嵌地图在文件读取出错时保留上次路线并说明原因。"
+  },
+  {
+    "version": "1.13.0",
+    "en": "Notes at the same coordinate fan out into individually clickable pins when you zoom in, without changing their saved locations.",
+    "zh": "放大地图后，同一坐标的笔记展开为可分别点击的图钉，已保存的位置保持不变。"
+  },
+  {
+    "version": "1.12.2",
+    "en": "Map links, search results and track refreshes avoid misplaced or stale data, visual settings reach open maps, and large photo albums load thumbnails within bounded memory.",
+    "zh": "地图链接、搜索结果与轨迹刷新避免错位或过期数据，外观设置可更新已打开的地图，大型相册的缩略图加载也有内存上限。"
+  },
+  {
+    "version": "1.12.1",
+    "en": "The plugin description now includes photo features, and documentation uses photos from a real walk, with no change to plugin behaviour.",
+    "zh": "插件简介补充照片功能，文档改用真实步行途中拍摄的照片，插件行为没有变化。"
+  },
+  {
+    "version": "1.12.0",
+    "en": "Geotagged photos appear as pins and thumbnails on note and route maps, open for viewing when clicked, and can supply a note's coordinates.",
+    "zh": "定位照片可在笔记地图和路线地图上显示图钉与缩略图，点击即可查看，也可用于设置笔记坐标。"
+  },
+  {
+    "version": "1.11.0",
+    "en": "Each map can follow the active note from its own button in any pane, while keeping typing focus and opening clicked notes in the followed pane.",
+    "zh": "每个地图都可用自身按钮在任意窗格跟随当前笔记，保持编辑焦点，并在所跟随的窗格打开点击的笔记。"
+  },
+  {
+    "version": "1.10.1",
+    "en": "Track arrows and end markers are clearer, waypoint tooltips respect marker settings and stay visible, and filling a place name cannot overwrite the coordinate property.",
+    "zh": "轨迹方向箭头和终点标记更清晰，途经点提示遵循标记开关且不被裁切，填写地点名称也不会覆盖坐标属性。"
+  },
+  {
+    "version": "1.10.0",
+    "en": "Fill place names from coordinates, see route direction and endpoints with a linked elevation profile, and map tracks from ordinary links or note properties as well as embeds.",
+    "zh": "可由坐标填写地点名称，查看路线方向、起终点及与地图联动的高程图，普通链接和笔记属性中的轨迹也可显示在地图上。"
+  },
+  {
+    "version": "1.9.0",
+    "en": "Choose the Base file and map view from lists instead of typing them, with a clear warning when a configured view is missing.",
+    "zh": "Base 文件和地图视图改为从列表选择，无需手动输入，已配置的视图缺失时会明确提示。"
+  },
+  {
+    "version": "1.8.0",
+    "en": "Open notes in a reusable tab showing your actual Base or in a popup, and let sidebar maps follow the active note without changing zoom or filters.",
+    "zh": "可在复用的标签页中用实际 Base 定位笔记，也可选择弹窗，侧栏地图还能跟随当前笔记而不改变缩放或筛选条件。"
+  },
+  {
+    "version": "1.7.0",
+    "en": "Reorder or hide external map apps and add your own map links, choosing the coordinate system each link needs.",
+    "zh": "可调整外部地图应用的顺序或隐藏它们，并添加自定义地图链接及其所需的坐标系。"
+  },
+  {
+    "version": "1.6.0",
+    "en": "Choose whether your Amap search key stays in device-local secret storage or synced plugin settings, with secret storage as the default for new installs.",
+    "zh": "可选择将高德搜索密钥保存在设备本地的私密存储或可同步的插件设置中，新安装默认使用私密存储。"
+  },
+  {
+    "version": "1.5.1",
+    "en": "Maps reuse unchanged tracks for faster refreshes, inline maps release resources when the plugin unloads, and a Simplified Chinese README is available.",
+    "zh": "地图复用未改变的轨迹以加快刷新，插件卸载时内嵌地图释放资源，并新增简体中文 README。"
+  },
+  {
+    "version": "1.5.0",
+    "en": "Inline maps show track statistics and elevation profiles, KML and TCX routes are supported, and map locations can open in external map apps.",
+    "zh": "内嵌地图可显示轨迹统计和高程图，支持 KML 与 TCX 路线，并可在外部地图应用中打开地图位置。"
+  },
+  {
+    "version": "1.4.0",
+    "en": "Insert a map of a note and its incoming and outgoing links, using a shared view in your own Base that stays current as the Base changes.",
+    "zh": "可插入当前笔记及其双向链接笔记的地图，使用自身 Base 中的共用视图，并随 Base 的变化保持更新。"
+  },
+  {
+    "version": "1.3.0",
+    "en": "Set note coordinates from shared map links, coordinate text or place search, with supported providers converted to the correct saved coordinate system.",
+    "zh": "可从地图分享链接、坐标文本或地点搜索设置笔记坐标，并将支持的地图来源转换为正确的存储坐标系。"
+  },
+  {
+    "version": "1.2.0",
+    "en": "Chinese basemaps now return correct coordinates when copying locations or creating notes, and popups, device location and background switches stay aligned.",
+    "zh": "中文底图下复制位置或创建笔记可得到正确坐标，弹窗、设备定位和背景切换也保持位置对齐。"
+  },
+  {
+    "version": "1.1.0",
+    "en": "Fill a note's coordinates from your device location with a command, or automatically when an existing coordinate property is empty.",
+    "zh": "可通过命令用设备位置填写笔记坐标，也可在已有坐标属性为空时自动填写。"
+  },
+  {
+    "version": "1.0.0",
+    "en": "The first public release adds coloured GPX and GeoJSON tracks, inline route maps, zoom-to-fit, Chinese basemap alignment and a command to open notes in a map.",
+    "zh": "首次公开发行提供带颜色的 GPX 和 GeoJSON 轨迹、内嵌路线地图、缩放到全部内容、中文底图对齐及在地图中打开笔记的命令。"
+  }
+]

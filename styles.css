@@ -421,6 +421,43 @@
 	margin: 0;
 }
 
+.advanced-maps-release {
+	display: block;
+	padding: var(--size-4-3);
+	margin-bottom: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+	overflow-wrap: anywhere;
+}
+
+.advanced-maps-release p {
+	margin: var(--size-4-2) 0;
+}
+
+.advanced-maps-release details {
+	margin: var(--size-4-2) 0;
+}
+
+.advanced-maps-release summary {
+	cursor: pointer;
+	color: var(--text-muted);
+}
+
+.advanced-maps-release ul {
+	margin: var(--size-4-2) 0;
+	padding-inline-start: var(--size-4-5);
+}
+
+.advanced-maps-release li + li {
+	margin-top: var(--size-4-2);
+}
+
+.advanced-maps-release > a {
+	display: inline-block;
+	font-size: var(--font-ui-small);
+}
+
 /* The pane's first row, above every page entry: the same cleared row shape as an
  * introduction, with each line led by a badge. The badge is the link and the
  * text beside it the reason, so the two lines read as one block of chrome

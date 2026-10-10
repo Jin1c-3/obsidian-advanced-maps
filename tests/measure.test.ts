@@ -64,16 +64,18 @@ describe('cumulativeDistances', () => {
 
 describe('measureDrawing: what is on the map', () => {
 	it('draws nothing at all before the first click', () => {
-		const { data, labels } = measureDrawing({ points: [], draft: B }, wgs84);
+		const { data, labels, committedDistance } = measureDrawing({ points: [], draft: B }, wgs84);
 		expect(data.features).toEqual([]);
 		expect(labels).toEqual([]);
+		expect(committedDistance).toBe(0);
 	});
 
 	it('draws one handle and no line for a single point', () => {
-		const { data, labels } = measureDrawing({ points: [A], draft: null }, wgs84);
+		const { data, labels, committedDistance } = measureDrawing({ points: [A], draft: null }, wgs84);
 		expect(roles(data.features)).toEqual(['vertex']);
 		// The first point is where the measurement starts; saying so is not a distance.
 		expect(labels).toEqual([]);
+		expect(committedDistance).toBe(0);
 	});
 
 	it('draws the committed line, a handle per point, and a label per leg', () => {
@@ -103,7 +105,8 @@ describe('measureDrawing: what is on the map', () => {
 
 	it('counts the pointer leg into the live label but never into the readout', () => {
 		const committed = [A, B];
-		const { labels } = measureDrawing({ points: committed, draft: C }, wgs84);
+		const { labels, committedDistance } = measureDrawing({ points: committed, draft: C }, wgs84);
+		expect(committedDistance).toBe(measuredDistance(committed));
 		// The live label is the whole tape including the leg being aimed…
 		expect(labels[1].text).toBe(formatDistance(measuredDistance([A, B, C])));
 		// …and the readout is what has actually been placed, which is less.

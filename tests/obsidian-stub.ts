@@ -8,6 +8,60 @@
  * that needs real behaviour should spy on these rather than trust them.
  */
 
+const domHelpers = {
+	createEl: function (
+		this: HTMLElement,
+		tag: string,
+		opts?: { text?: string; cls?: string; attr?: Record<string, string> }
+	) {
+		const el = document.createElement(tag);
+		if (opts?.text) el.textContent = opts.text;
+		if (opts?.cls) el.className = opts.cls;
+		for (const [name, value] of Object.entries(opts?.attr ?? {})) el.setAttribute(name, value);
+		this.append(el);
+		return el;
+	},
+	createDiv: function (this: HTMLElement, opts?: { text?: string; cls?: string } | string) {
+		const value = typeof opts === 'string' ? { cls: opts } : opts;
+		const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+		return (proto.createEl as (tag: string, options?: unknown) => HTMLElement).call(this, 'div', value);
+	},
+	addClass: function (this: HTMLElement, ...classes: string[]) {
+		this.classList.add(...classes);
+	},
+	removeClass: function (this: HTMLElement, ...classes: string[]) {
+		this.classList.remove(...classes);
+	},
+	toggleClass: function (this: HTMLElement, name: string, on: boolean) {
+		this.classList.toggle(name, on);
+	},
+	setText: function (this: HTMLElement, text: string) {
+		this.textContent = text;
+	},
+	setCssStyles: function (this: HTMLElement, styles: Record<string, string>) {
+		Object.assign(this.style, styles);
+	},
+	detach: function (this: HTMLElement) {
+		this.remove();
+	},
+	empty: function (this: HTMLElement) {
+		this.replaceChildren();
+	},
+	hasClass: function (this: HTMLElement, name: string) {
+		return this.classList.contains(name);
+	},
+	appendText: function (this: HTMLElement, text: string) {
+		this.append(document.createTextNode(text));
+	},
+};
+
+/** Install only the Obsidian DOM helpers a suite needs, during its own setup. */
+export function installDomHelpers(keys: readonly (keyof typeof domHelpers)[]): void {
+	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
+	const helpers: Record<string, unknown> = domHelpers;
+	for (const key of keys) proto[key] = helpers[key];
+}
+
 export class Component {
 	load(): void {}
 	unload(): void {}

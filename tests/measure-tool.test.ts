@@ -14,6 +14,7 @@ import { toTileSpace, toWgs84, type CoordSystem } from '../src/coords';
 import type { MeasureProps } from '../src/measure';
 import { MeasureTool } from '../src/measure-tool';
 import type { MapControl, MapLibreMap, MapMouseEvent } from '../src/types/obsidian-internals';
+import { installDomHelpers } from './obsidian-stub';
 
 /* The tape coalesces pointer work into an animation frame. Hold the frames
  * rather than wait for them, so a test can say when one happens. */
@@ -29,47 +30,18 @@ function frame(): void {
 
 /* Obsidian's own DOM helpers, which happy-dom does not carry. */
 beforeAll(() => {
-	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
-	proto.createEl = function (
-		this: HTMLElement,
-		tag: string,
-		opts?: { text?: string; cls?: string; attr?: Record<string, string> }
-	) {
-		const el = document.createElement(tag);
-		if (opts?.text) el.textContent = opts.text;
-		if (opts?.cls) el.className = opts.cls;
-		for (const [name, value] of Object.entries(opts?.attr ?? {})) el.setAttribute(name, value);
-		this.append(el);
-		return el;
-	};
-	proto.createDiv = function (this: HTMLElement, opts?: { text?: string; cls?: string } | string) {
-		const o = typeof opts === 'string' ? { cls: opts } : opts;
-		return (proto.createEl as (tag: string, o?: unknown) => HTMLElement).call(this, 'div', o);
-	};
-	proto.addClass = function (this: HTMLElement, ...cls: string[]) {
-		this.classList.add(...cls);
-	};
-	proto.removeClass = function (this: HTMLElement, ...cls: string[]) {
-		this.classList.remove(...cls);
-	};
-	proto.toggleClass = function (this: HTMLElement, cls: string, on: boolean) {
-		this.classList.toggle(cls, on);
-	};
-	proto.setText = function (this: HTMLElement, text: string) {
-		this.textContent = text;
-	};
-	proto.setCssStyles = function (this: HTMLElement, styles: Record<string, string>) {
-		Object.assign(this.style, styles);
-	};
-	proto.detach = function (this: HTMLElement) {
-		this.remove();
-	};
-	proto.empty = function (this: HTMLElement) {
-		this.replaceChildren();
-	};
-	proto.hasClass = function (this: HTMLElement, cls: string) {
-		return this.classList.contains(cls);
-	};
+	installDomHelpers([
+		'createEl',
+		'createDiv',
+		'addClass',
+		'removeClass',
+		'toggleClass',
+		'setText',
+		'setCssStyles',
+		'detach',
+		'empty',
+		'hasClass',
+	]);
 	vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
 		const id = nextFrame++;
 		frames.set(id, cb);

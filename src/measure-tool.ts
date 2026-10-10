@@ -236,7 +236,7 @@ export class MeasureTool {
 		this.labels = drawing.labels;
 		this.renderLabels();
 		this.place();
-		this.readout?.setDistance(measuredDistance(this.points), this.points.length);
+		this.readout?.setDistance(drawing.committedDistance, this.points.length);
 		// Last, because the DOM above cannot fail and this can: a style swapped out
 		// mid-draw is recovered by the `style.load` that follows it.
 		drawMeasure(this.map, drawing.data);

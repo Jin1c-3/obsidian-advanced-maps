@@ -1,5 +1,23 @@
-import { describe, expect, it } from 'vitest';
-import { nativeBehind, ownedBy, stamp, type RegistrationOwner, type Stamped } from '../src/registration';
+import { describe, expect, it, vi } from 'vitest';
+import type { App, PluginManifest } from 'obsidian';
+import AdvancedMapsPlugin from '../src/main';
+import type { BackgroundPicker } from '../src/view-options';
+import {
+	nativeBehind,
+	ownedBy,
+	retire,
+	stamp,
+	wrapFactory,
+	wrapOptions,
+	type RegistrationOwner,
+	type Stamped,
+} from '../src/registration';
+import type {
+	BasesMapView,
+	BasesViewFactory,
+	BasesViewOptionsFn,
+	BasesViewRegistration,
+} from '../src/types/obsidian-internals';
 
 /** The registration Bases keeps: one mutable slot holding a factory. */
 type Factory = (label: string) => string[];
@@ -24,6 +42,168 @@ function install(slot: { factory: Stamped<Factory> }, owner: RegistrationOwner, 
 
 const host: Stamped<Factory> = (label: string) => [label];
 
+function registration() {
+	const view = { markerManager: {} } as BasesMapView;
+	const factory = vi.fn<BasesViewFactory>(() => view);
+	const groups = [
+		{
+			displayName: 'Background',
+			type: 'group' as const,
+			items: [{ key: 'mapTiles', displayName: 'Tiles', type: 'text' }],
+		},
+	];
+	const options = vi.fn<BasesViewOptionsFn>(() => groups);
+	const enhance = vi.fn();
+	const backgroundPicker = vi.fn(() => ({ backgrounds: [{ id: 'pack:trail', name: 'Trail' }], missing: [] }));
+	const owner: RegistrationOwner = { alive: true, enhance, backgroundPicker };
+	return { view, factory, groups, options, enhance, backgroundPicker, owner };
+}
+
+describe('registration wrappers', () => {
+	it('enhances the native view and reads the current background picker while active', () => {
+		const r = registration();
+		const factory = wrapFactory(r.factory, r.owner);
+		const options = wrapOptions(r.options, r.owner);
+		const controller = {};
+		const container = document.createElement('div');
+
+		expect(factory(controller, container)).toBe(r.view);
+		expect(r.factory).toHaveBeenCalledWith(controller, container);
+		expect(r.enhance).toHaveBeenCalledExactlyOnceWith(r.view);
+		const groups = options();
+		expect(groups.flatMap((group) => group.items).map((item) => item.key)).toContain('offlineTiles');
+		expect(r.backgroundPicker).toHaveBeenCalledTimes(1);
+		r.backgroundPicker.mockReturnValue({ backgrounds: [], missing: [] });
+		options();
+		expect(r.backgroundPicker).toHaveBeenCalledTimes(2);
+		expect(r.groups).toHaveLength(1);
+	});
+
+	it('releases both callbacks on retirement and returns native results unchanged', () => {
+		const r = registration();
+		const factory = wrapFactory(r.factory, r.owner);
+		const options = wrapOptions(r.options, r.owner);
+
+		retire(r.owner);
+		retire(r.owner);
+		expect(r.owner).toEqual({ alive: false, enhance: undefined, backgroundPicker: undefined });
+		expect(factory({}, document.createElement('div'))).toBe(r.view);
+		expect(options()).toBe(r.groups);
+		expect(r.enhance).not.toHaveBeenCalled();
+		expect(r.backgroundPicker).not.toHaveBeenCalled();
+	});
+
+	it('releases callbacks when peeling either registration function', () => {
+		for (const peelFactory of [true, false]) {
+			const r = registration();
+			const factory = wrapFactory(r.factory, r.owner);
+			const options = wrapOptions(r.options, r.owner);
+			if (peelFactory) expect(nativeBehind(factory)).toBe(r.factory);
+			else expect(nativeBehind(options)).toBe(r.options);
+
+			expect(r.owner.enhance).toBeUndefined();
+			expect(r.owner.backgroundPicker).toBeUndefined();
+			expect(factory({}, document.createElement('div'))).toBe(r.view);
+			expect(options()).toBe(r.groups);
+			expect(r.enhance).not.toHaveBeenCalled();
+			expect(r.backgroundPicker).not.toHaveBeenCalled();
+		}
+	});
+
+	it('preserves foreign wrappers around retired factory and options functions', () => {
+		const r = registration();
+		const factory = wrapFactory(r.factory, r.owner);
+		const options = wrapOptions(r.options, r.owner);
+		const foreignFactory = vi.fn<BasesViewFactory>((controller, container) => factory(controller, container));
+		const extra = { displayName: 'Other', type: 'group' as const, items: [] };
+		const foreignOptions: BasesViewOptionsFn = () => [...options(), extra];
+
+		expect(nativeBehind(foreignFactory)).toBe(foreignFactory);
+		expect(nativeBehind(foreignOptions)).toBe(foreignOptions);
+		retire(r.owner);
+		expect(foreignFactory({}, document.createElement('div'))).toBe(r.view);
+		expect(foreignOptions()).toEqual([...r.groups, extra]);
+		expect(foreignFactory).toHaveBeenCalledTimes(1);
+		expect(r.enhance).not.toHaveBeenCalled();
+		expect(r.backgroundPicker).not.toHaveBeenCalled();
+	});
+});
+
+describe('main registration lifecycle', () => {
+	it.each(['factory only', 'factory and options', 'foreign factory'] as const)(
+		'uses a fresh owner when Maps replaces %s',
+		(replacement) => {
+			const r = registration();
+			const entry: BasesViewRegistration = { factory: r.factory, options: r.options };
+			const app = {
+				internalPlugins: { getPluginById: () => ({ instance: { registrations: { map: entry } } }) },
+			} as unknown as App;
+			const plugin = new AdvancedMapsPlugin(app, {} as PluginManifest);
+			const seam = plugin as unknown as {
+				owner: RegistrationOwner;
+				patchMapsView(): boolean;
+				unpatchMapsView(): void;
+				enhance(view: BasesMapView, adopted: boolean): void;
+				backgroundPicker(): BackgroundPicker | null;
+				adoptOpenViews(): void;
+			};
+			seam.enhance = r.enhance;
+			seam.backgroundPicker = r.backgroundPicker;
+			const adoptOpenViews = vi.fn();
+			seam.adoptOpenViews = adoptOpenViews;
+			const container = document.createElement('div');
+
+			expect(seam.patchMapsView()).toBe(true);
+			const oldOwner = seam.owner;
+			const oldFactory = entry.factory;
+			const oldOptions = entry.options!;
+			const replacementFactory = vi.fn<BasesViewFactory>((controller, container) =>
+				replacement === 'foreign factory' ? oldFactory(controller, container) : r.view
+			);
+			entry.factory = replacementFactory;
+			if (replacement === 'factory and options') entry.options = r.options;
+
+			expect(seam.patchMapsView()).toBe(true);
+			expect(seam.owner).not.toBe(oldOwner);
+			expect(oldOwner).toEqual({ alive: false, enhance: undefined, backgroundPicker: undefined });
+			expect(ownedBy(entry.factory, seam.owner)).toBe(true);
+			expect(ownedBy(entry.options, seam.owner)).toBe(true);
+			expect(entry.factory({}, container)).toBe(r.view);
+			expect(replacementFactory).toHaveBeenCalledTimes(1);
+			expect(r.enhance).toHaveBeenCalledExactlyOnceWith(r.view, false);
+			const groups = entry.options!();
+			expect(groups.flatMap((group) => group.items).filter((item) => item.key === 'trackWeight')).toHaveLength(1);
+			expect(groups.flatMap((group) => group.items).map((item) => item.key)).toContain('offlineTiles');
+			expect(r.backgroundPicker).toHaveBeenCalledTimes(1);
+
+			r.enhance.mockClear();
+			r.backgroundPicker.mockClear();
+			expect(oldFactory({}, container)).toBe(r.view);
+			expect(oldOptions()).toBe(r.groups);
+			expect(r.enhance).not.toHaveBeenCalled();
+			expect(r.backgroundPicker).not.toHaveBeenCalled();
+
+			const owner = seam.owner;
+			const factory = entry.factory;
+			const options = entry.options;
+			expect(seam.patchMapsView()).toBe(true);
+			expect(seam.owner).toBe(owner);
+			expect(entry.factory).toBe(factory);
+			expect(entry.options).toBe(options);
+			expect(adoptOpenViews).toHaveBeenCalledTimes(2);
+
+			seam.unpatchMapsView();
+			expect(owner).toEqual({ alive: false, enhance: undefined, backgroundPicker: undefined });
+			expect(entry.factory).toBe(replacementFactory);
+			expect(entry.options).toBe(r.options);
+			expect(factory({}, container)).toBe(r.view);
+			expect(options!()).toBe(r.groups);
+			expect(r.enhance).not.toHaveBeenCalled();
+			expect(r.backgroundPicker).not.toHaveBeenCalled();
+		}
+	);
+});
+
 describe('ownedBy', () => {
 	it('recognizes only the wrapper this owner installed', () => {
 		const mine: RegistrationOwner = { alive: true };
@@ -39,7 +219,7 @@ describe('ownedBy', () => {
 		const dead: RegistrationOwner = { alive: true };
 		const slot = { factory: host };
 		install(slot, dead, 'dead');
-		dead.alive = false;
+		retire(dead);
 
 		expect(ownedBy(slot.factory, dead)).toBe(false);
 	});
@@ -111,7 +291,7 @@ describe('a registration handed from one instance to the next', () => {
 		const gone: RegistrationOwner = { alive: true };
 		const slot = { factory: host };
 		install(slot, gone, 'gone');
-		gone.alive = false; // the instance unloaded but could not restore the slot
+		retire(gone); // the instance unloaded but could not restore the slot
 
 		const live: RegistrationOwner = { alive: true };
 		expect(ownedBy(slot.factory, live)).toBe(false);
@@ -130,7 +310,7 @@ describe('a registration handed from one instance to the next', () => {
 		slot.factory = (label: string) => [...wrapper(label), 'other'];
 
 		expect(slot.factory('map')).toEqual(['map', 'mine', 'other']);
-		mine.alive = false;
+		retire(mine);
 		expect(slot.factory('map')).toEqual(['map', 'other']);
 	});
 });

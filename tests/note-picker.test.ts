@@ -4,7 +4,7 @@ import type { App, FuzzyMatch } from 'obsidian';
 // Straight from the stub rather than through the `obsidian` alias: these two
 // shapes are the stub's own, and the published types know nothing about them.
 // It is the same module either way — vitest resolves `obsidian` to this file.
-import { ButtonStub, Setting } from './obsidian-stub';
+import { ButtonStub, installDomHelpers, Setting } from './obsidian-stub';
 import { currentCoords, inFolder, NotePickerModal, ReplaceCoordsModal, templateFolder } from '../src/note-picker';
 
 /**
@@ -12,27 +12,7 @@ import { currentCoords, inFolder, NotePickerModal, ReplaceCoordsModal, templateF
  * them. Only the handful the two modals actually call.
  */
 beforeAll(() => {
-	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
-	proto.addClass = function (this: HTMLElement, ...classes: string[]) {
-		this.classList.add(...classes);
-	};
-	proto.setText = function (this: HTMLElement, text: string) {
-		this.textContent = text;
-	};
-	proto.empty = function (this: HTMLElement) {
-		this.replaceChildren();
-	};
-	proto.createEl = function (this: HTMLElement, tag: string, opts?: { text?: string; cls?: string }) {
-		const el = document.createElement(tag);
-		if (opts?.text) el.textContent = opts.text;
-		if (opts?.cls) el.className = opts.cls;
-		this.append(el);
-		return el;
-	};
-	proto.createDiv = function (this: HTMLElement, opts?: { text?: string; cls?: string } | string) {
-		const o = typeof opts === 'string' ? { cls: opts } : opts;
-		return (proto.createEl as (tag: string, o?: unknown) => HTMLElement).call(this, 'div', o);
-	};
+	installDomHelpers(['addClass', 'setText', 'empty', 'createEl', 'createDiv']);
 });
 
 function note(path: string, folder = ''): TFile {

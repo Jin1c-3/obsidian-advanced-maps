@@ -50,7 +50,7 @@ import { currentCoords, NotePickerModal, ReplaceCoordsModal } from './note-picke
 import { PhotoIndex, pluginIndexIO } from './photo-index';
 import { noteName, placesFrom, type Place } from './places';
 import { ImportPlacesModal } from './places-modal';
-import { nativeBehind, ownedBy, stamp, type RegistrationOwner } from './registration';
+import { nativeBehind, ownedBy, retire, wrapFactory, wrapOptions, type RegistrationOwner } from './registration';
 import { PlaceSearchModal } from './search-modal';
 import {
 	AdvancedMapsSettingTab,
@@ -66,11 +66,10 @@ import {
 import { duplicateStatsName, formatDistance, hasStats, statsProperties, trackStats } from './stats';
 import { TrackCache, type TrackRecord } from './track-cache';
 import { TrackLayer, type FocusTarget } from './track-layer';
-import { appendTrackOptions, type BackgroundChoice, type BackgroundPicker } from './view-options';
+import type { BackgroundChoice, BackgroundPicker } from './view-options';
 import type {
 	BasesMapView,
 	BasesViewFactory,
-	BasesViewOptionsFn,
 	BasesViewRegistration,
 	ComponentNode,
 	NativeMapsPlugin,
@@ -97,7 +96,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 
 	private nativeFactory: BasesViewFactory | null = null;
 	/** This instance's identity on the wrappers it installs; see `registration.ts`. */
-	private readonly owner: RegistrationOwner = { alive: true };
+	private owner: RegistrationOwner = { alive: true };
 	private patched: {
 		/** What this instance put in the registration, to restore only its own. */
 		factory: BasesViewFactory;
@@ -235,25 +234,18 @@ export default class AdvancedMapsPlugin extends Plugin {
 		const nativeFactory = nativeBehind(entry.factory);
 		const nativeOptions = typeof entry.options === 'function' ? nativeBehind(entry.options) : entry.options;
 		this.nativeFactory = nativeFactory;
-		const owner = this.owner;
+		// Retained wrappers must stay retired when Maps replaces either slot.
+		retire(this.owner);
+		const owner = (this.owner = {
+			alive: true,
+			enhance: (view) => this.enhance(view, false),
+			backgroundPicker: () => this.backgroundPicker(),
+		});
 
-		const factory: BasesViewFactory = (controller, containerEl) => {
-			const view = nativeFactory(controller, containerEl);
-			// Through the owner cell rather than `this`: a copy of this wrapper
-			// that outlives the instance stops enhancing instead of handing views
-			// to an unloaded plugin.
-			if (owner.alive) this.enhance(view, false);
-			return view;
-		};
-		stamp(factory, nativeFactory, owner);
+		const factory = wrapFactory(nativeFactory, owner);
 		entry.factory = factory;
 
-		if (typeof nativeOptions === 'function') {
-			const options: BasesViewOptionsFn = () =>
-				owner.alive ? appendTrackOptions(nativeOptions(), this.backgroundPicker()) : nativeOptions();
-			stamp(options, nativeOptions, owner);
-			entry.options = options;
-		}
+		if (typeof nativeOptions === 'function') entry.options = wrapOptions(nativeOptions, owner);
 
 		this.patched = { factory, options: entry.options, nativeFactory, nativeOptions };
 		this.adoptOpenViews();
@@ -342,7 +334,7 @@ export default class AdvancedMapsPlugin extends Plugin {
 		// First, and whether or not the registration can be restored: a wrapper
 		// another plugin has since wrapped cannot be taken out of the chain, so
 		// retiring the owner is what stops it acting for an unloaded instance.
-		this.owner.alive = false;
+		retire(this.owner);
 		const entry = this.mapRegistration();
 		// Identity, not "has a stamp": restoring over someone else's wrapper would
 		// discard their augmentation, and restoring over a newer instance's would

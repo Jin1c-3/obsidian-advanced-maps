@@ -78,14 +78,11 @@ export function trackStats(features: Features): TrackStats {
 	let descent = 0;
 	let minEle = Infinity;
 	let maxEle = -Infinity;
-	let anyElevation = false;
 	let start: number | null = null;
 	let end: number | null = null;
 	let movingTime = 0;
-	let anyTime = false;
 
 	const noteElevation = (ele: number) => {
-		anyElevation = true;
 		if (ele < minEle) minEle = ele;
 		if (ele > maxEle) maxEle = ele;
 	};
@@ -147,7 +144,6 @@ export function trackStats(features: Features): TrackStats {
 				const stamp = times?.[at];
 				const t = typeof stamp === 'number' && isFinite(stamp) ? stamp : null;
 				if (t !== null) {
-					anyTime = true;
 					if (start === null || t < start) start = t;
 					if (end === null || t > end) end = t;
 
@@ -187,6 +183,7 @@ export function trackStats(features: Features): TrackStats {
 	// come out negative.
 	const duration = start !== null && end !== null ? end - start : null;
 	const speed = movingTime > 0 ? distance / (movingTime / 1000) : null;
+	const anyElevation = minEle !== Infinity;
 
 	return {
 		distance,
@@ -197,7 +194,7 @@ export function trackStats(features: Features): TrackStats {
 		start,
 		end,
 		duration,
-		movingTime: anyTime ? movingTime : null,
+		movingTime: start !== null ? movingTime : null,
 		speed,
 	};
 }

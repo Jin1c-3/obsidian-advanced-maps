@@ -1,15 +1,41 @@
 /* Ownership of the wrappers this plugin installs over the native Bases map registration. */
 
+import type { BasesMapView, BasesViewFactory, BasesViewOptionsFn } from './types/obsidian-internals';
+import { appendTrackOptions, type BackgroundPicker } from './view-options';
+
 /**
  * Which plugin instance a wrapper belongs to.
  *
  * A cell rather than the instance itself: the wrapper closes over this object,
- * so clearing `alive` on unload turns a wrapper that cannot be removed from the
- * registration — because another plugin has since wrapped it — into a plain
- * pass-through instead of one that keeps enhancing views for a dead instance.
+ * so retiring it releases the plugin callbacks even when another plugin keeps
+ * a wrapper in its call chain. The retained wrapper then only calls the host.
  */
 export interface RegistrationOwner {
 	alive: boolean;
+	enhance?: (view: BasesMapView) => void;
+	backgroundPicker?: () => BackgroundPicker | null;
+}
+
+export function retire(owner: RegistrationOwner): void {
+	owner.alive = false;
+	owner.enhance = undefined;
+	owner.backgroundPicker = undefined;
+}
+
+/** These closures retain only the native function and the revocable owner cell. */
+export function wrapFactory(native: BasesViewFactory, owner: RegistrationOwner): BasesViewFactory {
+	const wrapper: BasesViewFactory = (controller, containerEl) => {
+		const view = native(controller, containerEl);
+		if (owner.alive) owner.enhance?.(view);
+		return view;
+	};
+	return stamp(wrapper, native, owner);
+}
+
+export function wrapOptions(native: BasesViewOptionsFn, owner: RegistrationOwner): BasesViewOptionsFn {
+	const wrapper: BasesViewOptionsFn = () =>
+		owner.alive ? appendTrackOptions(native(), owner.backgroundPicker?.() ?? null) : native();
+	return stamp(wrapper, native, owner);
 }
 
 /**
@@ -62,7 +88,7 @@ export function nativeBehind<T>(fn: Stamped<T>): T {
 		const stamp = stampOf(current);
 		if (!stamp || seen.has(current)) return current;
 		seen.add(current);
-		stamp.owner.alive = false;
+		retire(stamp.owner);
 		current = stamp.native as Stamped<T>;
 	}
 }

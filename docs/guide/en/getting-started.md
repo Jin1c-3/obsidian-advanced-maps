@@ -48,6 +48,11 @@ You can also read the store page on the web:
 
 </details>
 
+Open **Settings → Advanced Maps** to see the installed version and a one-sentence
+update summary at the top of the settings home. Expand the history below it to
+read earlier versions' summaries; it starts collapsed. The full changelog link
+opens the detailed update record.
+
 ## On mobile
 
 The mobile app draws the same map: note markers with their icons and colours,
