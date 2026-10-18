@@ -4,6 +4,26 @@ Notable changes per release. Versions follow [semver](https://semver.org/);
 the tag, `manifest.json` and `versions.json` always agree — CI refuses a release
 where they do not.
 
+## [1.20.0]
+
+### Added
+
+- **See what changed from the settings home.** The installed version now appears
+  with a one-sentence release summary in English or Simplified Chinese, a
+  collapsible list of earlier releases, and a link to the complete changelog.
+  Summaries ship with the plugin, so they work offline and stay available each
+  time you open settings.
+
+### Changed
+
+- **The bilingual guide is easier to follow.** Rewritten instructions explain
+  setup, settings, photo and route maps, offline backgrounds, and common problems
+  in plain language, with the same coverage in both locales.
+
+- **Shared map internals are simpler.** Native map registration checks, attachment
+  reads, and distance calculations now share their common paths, with regression
+  tests covering compatibility fallbacks and bounded file reads.
+
 ## [1.19.0]
 
 ### Added
@@ -1249,7 +1269,8 @@ one vault; the behaviour is unchanged, everything around it is new.
   the "open in map" base path must be chosen, the view name falls back to the
   base's first map view, and the menu label falls back to the localized default.
 
-[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.19.0...HEAD
+[Unreleased]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.20.0...HEAD
+[1.20.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.19.0...1.20.0
 [1.19.0]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.6...1.19.0
 [1.18.6]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.5...1.18.6
 [1.18.5]: https://github.com/Jin1c-3/obsidian-advanced-maps/compare/1.18.4...1.18.5
