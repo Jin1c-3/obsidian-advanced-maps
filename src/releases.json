@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.20.0",
+    "en": "See the installed version, its release summary and earlier updates in settings, with offline bilingual summaries and a rewritten user guide.",
+    "zh": "设置首页新增当前版本、更新摘要和历史更新，双语摘要离线可读，并重写了用户指南。"
+  },
+  {
     "version": "1.19.0",
     "en": "Link individual geotagged photos outside your vault to show them on note and route maps, with thumbnails, previews and full-size viewing.",
     "zh": "链接仓库外的单张定位照片，即可在笔记地图和路线地图上显示，并查看缩略图、预览和原图。"
